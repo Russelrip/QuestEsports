@@ -31,6 +31,10 @@ const mapRegistration = (registration) => ({
     title: registration.tournament.title,
     game: registration.tournament.game,
     status: registration.tournament.status,
+    // Carried so the dashboard can stay silent about payment on a free
+    // tournament instead of badging a registration "paid" for a fee that
+    // never existed.
+    paymentMethod: registration.tournament.paymentMethod || "free",
     startDate: registration.tournament.startDate,
     startDateStatus: registration.tournament.startDateStatus || "scheduled",
     endDate: registration.tournament.endDate,
@@ -74,6 +78,7 @@ const getAccountDashboard = async ({ user }) => {
             title: true,
             game: true,
             status: true,
+            paymentMethod: true,
             startDate: true,
             startDateStatus: true,
             endDate: true,

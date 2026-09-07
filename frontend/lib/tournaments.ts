@@ -152,7 +152,7 @@ export type EventSeries = {
   games?: number;
   teamsRegistered?: number;
   playersRegistered?: number;
-  availableSlots?: number;
+  availableSlots?: number | null;
   registrationState?: EventRegistrationState;
   displayOrder: number;
   isPublished: boolean;
@@ -165,7 +165,9 @@ export type EventAggregate = {
   games: number;
   teamsRegistered: number;
   playersRegistered: number;
-  availableSlots: number;
+  // Null when a child tournament has no slot ceiling: there is no number that
+  // honestly describes how many places are left.
+  availableSlots: number | null;
   registrationState: EventRegistrationState;
 };
 
@@ -276,6 +278,7 @@ export type Tournament = {
   allowCoach: boolean;
   coachRequired: boolean;
   discordRequired?: boolean;
+  autoApproveRegistrations?: boolean;
   waitlistEnabled: boolean;
   registrationFields: TournamentRegistrationField[];
   paymentMethod: TournamentPaymentMethod;
@@ -288,7 +291,8 @@ export type Tournament = {
   bankBranch?: string | null;
   bankAccountName?: string | null;
   bankAccountNumber?: string | null;
-  maxTeams: number;
+  // Null means the tournament has no slot ceiling.
+  maxTeams: number | null;
   registrationCount: number;
   capacityUsed: number;
   prizePool: string;

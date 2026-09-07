@@ -8,7 +8,10 @@ const {
   getRegistrationPublicReference,
 } = require("../src/modules/tournaments/registration-state");
 const {
+  allocateLowestAvailableSlot,
   buildActiveRegistrationWhere,
+  hasAvailableCapacity,
+  hasUnlimitedCapacity,
   isRegistrationActive,
 } = require("../src/modules/tournaments/registration-eligibility");
 
@@ -60,6 +63,53 @@ test("registration state distinguishes open, closed, full, waitlist, and existin
     existingRegistration: { status: "waitlisted" },
     now,
   }).state, "already_registered");
+});
+
+test("an unlimited tournament stays open and never reaches its waitlist", () => {
+  const now = new Date("2026-08-17T12:00:00.000Z");
+  const unlimited = { ...openTournament, maxTeams: null };
+
+  assert.equal(getTournamentRegistrationState({
+    tournament: unlimited,
+    capacityUsed: 0,
+    now,
+  }).state, "registration_open");
+  assert.equal(getTournamentRegistrationState({
+    tournament: unlimited,
+    capacityUsed: 4096,
+    now,
+  }).state, "registration_open");
+
+  // An absent capacity is a partial projection, not a statement of unlimited
+  // capacity, and must keep reading as full.
+  const withoutCapacity = { ...unlimited };
+  delete withoutCapacity.maxTeams;
+  assert.equal(getTournamentRegistrationState({
+    tournament: withoutCapacity,
+    capacityUsed: 1,
+    now,
+  }).state, "waitlist_open");
+  assert.equal(hasUnlimitedCapacity(unlimited), true);
+  assert.equal(hasUnlimitedCapacity(withoutCapacity), false);
+  assert.equal(hasAvailableCapacity({ maxTeams: 4 }, 4), false);
+  assert.equal(hasAvailableCapacity({ maxTeams: 4 }, 3), true);
+});
+
+test("slot allocation numbers an unlimited tournament past any fixed ceiling", async () => {
+  const assignedSlots = [{ assignedSlotNumber: 1 }, { assignedSlotNumber: 2 }];
+  const tx = {
+    teamRegistration: { findMany: async () => assignedSlots },
+    adminSlotReservation: { findMany: async () => [] },
+  };
+
+  assert.equal(
+    await allocateLowestAvailableSlot({ tx, tournamentId: "tournament-1", maxTeams: null }),
+    3
+  );
+  await assert.rejects(
+    allocateLowestAvailableSlot({ tx, tournamentId: "tournament-1", maxTeams: 2 }),
+    (error) => error.statusCode === 409
+  );
 });
 
 test("parent event registration windows gate an open child override", () => {

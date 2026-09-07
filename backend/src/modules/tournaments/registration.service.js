@@ -21,7 +21,9 @@ const {
   buildActiveRegistrationWhere,
   countTournamentCapacityUsage,
   getNextWaitlistPosition,
+  hasAvailableCapacity,
 } = require("./registration-eligibility");
+const { maybeAutoApproveRegistration } = require("./auto-approval.service");
 const {
   buildPublicReference,
   getRegistrationPublicReference,
@@ -368,7 +370,7 @@ const startExistingRegistrationPayment = async ({
       excludeRegistrationId: existing.id,
     });
     const activeCount = await countTournamentCapacityUsage({ tx, tournamentId: currentTournament.id, excludeRegistrationId: existing.id });
-    if (activeCount >= currentTournament.maxTeams) {
+    if (!hasAvailableCapacity(currentTournament, activeCount)) {
       throw new HttpError(409, "Registration slots are full.");
     }
     if (currentRegistration.entryType === "team") {
@@ -1040,7 +1042,7 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
           now: retryNow,
         });
         const registrationState = hasActiveReservation
-          ? { canRegister: activeCount < currentTournament.maxTeams, canWaitlist: false }
+          ? { canRegister: hasAvailableCapacity(currentTournament, activeCount), canWaitlist: false }
           : getTournamentRegistrationState({
               tournament: currentTournament,
               capacityUsed: activeCount,
@@ -1349,6 +1351,14 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
         })),
       });
 
+      // A free registration with a complete roster has nothing left to wait
+      // on, so a tournament that does not review registrations approves it in
+      // the same transaction that created it.
+      const autoApproved = await maybeAutoApproveRegistration({
+        tx,
+        registrationId,
+      });
+
       const payment = !isWaitlisted && feeAmount > 0 && !requiresTeamVerification
         ? await tx.paymentTransaction.create({
             data: {
@@ -1363,7 +1373,12 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
             },
           })
         : null;
-      return { registration, payment, tournament: currentTournament, waitlisted: isWaitlisted };
+      return {
+        registration: autoApproved || registration,
+        payment,
+        tournament: currentTournament,
+        waitlisted: isWaitlisted,
+      };
     });
   } catch (error) {
     if (persistedLogo) {

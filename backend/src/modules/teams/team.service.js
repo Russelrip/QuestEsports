@@ -10,6 +10,9 @@ const {
 } = require("../../lib/mail/sendTeamInviteEmail");
 const { notifyInviteOnDiscord } = require("./invite-discord-notice");
 const {
+  maybeAutoApproveRegistration,
+} = require("../tournaments/auto-approval.service");
+const {
   removeUploadsQuietly,
   removeTeamLogoIfUnreferenced,
   scheduleTeamLogoCleanup,
@@ -857,6 +860,13 @@ const refreshRegistrationVerificationStatus = async ({ tx, registrationId }) => 
     where: { id: registrationId },
     data: { verificationStatus },
   });
+
+  if (verificationStatus === "verified") {
+    // The last outstanding invitation was the only thing this registration was
+    // waiting on. A tournament that does not review registrations approves it
+    // here; one that does is left untouched.
+    await maybeAutoApproveRegistration({ tx, registrationId });
+  }
 
   return verificationStatus;
 };

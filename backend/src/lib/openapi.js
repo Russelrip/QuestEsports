@@ -231,7 +231,8 @@ const openApiDocument = {
             enum: ["scheduled", "tba", "tbd"],
           },
           registrationCount: { type: "integer" },
-          maxTeams: { type: "integer" },
+          // Null when the tournament has no slot ceiling.
+          maxTeams: { type: "integer", nullable: true },
         },
       },
       TournamentBracket: {

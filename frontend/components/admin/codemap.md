@@ -26,6 +26,13 @@ paths in a shell.
   reusing full registration detail/correction controls.
 - `TournamentEditor.tsx` remains the source of truth for child game,
   capacity, waitlist, roster, payment, schedule, and publication settings.
+  A blank max teams is the form's way of saying "unlimited", so it is the one
+  blank value the multipart body still sends; the waitlist toggle is disabled
+  alongside it because an uncapped tournament never fills. Choosing a
+  registration mode sets the automatic-approval toggle — open entry approves on
+  submission, slot based reviews — and the admin can still override it.
+  A free tournament reports no payment state on its registrations, because
+  nothing was ever owed.
 - Saved-team administration preserves persisted `COACH` members and nullable
   coach phone data. Registration-facing saved-team selection hydrates a coach
   draft separately from player/substitute roster drafts, while the backend

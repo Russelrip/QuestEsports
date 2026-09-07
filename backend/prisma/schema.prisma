@@ -807,6 +807,9 @@ model Tournament {
   // Whether every roster member must have a connected Discord identity before
   // the team can register. Defaults off so existing tournaments are unaffected.
   discordRequired            Boolean                     @default(false) @map("discord_required")
+  // Whether a submitted registration is approved without an admin review.
+  // Defaults off so every existing tournament keeps its manual approval step.
+  autoApproveRegistrations   Boolean                     @default(false) @map("auto_approve_registrations")
   registrationFields         Json                        @default("[]") @map("registration_fields")
   paymentMethod              TournamentPaymentMethod     @default(free) @map("payment_method")
   registrationFeeAmount      Decimal                     @default(0) @map("registration_fee_amount") @db.Decimal(12, 2)
@@ -819,7 +822,9 @@ model Tournament {
   bankBranch                 String?                     @map("bank_branch")
   bankAccountName            String?                     @map("bank_account_name")
   bankAccountNumber          String?                     @map("bank_account_number")
-  maxTeams                   Int                         @map("max_teams")
+  // NULL means unlimited capacity: the tournament accepts registrations
+  // without a slot ceiling, so a waitlist can never be reached.
+  maxTeams                   Int?                        @map("max_teams")
   prizePool                  String                      @map("prize_pool")
   status                     TournamentStatus            @default(draft)
   isPublished                Boolean                     @default(false) @map("is_published")

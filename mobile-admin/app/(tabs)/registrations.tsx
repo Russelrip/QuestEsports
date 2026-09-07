@@ -19,7 +19,9 @@ export default function RegistrationsScreen() {
         title: item.teamName,
         subtitle: item.tournament.title,
         status: item.status,
-        secondaryStatus: item.paymentStatus,
+        // A free tournament asked for no money, so "paid" would describe a
+        // fee that never existed.
+        secondaryStatus: item.tournament.paymentMethod === "free" ? "free" : item.paymentStatus,
         meta: [`${item.memberCount} roster members`, item.captain.email, formatDate(item.createdAt)],
       })}
       detailPath={(item) => `/api/admin/team-registrations/${item.id}`}

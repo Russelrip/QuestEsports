@@ -302,7 +302,7 @@ export default function AdminRegistrationsManager({ eventId, eventTitle }: { eve
                         </div>
                         <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
                           <div><dt className="text-[10px] uppercase tracking-wider text-slate-500">Approval</dt><dd className="mt-1"><StatusText value={registration.status} /></dd></div>
-                          <div><dt className="text-[10px] uppercase tracking-wider text-slate-500">Payment</dt><dd className="mt-1"><StatusText value={registration.paymentStatus} /></dd></div>
+                          <div><dt className="text-[10px] uppercase tracking-wider text-slate-500">Payment</dt><dd className="mt-1"><StatusText value={paymentStatusLabel(registration)} /></dd></div>
                           <div><dt className="text-[10px] uppercase tracking-wider text-slate-500">Verification</dt><dd className="mt-1"><StatusText value={registration.verificationStatus} /></dd></div>
                           <div><dt className="text-[10px] uppercase tracking-wider text-slate-500">Roster</dt><dd className="mt-1 font-semibold text-white">{registration.memberCount}</dd></div>
                           <div><dt className="text-[10px] uppercase tracking-wider text-slate-500">Reference</dt><dd className="mt-1 break-all font-semibold text-white">{registration.publicReference || "—"}</dd></div>
@@ -386,7 +386,7 @@ export default function AdminRegistrationsManager({ eventId, eventTitle }: { eve
                               <StatusText value={registration.status} />
                             </td>
                             <td className="px-5 py-4">
-                              <StatusText value={registration.paymentStatus} />
+                              <StatusText value={paymentStatusLabel(registration)} />
                             </td>
                             <td className="px-5 py-4">
                               <StatusText
@@ -852,7 +852,7 @@ function RegistrationDetail({
                   "Organization requested",
                   registration.organizationRequested ? "Yes" : "No",
                 ],
-                ["Payment", registration.paymentStatus],
+                ["Payment", paymentStatusLabel(registration)],
                 [
                   "Reserved until",
                   registration.reservedUntil
@@ -1374,8 +1374,19 @@ function RegistrationDetail({
   );
 }
 
+// A free tournament never asked for money, so its registrations report "free"
+// rather than a payment status that would imply a fee was settled.
+function paymentStatusLabel(registration: {
+  paymentStatus: string;
+  tournament?: { paymentMethod?: string };
+}) {
+  return registration.tournament?.paymentMethod === "free"
+    ? "free"
+    : registration.paymentStatus;
+}
+
 function StatusText({ value }: { value: string }) {
-  const tone = ["paid", "approved", "verified", "accepted"].includes(value)
+  const tone = ["paid", "free", "approved", "verified", "accepted"].includes(value)
     ? "text-emerald-300"
     : ["rejected", "failed", "flagged", "declined", "cancelled"].includes(value)
       ? "text-rose-300"

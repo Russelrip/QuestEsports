@@ -103,7 +103,7 @@ export type AdminEvent = {
   startDate?: string | null; endDate?: string | null; registrationOpenAt?: string | null; registrationCloseAt?: string | null;
   venue?: string | null; location?: string | null; country?: string | null; organizer?: string | null; websiteUrl?: string | null; discordUrl?: string | null;
   registrationStatusOverride?: string | null; eventStatus?: "draft" | "upcoming" | "open" | "closed" | "completed";
-  aggregate: { games: number; teamsRegistered: number; playersRegistered: number; availableSlots: number; registrationState: "open" | "upcoming" | "closed" | "completed" };
+  aggregate: { games: number; teamsRegistered: number; playersRegistered: number; availableSlots: number | null; registrationState: "open" | "upcoming" | "closed" | "completed" };
   tournaments: AdminEventTournament[]; createdAt?: string; updatedAt?: string;
 };
 export type AdminEventFormValues = Omit<AdminEvent, "id" | "aggregate" | "tournaments" | "heroUrl" | "bannerUrl" | "createdAt" | "updatedAt" | "eventStatus"> & { heroImage: File | null; bannerImage: File | null; removeHeroImage: boolean; removeBannerImage: boolean };
@@ -176,6 +176,7 @@ export type TournamentOption = {
   maxSubstitutes?: number;
   allowCoach?: boolean;
   coachRequired?: boolean;
+  paymentMethod?: "free" | "payhere" | "bank_transfer";
   waitlistEnabled?: boolean;
 };
 
@@ -521,6 +522,7 @@ export type TournamentFormValues = {
   allowCoach: boolean;
   coachRequired: boolean;
   discordRequired: boolean;
+  autoApproveRegistrations: boolean;
   waitlistEnabled: boolean;
   showBracketPublicly: boolean;
   registrationFields: string;
@@ -614,6 +616,7 @@ export const initialTournamentFormValues: TournamentFormValues = {
   allowCoach: false,
   coachRequired: false,
   discordRequired: false,
+  autoApproveRegistrations: false,
   waitlistEnabled: false,
   registrationFields: "[]",
   paymentMethod: "free",
@@ -675,8 +678,12 @@ export const buildTournamentFormData = (values: TournamentFormValues) => {
     "registrationDeadline",
   ]);
 
+  // A blank max teams is a statement — unlimited registrations — so it has to
+  // reach the API. Every other blank field means "unchanged" and is dropped.
+  const blankMeaningfulFields = new Set(["maxTeams"]);
+
   Object.entries(values).forEach(([key, value]) => {
-    if (value === null || value === "") {
+    if (value === null || (value === "" && !blankMeaningfulFields.has(key))) {
       return;
     }
 

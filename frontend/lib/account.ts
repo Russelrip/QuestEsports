@@ -21,6 +21,7 @@ export type DashboardRegistration = {
     title: string;
     game: string;
     status: string;
+    paymentMethod: "free" | "payhere" | "bank_transfer";
     startDate: string | null;
     startDateStatus: "scheduled" | "tba" | "tbd";
     endDate: string | null;

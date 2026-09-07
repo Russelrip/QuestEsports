@@ -11,7 +11,11 @@ const {
   bankTransferProofDirectory,
   persistBankTransferProofUpload,
 } = require("../../middleware/upload");
-const { countTournamentCapacityUsage } = require("../tournaments/registration-eligibility");
+const {
+  countTournamentCapacityUsage,
+  hasAvailableCapacity,
+} = require("../tournaments/registration-eligibility");
+const { maybeAutoApproveRegistration } = require("../tournaments/auto-approval.service");
 const { assertNoCoachPlayerRoleConflict } = require("../tournaments/role-conflict.service");
 const { activatePaidTeamRegistration } = require("../teams/team.service");
 const { sendTicketOrderEmail } = require("../../lib/mail/sendTicketOrderEmail");
@@ -348,7 +352,7 @@ const reviewBankTransfer = async ({ transactionId, decision, reason, admin, audi
           excludeRegistrationId: current.registration.id,
         });
         const otherActiveCount = await countTournamentCapacityUsage({ tx, tournamentId: current.registration.tournamentId, excludeRegistrationId: current.registration.id, now });
-        if (otherActiveCount >= current.registration.tournament.maxTeams) {
+        if (!hasAvailableCapacity(current.registration.tournament, otherActiveCount)) {
           throw new HttpError(409, "The tournament no longer has an available slot.");
         }
         if (tx.adminSlotReservation?.deleteMany) {
@@ -359,6 +363,13 @@ const reviewBankTransfer = async ({ transactionId, decision, reason, admin, audi
         await tx.teamRegistration.update({
           where: { id: current.registration.id },
           data: { paymentStatus: "paid", reservedUntil: null },
+        });
+        // The verified transfer was the last thing this registration was
+        // waiting on, so a tournament that does not review registrations
+        // approves it here rather than leaving it pending behind a paid fee.
+        await maybeAutoApproveRegistration({
+          tx,
+          registrationId: current.registration.id,
         });
         tournamentRegistrationChanged = true;
       } else {

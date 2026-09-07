@@ -43,6 +43,7 @@ const {
   compactWaitlistPositions,
   getNextWaitlistPosition,
   isRegistrationActive,
+  hasAvailableCapacity,
 } = require("../tournaments/registration-eligibility");
 const { getRegistrationPublicReference } = require("../tournaments/registration-state");
 const { getBankTransferAmountForSlot } = require("../payments/bank-transfer.service");
@@ -180,6 +181,9 @@ const TOURNAMENT_SUMMARY_SELECT = {
   game: true,
   status: true,
   isPublished: true,
+  // A free tournament has no payment to report, so the dashboard needs the
+  // method to tell "nothing to pay" apart from "paid".
+  paymentMethod: true,
   waitlistEnabled: true,
   minRosterSize: true,
   maxRosterSize: true,
@@ -1803,7 +1807,7 @@ const updateTeamRegistrationStatus = async (
           tournamentId: current.tournamentId,
           excludeRegistrationId: current.id,
         });
-        if (used >= current.tournament.maxTeams) {
+        if (!hasAvailableCapacity(current.tournament, used)) {
           throw new HttpError(409, "The tournament has no slot available.");
         }
         assignedSlotNumber = await allocateLowestAvailableSlot({
@@ -1998,7 +2002,7 @@ const updateTeamRegistrationStatus = async (
             tournamentId: current.tournamentId,
             excludeRegistrationId: current.id,
           });
-          if (used >= current.tournament.maxTeams) {
+          if (!hasAvailableCapacity(current.tournament, used)) {
             throw new HttpError(409, "The tournament has no slot available.");
           }
           data.assignedSlotNumber = await allocateLowestAvailableSlot({
@@ -2972,7 +2976,7 @@ const reserveAdminRegistrationSlot = async ({ registrationId, adminUserId, body,
     if (!registration.members.some((member) => member.inviteStatus === "pending")) throw new HttpError(409, "Only teams with pending member invitations can receive an admin hold.");
     if (registration.adminSlotReservation) throw new HttpError(409, "This team already has an admin-reserved slot.");
     const used = await countTournamentCapacityUsage({ tx, tournamentId: registration.tournamentId, excludeRegistrationId: registration.id });
-    if (used >= registration.tournament.maxTeams) throw new HttpError(409, "The tournament has no slot available to reserve.");
+    if (!hasAvailableCapacity(registration.tournament, used)) throw new HttpError(409, "The tournament has no slot available to reserve.");
     const assignedSlotNumber = await allocateLowestAvailableSlot({
       tx,
       tournamentId: registration.tournamentId,

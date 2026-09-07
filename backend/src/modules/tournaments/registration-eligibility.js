@@ -18,6 +18,16 @@ const isRegistrationActive = (registration, now = new Date()) =>
       registration.reservedUntil &&
       new Date(registration.reservedUntil) > now));
 
+// A NULL `maxTeams` has no slot ceiling. Only NULL means that: 0 already means
+// "configured with no slots", and an absent field means the caller selected a
+// partial tournament, which must keep reading as full rather than silently
+// uncapping the tournament.
+const hasUnlimitedCapacity = (tournament) => tournament?.maxTeams === null;
+
+const hasAvailableCapacity = (tournament, capacityUsed) =>
+  hasUnlimitedCapacity(tournament) ||
+  Number(capacityUsed) < Number(tournament?.maxTeams || 0);
+
 const allocateLowestAvailableSlot = async ({
   tx,
   tournamentId,
@@ -52,7 +62,11 @@ const allocateLowestAvailableSlot = async ({
       .map((entry) => entry.assignedSlotNumber)
       .filter(Number.isInteger)
   );
-  for (let slotNumber = 1; slotNumber <= maxTeams; slotNumber += 1) {
+  // Unlimited capacity still numbers slots, so a bank-transfer receipt and an
+  // admin hold keep referring to a stable position. The scan is bounded by the
+  // number of slots already taken, which always leaves a free number.
+  const lastSlot = maxTeams === null ? usedSlots.size + 1 : maxTeams;
+  for (let slotNumber = 1; slotNumber <= lastSlot; slotNumber += 1) {
     if (!usedSlots.has(slotNumber)) return slotNumber;
   }
   throw new HttpError(409, "Registration slots are full.");
@@ -108,6 +122,8 @@ const compactWaitlistPositions = async ({ tx, tournamentId, position }) => {
 
 module.exports = {
   allocateLowestAvailableSlot,
+  hasAvailableCapacity,
+  hasUnlimitedCapacity,
   buildActiveRegistrationWhere,
   isRegistrationActive,
   countTournamentCapacityUsage,

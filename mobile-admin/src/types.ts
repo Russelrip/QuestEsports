@@ -56,7 +56,10 @@ export type RegistrationSummary = {
   verificationStatus: string;
   createdAt: string;
   memberCount: number;
-  tournament: Pick<TournamentSummary, "id" | "slug" | "title" | "status" | "isPublished">;
+  tournament: Pick<
+    TournamentSummary,
+    "id" | "slug" | "title" | "status" | "isPublished" | "paymentMethod"
+  >;
   captain: { name: string; email: string };
 };
 

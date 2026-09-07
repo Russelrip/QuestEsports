@@ -91,6 +91,22 @@ existing contact, match-room, notification, or OAuth tables.
   member including a coach, because the point is being contactable during the
   event. Discord identity is read from `OAuthAccount`, never from the mutable
   `User.discordTag`.
+- `20260907120000_add_unlimited_capacity_and_auto_approval` makes
+  `tournaments.max_teams` nullable and adds
+  `tournaments.auto_approve_registrations`, defaulting to FALSE. NULL capacity
+  means "no slot ceiling", which is a different fact from 0 — a tournament
+  configured with no slots — so only NULL uncaps a tournament and no existing
+  row is rewritten. Dropping NOT NULL is safe in the way that matters: every
+  capacity check now reads NULL as "has room" instead of erroring, and slot
+  numbering continues past any fixed ceiling so bank-transfer references stay
+  stable. Slot-numbered fee tiers remain incompatible with an uncapped
+  tournament by validation rather than by constraint, because a tier list must
+  cover every slot and an unbounded range cannot be covered. Automatic approval
+  defaults off so every existing tournament keeps its manual review step;
+  turning it on approves a registration the moment nothing is outstanding,
+  which is the click an admin was performing by hand for a free, open-entry
+  event.
+
 - `20260822150000_add_saved_team_logo_cleared_at` adds the nullable
   `saved_teams.logo_cleared_at` marker. `logo_name` alone cannot say why a team
   has no logo, so this column separates a team that has never had one — which
