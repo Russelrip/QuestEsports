@@ -525,6 +525,233 @@ test("admin tournament discord requirement normalizes, persists, preserves, and 
   }
 });
 
+test("a blank max teams means unlimited capacity, while an omitted one keeps the ceiling", async () => {
+  let createdData;
+  let updatedData;
+  const existingTournament = {
+    id: "tournament-capacity",
+    ...buildAdminTournamentBody(),
+    maxTeams: 16,
+  };
+  let storedTournament = { ...existingTournament };
+  const prismaMock = {
+    prisma: {
+      tournament: {
+        findFirst: async () => null,
+        findUnique: async () => storedTournament,
+        create: async ({ data }) => {
+          createdData = data;
+          return {
+            ...data,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            _count: { teamRegistrations: 0 },
+            sponsors: [],
+          };
+        },
+        update: async ({ data }) => {
+          updatedData = data;
+          storedTournament = { ...storedTournament, ...data };
+          return {
+            ...storedTournament,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            _count: { teamRegistrations: 0 },
+            sponsors: [],
+          };
+        },
+      },
+      teamRegistration: { findMany: async () => [] },
+    },
+  };
+  const { module: tournamentService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: prismaMock,
+    [uploadModulePath]: {
+      persistTournamentBannerUpload: async () => null,
+      persistTournamentScheduleUpload: async () => null,
+      removeUploadFiles: async () => undefined,
+    },
+    [teamServiceModulePath]: {},
+    [paymentServiceModulePath]: { isPayHereConfigured: () => false },
+    [bracketServiceModulePath]: { buildShortCode: (name) => name, mapPublicBracket: () => null },
+    [loggerModulePath]: {},
+  });
+
+  try {
+    assert.equal(
+      tournamentService.normalizeTournamentInput({
+        body: buildAdminTournamentBody({ maxTeams: "" }),
+      }).maxTeams,
+      null
+    );
+    assert.equal(
+      tournamentService.normalizeTournamentInput({
+        body: buildAdminTournamentBody({ maxTeams: "24" }),
+      }).maxTeams,
+      24
+    );
+
+    // An omitted key is a partial update, not a request to remove the ceiling.
+    const partialBody = buildAdminTournamentBody();
+    delete partialBody.maxTeams;
+    assert.equal(
+      tournamentService.normalizeTournamentInput({ body: partialBody, existingTournament }).maxTeams,
+      16
+    );
+
+    for (const rejected of ["0", 0, "-4"]) {
+      assert.throws(
+        () => tournamentService.normalizeTournamentInput({
+          body: buildAdminTournamentBody({ maxTeams: rejected }),
+        }),
+        (error) => error.statusCode === 400 && /at least 1/.test(error.message)
+      );
+    }
+    assert.throws(
+      () => tournamentService.normalizeTournamentInput({
+        body: buildAdminTournamentBody({ maxTeams: "plenty" }),
+      }),
+      (error) => error.statusCode === 400 && /at least 1/.test(error.message)
+    );
+
+    const created = await tournamentService.createAdminTournament({
+      body: buildAdminTournamentBody({ maxTeams: "" }),
+      files: {},
+    });
+    assert.equal(createdData.maxTeams, null);
+    assert.equal(created.maxTeams, null);
+
+    const updated = await tournamentService.updateAdminTournament({
+      tournamentId: existingTournament.id,
+      body: buildAdminTournamentBody({ maxTeams: "" }),
+      files: {},
+    });
+    assert.equal(updatedData.maxTeams, null);
+    assert.equal(updated.maxTeams, null);
+  } finally {
+    restore();
+  }
+});
+
+test("slot fee tiers are refused for a tournament with unlimited capacity", () => {
+  const { module: tournamentService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: { prisma: {} },
+    [uploadModulePath]: {},
+    [teamServiceModulePath]: {},
+  });
+
+  try {
+    const body = buildAdminTournamentBody({
+      maxTeams: "",
+      paymentMethod: "bank_transfer",
+      registrationFeeAmount: "2000",
+      bankName: "Quest Bank",
+      bankAccountName: "Quest Esports",
+      bankAccountNumber: "12345678",
+      registrationFeeTiers: JSON.stringify([{ startSlot: 1, endSlot: 3, amount: 2000 }]),
+    });
+    assert.throws(
+      () => tournamentService.normalizeTournamentInput({ body }),
+      (error) => error.statusCode === 400 && /no slots to price/.test(error.message)
+    );
+  } finally {
+    restore();
+  }
+});
+
+test("automatic approval normalizes, persists, preserves, and maps for admins", async () => {
+  let createdData;
+  let updatedData;
+  const existingTournament = {
+    id: "tournament-auto-approve",
+    ...buildAdminTournamentBody(),
+    autoApproveRegistrations: true,
+  };
+  let storedTournament = { ...existingTournament };
+  const prismaMock = {
+    prisma: {
+      tournament: {
+        findFirst: async () => null,
+        findUnique: async () => storedTournament,
+        create: async ({ data }) => {
+          createdData = data;
+          return {
+            ...data,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            _count: { teamRegistrations: 0 },
+            sponsors: [],
+          };
+        },
+        update: async ({ data }) => {
+          updatedData = data;
+          storedTournament = { ...storedTournament, ...data };
+          return {
+            ...storedTournament,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            _count: { teamRegistrations: 0 },
+            sponsors: [],
+          };
+        },
+      },
+      teamRegistration: { findMany: async () => [] },
+    },
+  };
+  const { module: tournamentService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: prismaMock,
+    [uploadModulePath]: {
+      persistTournamentBannerUpload: async () => null,
+      persistTournamentScheduleUpload: async () => null,
+      removeUploadFiles: async () => undefined,
+    },
+    [teamServiceModulePath]: {},
+    [paymentServiceModulePath]: { isPayHereConfigured: () => false },
+    [bracketServiceModulePath]: { buildShortCode: (name) => name, mapPublicBracket: () => null },
+    [loggerModulePath]: {},
+  });
+
+  try {
+    assert.equal(
+      tournamentService.normalizeTournamentInput({ body: buildAdminTournamentBody() })
+        .autoApproveRegistrations,
+      false
+    );
+    for (const value of [true, "true", "on", 1, "1"]) {
+      assert.equal(
+        tournamentService.normalizeTournamentInput({
+          body: buildAdminTournamentBody({ autoApproveRegistrations: value }),
+        }).autoApproveRegistrations,
+        true
+      );
+    }
+    assert.equal(
+      tournamentService.normalizeTournamentInput({
+        body: buildAdminTournamentBody(),
+        existingTournament,
+      }).autoApproveRegistrations,
+      true
+    );
+
+    const created = await tournamentService.createAdminTournament({
+      body: buildAdminTournamentBody({ autoApproveRegistrations: "on" }),
+      files: {},
+    });
+    assert.equal(createdData.autoApproveRegistrations, true);
+    assert.equal(created.autoApproveRegistrations, true);
+
+    const updated = await tournamentService.updateAdminTournament({
+      tournamentId: existingTournament.id,
+      body: buildAdminTournamentBody({ autoApproveRegistrations: "false" }),
+      files: {},
+    });
+    assert.equal(updatedData.autoApproveRegistrations, false);
+    assert.equal(updated.autoApproveRegistrations, false);
+  } finally {
+    restore();
+  }
+});
+
 test("child tournament create and attachment audit series relationship evidence transactionally", async () => {
   const audits = [];
   const existing = { id: "tournament-1", ...buildAdminTournamentBody(), seriesId: null, seriesOrder: null };

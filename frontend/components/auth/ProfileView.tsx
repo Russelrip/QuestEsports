@@ -51,6 +51,10 @@ function RegistrationCards({ entries, empty }: { entries: DashboardRegistration[
   if (entries.length === 0) return <p className="border border-dashed border-white/10 bg-[#11131c] p-6 text-sm text-slate-400">{empty}</p>;
 
   return <div className="grid min-w-0 gap-5 md:grid-cols-2 xl:grid-cols-3">{entries.map((entry) => {
+    // A free tournament has no fee, so its registration carries no payment to
+    // report. Badging it "paid" only raises a question about money nobody was
+    // ever asked for.
+    const isFreeEntry = entry.tournament.paymentMethod === "free";
     const awaitingRoster = entry.entryType === "team" && entry.verificationStatus !== "verified";
     const readyForPayment = entry.entryType === "team" && entry.verificationStatus === "verified" && entry.paymentStatus === "unpaid";
     const needsBankPayment = !awaitingRoster && entry.payment?.provider === "bank_transfer" && entry.payment.status !== "paid";
@@ -79,7 +83,7 @@ function RegistrationCards({ entries, empty }: { entries: DashboardRegistration[
           <div><dt className="text-[9px] uppercase tracking-[0.16em] text-slate-500">Event date</dt><dd className="mt-1.5 text-xs font-semibold text-white">{eventDate}</dd></div>
           <div><dt className="text-[9px] uppercase tracking-[0.16em] text-slate-500">Registration</dt><dd className="mt-1.5 text-xs font-semibold capitalize text-white">{entry.status}</dd></div>
         </dl>
-        <div className="mt-4 flex flex-wrap gap-2"><Badge>{entry.status}</Badge><Badge>{entry.verificationStatus}</Badge><Badge>{entry.payment?.status || entry.paymentStatus}</Badge></div>
+        <div className="mt-4 flex flex-wrap gap-2"><Badge>{entry.status}</Badge><Badge>{entry.verificationStatus}</Badge>{isFreeEntry ? null : <Badge>{entry.payment?.status || entry.paymentStatus}</Badge>}</div>
         <Link href={href} className="mt-5 flex items-center justify-between bg-purple-300 px-4 py-3 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-950 transition hover:bg-purple-200">
           <span>{awaitingRoster ? "Confirm full roster" : needsBankPayment ? "Complete bank transfer" : needsOnlinePayment ? "Retry online payment" : readyForPayment ? "Continue to payment" : "View tournament"}</span><span aria-hidden="true">→</span>
         </Link>

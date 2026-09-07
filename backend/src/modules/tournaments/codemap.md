@@ -23,7 +23,14 @@ non-empty native or Challonge source.
 
 ## Capacity and waitlist flow
 
-`registration-eligibility.js` is the capacity source of truth. Active rows are
+`registration-eligibility.js` is the capacity source of truth. A NULL
+`maxTeams` means unlimited: `hasAvailableCapacity` reports room whatever the
+usage is, and slot allocation numbers past any fixed ceiling so bank-transfer
+references and admin holds keep a stable position. Only NULL means unlimited —
+an absent field is a partial projection and still reads as full, which is the
+pre-existing behavior. An unlimited tournament can never reach its waitlist,
+and slot-numbered fee tiers are refused for one because an unbounded slot range
+cannot be covered. Active rows are
 paid or pending with an unexpired reservation; rejected and waitlisted rows do
 not consume capacity. Admin holds are counted separately and can be consumed
 atomically. `registration-state.js` exposes register, full, closed, and
@@ -49,6 +56,20 @@ timestamp and clearing token metadata.
 Verification is recalculated from any remaining non-captain invite states.
 Payment status remains provider-controlled except for the deliberate
 free-registration/admin-waiver paths.
+
+## Automatic approval
+
+`auto-approval.service.js` approves a registration for a tournament with
+`autoApproveRegistrations` set, and only when nothing is outstanding: status
+`pending`, payment `paid`, and — for a team — verification `verified`. It runs
+inside the caller's transaction at each point where the last outstanding thing
+is settled: registration creation for a free entry,
+`refreshRegistrationVerificationStatus` when the final invitation is accepted,
+and the paid transitions in
+`payment.service.js` and `bank-transfer.service.js`. It produces the same record
+as the admin path — identity snapshot plus an audit row, written with no actor
+and source `system` — but never forces an outstanding invitation to accepted and
+never touches a waitlisted or rejected row, because nobody decided those.
 
 ## Saved-team registration flow
 

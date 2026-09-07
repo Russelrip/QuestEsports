@@ -104,6 +104,15 @@ PATCH /api/admin/team-registrations/:registrationId/status
 
 Only approved registrations appear in public tournament team lists and are used when generating native brackets.
 
+A tournament can be set to **Approve registrations automatically**. A
+registration is then approved the moment nothing is outstanding: the roster has
+accepted its invitations and any fee is provider-confirmed. Automatic approval
+does everything a manual approval does, including the competitive identity
+snapshot, and is recorded in the audit log with no actor and source `system`.
+It never accepts an outstanding invitation on a team's behalf and never
+promotes a waitlisted or rejected registration — those decisions stay with an
+administrator. Leave the setting off to review every entry by hand.
+
 Registration rows may also expose entry type, assigned slot, quoted tier fee/currency, payment provider/order state, and reservation expiry. Payment state should normally be driven by verified PayHere callbacks or bank-transfer review rather than manually changed in the general registration table.
 
 Paid registrations show the participant a live server-backed countdown. When it reaches zero, the reservation is expired atomically, its slot is released, and self-service payment restart/cancellation is disabled. The participant is directed to the tournament contact link (or the site contact page). From `/admin/payments`, an administrator can reopen an expired bank-transfer or PayHere registration when capacity remains; this creates a fresh payment window and bank transfers receive the lowest currently available numbered slot.
@@ -202,6 +211,12 @@ The event filter is enforced in the database by the child tournament's
 client-side filter mistake.
 
 ### Capacity and waitlist operations
+
+A tournament may be configured with no maximum team count at all. Its capacity
+is unlimited, registration never reports slots full, and its waitlist can never
+be reached; the event aggregate reports `availableSlots` as null rather than a
+number that would leave the uncapped child out. Slot-numbered bank-transfer fee
+tiers require a maximum, because an unbounded slot range cannot be priced.
 
 Capacity is per child tournament and the event's `availableSlots` is the sum
 of each child's remaining capacity. Active capacity includes paid

@@ -74,7 +74,9 @@ export default function AdminTournamentsManager() {
       }
       body.append("format", tournament.format);
       body.append("teamSize", String(tournament.teamSize));
-      body.append("maxTeams", String(tournament.maxTeams));
+      // Blank is deliberate: it is how an unlimited tournament states that it
+      // has no ceiling, and "null" would read back as an invalid number.
+      body.append("maxTeams", tournament.maxTeams === null ? "" : String(tournament.maxTeams));
       body.append("prizePool", tournament.prizePool);
       body.append("status", updates.status || tournament.status);
       body.append("isPublished", String(typeof updates.isPublished === "boolean" ? updates.isPublished : tournament.isPublished));
@@ -145,7 +147,7 @@ export default function AdminTournamentsManager() {
                   </div>
                 </div>
                 <div className="grid gap-1 text-sm text-slate-400">
-                  <p>Registrations: <span className="text-white">{tournament.registrationCount} / {tournament.maxTeams}</span></p>
+                  <p>Registrations: <span className="text-white">{tournament.registrationCount} / {tournament.maxTeams ?? "Unlimited"}</span></p>
                   <p>Prize Pool: <span className="text-white">{tournament.prizePool}</span></p>
                 </div>
                 <div className="flex flex-wrap gap-3 xl:justify-end">

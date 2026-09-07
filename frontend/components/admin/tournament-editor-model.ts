@@ -52,6 +52,7 @@ export const mapTournamentToFormValues = (
   allowCoach: Boolean(tournament.allowCoach),
   coachRequired: Boolean(tournament.allowCoach && tournament.coachRequired),
   discordRequired: Boolean(tournament.discordRequired),
+  autoApproveRegistrations: Boolean(tournament.autoApproveRegistrations),
   waitlistEnabled: Boolean(tournament.waitlistEnabled),
   registrationFields: JSON.stringify(tournament.registrationFields || [], null, 2),
   paymentMethod: tournament.paymentMethod ||
@@ -65,7 +66,11 @@ export const mapTournamentToFormValues = (
   bankBranch: tournament.bankBranch || "",
   bankAccountName: tournament.bankAccountName || "",
   bankAccountNumber: tournament.bankAccountNumber || "",
-  maxTeams: String(tournament.maxTeams),
+  // An unlimited tournament edits as a blank field, which is what the form
+  // reads back as "no ceiling".
+  maxTeams: tournament.maxTeams === null || tournament.maxTeams === undefined
+    ? ""
+    : String(tournament.maxTeams),
   prizePool: tournament.prizePool,
   status: tournament.status,
   isPublished: tournament.isPublished,

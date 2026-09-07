@@ -1,6 +1,8 @@
 const { prisma } = require("../../lib/prisma");
 const {
   buildActiveRegistrationWhere,
+  hasAvailableCapacity,
+  hasUnlimitedCapacity,
   isRegistrationActive,
 } = require("../tournaments/registration-eligibility");
 
@@ -24,6 +26,17 @@ const getChildCapacity = (tournament) => {
   return activeRegistrations + adminHolds - activeHeldRegistrations;
 };
 
+// An event with an uncapped child has no meaningful slot count, so the
+// aggregate reports NULL rather than a number that silently omits it.
+const sumAvailableSlots = (tournaments) =>
+  tournaments.some(hasUnlimitedCapacity)
+    ? null
+    : tournaments.reduce(
+        (total, tournament) =>
+          total + Math.max(0, (tournament.maxTeams || 0) - getChildCapacity(tournament)),
+        0
+      );
+
 const deriveRegistrationState = (tournaments, now = new Date()) => {
   if (tournaments.length === 0) return "closed";
 
@@ -32,7 +45,7 @@ const deriveRegistrationState = (tournaments, now = new Date()) => {
     return tournament.status === "registration_open" &&
       !isFuture(tournament.registrationOpenAt, now) &&
       !isPast(tournament.registrationDeadline, now) &&
-      (capacityUsed < (tournament.maxTeams || 0) || tournament.waitlistEnabled);
+      (hasAvailableCapacity(tournament, capacityUsed) || tournament.waitlistEnabled);
   })) {
     return "open";
   }
@@ -97,8 +110,7 @@ const getEventAggregate = async ({ seriesId, includeDrafts = false }) => {
     (total, tournament) => total + (tournament._count?.teamRegistrations || 0),
     0
   );
-  const availableSlots = tournaments.reduce((total, tournament) =>
-    total + Math.max(0, (tournament.maxTeams || 0) - getChildCapacity(tournament)), 0);
+  const availableSlots = sumAvailableSlots(tournaments);
 
   return {
     games: tournaments.length,
@@ -138,7 +150,7 @@ const getEventAggregates = async ({ seriesIds, includeDrafts = false }) => {
       games: children.length,
       teamsRegistered: children.reduce((total, child) => total + (child._count?.teamRegistrations || 0), 0),
       playersRegistered: playerCounts.get(seriesId) || 0,
-      availableSlots: children.reduce((total, child) => total + Math.max(0, (child.maxTeams || 0) - getChildCapacity(child)), 0),
+      availableSlots: sumAvailableSlots(children),
       registrationState: deriveRegistrationState(children),
     }];
   }));

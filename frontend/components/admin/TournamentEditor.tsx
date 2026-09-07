@@ -179,6 +179,10 @@ export default function TournamentEditor({ tournamentId, initialSeriesId, initia
     setFormValues((current) => ({ ...current, [key]: value }));
   };
 
+  // A blank capacity is how the form says "no slot ceiling".
+  const unlimitedTeams = formValues.maxTeams.trim() === "";
+  const isFreeTournament = formValues.paymentMethod === "free";
+
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setSaving(true);
@@ -297,7 +301,14 @@ export default function TournamentEditor({ tournamentId, initialSeriesId, initia
                 <Select
                   id="registrationMode"
                   value={formValues.registrationMode}
-                  onChange={(event) => updateField("registrationMode", event.target.value as Tournament["registrationMode"])}
+                  onChange={(event) => {
+                    const registrationMode = event.target.value as Tournament["registrationMode"];
+                    updateField("registrationMode", registrationMode);
+                    // Open entry means anyone who submits is in, so it starts
+                    // out approving on submission; a slot-based tournament is
+                    // handing out limited places and starts out reviewed.
+                    updateField("autoApproveRegistrations", registrationMode === "open_entry");
+                  }}
                 >
                   <option value="open_entry">Open Entry</option>
                   <option value="slot_based">Slot Based</option>
@@ -332,8 +343,23 @@ export default function TournamentEditor({ tournamentId, initialSeriesId, initia
               <FormField label="Maximum Substitutes" htmlFor="maxSubstitutes" required>
                 <Input id="maxSubstitutes" type="number" min="0" value={formValues.maxSubstitutes} onChange={(event) => updateField("maxSubstitutes", event.target.value)} required />
               </FormField>
-              <FormField label="Max Teams" htmlFor="maxTeams" required>
-                <Input id="maxTeams" type="number" min="1" value={formValues.maxTeams} onChange={(event) => updateField("maxTeams", event.target.value)} required />
+              <FormField label="Max Teams" htmlFor="maxTeams" hint="Leave it unlimited when there is no slot ceiling.">
+                <div className="grid gap-2">
+                  <Input id="maxTeams" type="number" min="1" value={formValues.maxTeams} disabled={unlimitedTeams} placeholder={unlimitedTeams ? "Unlimited" : undefined} onChange={(event) => updateField("maxTeams", event.target.value)} />
+                  <label className="flex items-center gap-2 text-sm text-slate-300">
+                    <input
+                      type="checkbox"
+                      checked={unlimitedTeams}
+                      onChange={(event) => {
+                        const unlimited = event.target.checked;
+                        updateField("maxTeams", unlimited ? "" : "16");
+                        // An uncapped tournament never fills, so a waitlist
+                        // left switched on would be a queue nobody can join.
+                        if (unlimited) updateField("waitlistEnabled", false);
+                      }}
+                    /> Unlimited teams
+                  </label>
+                </div>
               </FormField>
               <FormField label="Prize Pool" htmlFor="prizePool" required>
                 <Input id="prizePool" value={formValues.prizePool} onChange={(event) => updateField("prizePool", event.target.value)} required />
@@ -341,7 +367,11 @@ export default function TournamentEditor({ tournamentId, initialSeriesId, initia
               <div className="grid gap-3 self-end pb-1 text-sm text-slate-300">
                 <label className="flex items-center gap-2"><input type="checkbox" checked={formValues.allowCoach} onChange={(event) => { const allowCoach = event.target.checked; updateField("allowCoach", allowCoach); if (!allowCoach) updateField("coachRequired", false); }} /> Allow a coach</label>
                 <label className="flex items-center gap-2"><input type="checkbox" checked={formValues.coachRequired} disabled={!formValues.allowCoach} onChange={(event) => updateField("coachRequired", event.target.checked)} /> Coach required</label>
-                <label className="flex items-center gap-2"><input type="checkbox" checked={formValues.waitlistEnabled} onChange={(event) => updateField("waitlistEnabled", event.target.checked)} /> Enable waitlist when full</label>
+                <label className="flex items-center gap-2"><input type="checkbox" checked={formValues.waitlistEnabled} disabled={unlimitedTeams} onChange={(event) => updateField("waitlistEnabled", event.target.checked)} /> Enable waitlist when full{unlimitedTeams ? " (unlimited teams never fill)" : ""}</label>
+              </div>
+              <div className="grid gap-1 self-end pb-1 text-sm text-slate-300">
+                <label htmlFor="autoApproveRegistrations" className="flex items-center gap-2"><input id="autoApproveRegistrations" type="checkbox" aria-describedby="autoApproveRegistrations-help" checked={formValues.autoApproveRegistrations} onChange={(event) => updateField("autoApproveRegistrations", event.target.checked)} /> Approve registrations automatically</label>
+                <p id="autoApproveRegistrations-help" className="pl-6 text-xs text-slate-500">A team is approved as soon as nothing is outstanding: the roster has accepted and any fee is confirmed. Leave it off to review every entry yourself.</p>
               </div>
               <div className="grid gap-1 self-end pb-1 text-sm text-slate-300">
                 <label htmlFor="discordRequired" className="flex items-center gap-2"><input id="discordRequired" type="checkbox" aria-describedby="discordRequired-help" checked={formValues.discordRequired} onChange={(event) => updateField("discordRequired", event.target.checked)} /> Require connected Discord identities</label>
@@ -725,7 +755,9 @@ export default function TournamentEditor({ tournamentId, initialSeriesId, initia
                         <p className="text-sm text-slate-400">{registration.captain?.name || registration.captain?.email || registration.contactEmail || "Captain unavailable"}</p>
                       </div>
                       <p className="text-sm text-slate-400">Status: <span className="text-white">{registration.status}</span></p>
-                      <p className="text-sm text-slate-400">Payment: <span className="text-white">{registration.paymentStatus}</span></p>
+                      {/* A free tournament has nothing to pay, so reporting a
+                          payment status would only invite the question. */}
+                      {isFreeTournament ? null : <p className="text-sm text-slate-400">Payment: <span className="text-white">{registration.paymentStatus}</span></p>}
                       <p className="text-sm text-slate-400">Verification: <span className="text-white">{registration.verificationStatus || "pending"}</span></p>
                     </div>
                   ))}

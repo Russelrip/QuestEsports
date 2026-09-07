@@ -1,4 +1,5 @@
 const crypto = require("crypto");
+const { hasAvailableCapacity } = require("./registration-eligibility");
 
 const REFERENCE_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 
@@ -56,7 +57,7 @@ const getTournamentRegistrationState = ({
     };
   }
 
-  if (Number(capacityUsed) < Number(tournament.maxTeams || 0)) {
+  if (hasAvailableCapacity(tournament, capacityUsed)) {
     return {
       state: "registration_open",
       action: "register",

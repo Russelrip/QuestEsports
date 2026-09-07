@@ -7,7 +7,9 @@ const { Prisma } = require("../../generated/prisma");
 const {
   allocateLowestAvailableSlot,
   countTournamentCapacityUsage,
+  hasAvailableCapacity,
 } = require("../tournaments/registration-eligibility");
+const { maybeAutoApproveRegistration } = require("../tournaments/auto-approval.service");
 const {
   assertNoCoachPlayerRoleConflict,
   COACH_PLAYER_ROLE_CONFLICT_MESSAGE,
@@ -258,6 +260,12 @@ const applyTargetStatus = async ({
         where: { id: transaction.registrationId },
         data: { paymentStatus: "paid", reservedUntil: null },
       });
+      // The fee was the last thing this registration was waiting on, so a
+      // tournament that does not review registrations approves it here.
+      await maybeAutoApproveRegistration({
+        tx,
+        registrationId: transaction.registrationId,
+      });
       tournamentRegistrationChanged = true;
     } else if (
       ["cancelled", "failed", "charged_back", "refunded"].includes(status)
@@ -391,7 +399,7 @@ const resolvePaidStatus = async ({ tx, current, now }) => {
       excludeRegistrationId: registration.id,
       now,
     });
-    if (activeCount >= registration.tournament.maxTeams) {
+    if (!hasAvailableCapacity(registration.tournament, activeCount)) {
       return "review_required";
     }
   }
@@ -1064,7 +1072,7 @@ const reopenExpiredTournamentPayment = async ({ transactionId, admin, audit }) =
       tournamentId: current.registration.tournamentId,
       excludeRegistrationId: current.registration.id,
     });
-    if (used >= current.registration.tournament.maxTeams) {
+    if (!hasAvailableCapacity(current.registration.tournament, used)) {
       throw new HttpError(409, "The tournament has no slot available.");
     }
     const isBankTransfer = current.provider === "bank_transfer";
@@ -1198,7 +1206,7 @@ const reconcilePayHerePayment = async ({
           excludeRegistrationId: current.registrationId,
           now,
         });
-        if (otherActiveCount >= current.registration.tournament.maxTeams) {
+        if (!hasAvailableCapacity(current.registration.tournament, otherActiveCount)) {
           throw new HttpError(
             409,
             "No registration slot remains; refund the payment.",

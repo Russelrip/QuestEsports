@@ -562,7 +562,9 @@ const mapTournament = (tournament, { parentWindow } = {}) => {
     reservationMinutes: tournamentWithRegistrationCount.reservationMinutes || 1440,
     bankTransferReviewMinutes:
       tournamentWithRegistrationCount.bankTransferReviewMinutes || 1440,
-    maxTeams: tournamentWithRegistrationCount.maxTeams,
+    // NULL is carried through as NULL: it is the public statement that this
+    // tournament has no slot ceiling, not a missing value.
+    maxTeams: tournamentWithRegistrationCount.maxTeams ?? null,
     waitlistEnabled: Boolean(tournamentWithRegistrationCount.waitlistEnabled),
     registrationAction,
     registrationLabel,
@@ -627,6 +629,7 @@ const mapTournament = (tournament, { parentWindow } = {}) => {
 const mapAdminTournament = (tournament) => ({
   ...mapTournament(tournament),
   discordRequired: Boolean(tournament.discordRequired),
+  autoApproveRegistrations: Boolean(tournament.autoApproveRegistrations),
   bankName: tournament.bankName,
   bankBranch: tournament.bankBranch,
   bankAccountName: tournament.bankAccountName,
@@ -813,7 +816,16 @@ const normalizeTournamentInput = ({ body, existingTournament }) => {
     normalizeInteger(body.seriesOrder) ?? existingTournament?.seriesOrder ?? 100;
   const prizePool = normalizeText(body.prizePool);
   const teamSize = normalizeInteger(body.teamSize);
-  const maxTeams = normalizeInteger(body.maxTeams);
+  // A blank capacity means unlimited registrations. An omitted key is not the
+  // same statement: it keeps the tournament's current ceiling so a partial
+  // update can never uncap a tournament by accident.
+  const maxTeamsProvided = body.maxTeams !== undefined && body.maxTeams !== null;
+  // `String(value || "")` would turn a numeric 0 into a blank, and 0 is a
+  // rejected capacity rather than an unlimited one.
+  const maxTeamsInput = maxTeamsProvided ? String(body.maxTeams).trim() : "";
+  const maxTeams = maxTeamsProvided
+    ? (maxTeamsInput ? normalizeInteger(maxTeamsInput) : null)
+    : existingTournament?.maxTeams ?? null;
   const waitlistEnabled = normalizeBooleanFlag(
     body.waitlistEnabled ?? existingTournament?.waitlistEnabled
   );
@@ -839,6 +851,9 @@ const normalizeTournamentInput = ({ body, existingTournament }) => {
   );
   const discordRequired = normalizeBooleanFlag(
     body.discordRequired ?? existingTournament?.discordRequired
+  );
+  const autoApproveRegistrations = normalizeBooleanFlag(
+    body.autoApproveRegistrations ?? existingTournament?.autoApproveRegistrations
   );
   const showBracketPublicly = normalizeBooleanFlag(
     body.showBracketPublicly ?? existingTournament?.showBracketPublicly ?? true
@@ -945,8 +960,15 @@ const normalizeTournamentInput = ({ body, existingTournament }) => {
     throw new HttpError(400, "Please fill all required tournament fields.");
   }
 
-  if (!teamSize || teamSize <= 0 || !maxTeams || maxTeams <= 0) {
-    throw new HttpError(400, "Team size and max teams must be valid numbers.");
+  if (!teamSize || teamSize <= 0) {
+    throw new HttpError(400, "Team size must be a valid number.");
+  }
+
+  if (maxTeamsInput && (!maxTeams || maxTeams <= 0)) {
+    throw new HttpError(
+      400,
+      "Max teams must be a whole number of at least 1, or left blank for unlimited registrations."
+    );
   }
 
   if (!REGISTRATION_MODES.has(registrationMode)) {
@@ -1018,6 +1040,12 @@ const normalizeTournamentInput = ({ body, existingTournament }) => {
     }
     return { startSlot, endSlot, amount };
   }).sort((left, right) => left.startSlot - right.startSlot);
+  if (paymentMethod === "bank_transfer" && normalizedFeeTiers.length > 0 && maxTeams === null) {
+    throw new HttpError(
+      400,
+      "Slot fee tiers need a max team count; a tournament with unlimited registrations has no slots to price."
+    );
+  }
   if (paymentMethod === "bank_transfer" && normalizedFeeTiers.length > 0) {
     let expectedStart = 1;
     for (const tier of normalizedFeeTiers) {
@@ -1118,6 +1146,7 @@ const normalizeTournamentInput = ({ body, existingTournament }) => {
     allowCoach,
     coachRequired,
     discordRequired,
+    autoApproveRegistrations,
     registrationFields: normalizedRegistrationFields,
     paymentMethod,
     registrationFeeAmount,

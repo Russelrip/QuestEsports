@@ -605,7 +605,9 @@ return `409`, all as `{ success: false, message, details? }`.
   registration members; coaches are excluded.
 - `availableSlots` is the sum of each child's non-negative
   `maxTeams - capacityUsed`. Capacity includes active registrations and admin
-  slot holds, less active registrations already covered by a hold.
+  slot holds, less active registrations already covered by a hold. It is
+  `null` when any child has a `null` `maxTeams`: that child has no ceiling, so
+  no number describes how many places the event has left.
 - `registrationState` is `open` when any child is currently open and has
   capacity, `completed` when every child is completed or past its end date,
   `upcoming` when a child is upcoming or has a future opening/start, and
@@ -636,6 +638,8 @@ Important response fields:
 
 - `displayPriority`
 - `registrationOpenAt`
+- `maxTeams` (`null` means the tournament has no slot ceiling, so it never
+  reports `slots_full` and never opens a waitlist)
 - `registrationState`
 - `isRegistrationOpen`
 - `isSlotsFull`
@@ -1082,7 +1086,11 @@ Main fields:
 - `reservationMinutes`, `bankTransferReviewMinutes`
 - bank name/branch/account fields for bank-transfer events
 - `seriesId`, `seriesOrder`, `rulebookId`
-- `maxTeams`
+- `maxTeams` (send it blank for unlimited registrations; omitting the key
+  leaves the tournament's current ceiling untouched)
+- `autoApproveRegistrations` (approve a registration as soon as its roster is
+  verified and any fee is provider-confirmed, instead of holding it for an
+  admin review)
 - `prizePool`
 - `status`
 - `isPublished`

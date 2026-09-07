@@ -1204,6 +1204,93 @@ test("refreshRegistrationVerificationStatus flags registrations with a declined 
   }
 });
 
+test("the last accepted invite approves a free registration when the tournament asks for it", async () => {
+  const updateCalls = [];
+  const audits = [];
+  let registration = {
+    id: "registration-1",
+    status: "pending",
+    entryType: "team",
+    paymentStatus: "paid",
+    verificationStatus: "pending",
+    tournament: { game: "Valorant", autoApproveRegistrations: true },
+  };
+  const tx = {
+    registrationMember: {
+      findMany: async () => [{ inviteStatus: "accepted" }],
+    },
+    teamRegistration: {
+      findUnique: async () => registration,
+      update: async (args) => {
+        updateCalls.push(args);
+        registration = { ...registration, ...args.data };
+        return { ...registration };
+      },
+    },
+    auditLog: { create: async ({ data }) => { audits.push(data); return data; } },
+  };
+  const { module: teamService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: { prisma: {} },
+    [mailModulePath]: { sendTeamInviteEmail: async () => true },
+  });
+
+  try {
+    const result = await teamService.refreshRegistrationVerificationStatus({
+      tx,
+      registrationId: "registration-1",
+    });
+
+    assert.equal(result, "verified");
+    assert.deepEqual(updateCalls[0].data, { verificationStatus: "verified" });
+    assert.deepEqual(updateCalls[1].data, { status: "approved" });
+    assert.equal(audits.length, 1);
+    assert.equal(audits[0].source, "system");
+  } finally {
+    restore();
+  }
+});
+
+test("a verified roster with an outstanding fee is left for the payment to approve", async () => {
+  const updateCalls = [];
+  const registration = {
+    id: "registration-1",
+    status: "pending",
+    entryType: "team",
+    paymentStatus: "unpaid",
+    verificationStatus: "pending",
+    tournament: { game: "Valorant", autoApproveRegistrations: true },
+  };
+  const tx = {
+    registrationMember: {
+      findMany: async () => [{ inviteStatus: "accepted" }],
+    },
+    teamRegistration: {
+      findUnique: async () => registration,
+      update: async (args) => {
+        updateCalls.push(args);
+        return args.data;
+      },
+    },
+    auditLog: { create: async ({ data }) => data },
+  };
+  const { module: teamService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: { prisma: {} },
+    [mailModulePath]: { sendTeamInviteEmail: async () => true },
+  });
+
+  try {
+    const result = await teamService.refreshRegistrationVerificationStatus({
+      tx,
+      registrationId: "registration-1",
+    });
+
+    assert.equal(result, "verified");
+    assert.equal(updateCalls.length, 1);
+  } finally {
+    restore();
+  }
+});
+
 test("listProfileTeams returns accepted memberships as non-captain teams", async () => {
   const findManyCalls = [];
   const prismaMock = {

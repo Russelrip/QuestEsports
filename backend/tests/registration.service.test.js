@@ -383,6 +383,179 @@ test("paid direct team registration saves the team and dispatches player invites
   }
 });
 
+test("a free open-entry registration is approved on submission when the tournament asks for it", async () => {
+  let createdRegistration;
+  const registrationUpdates = [];
+  const audits = [];
+  const freeTournament = {
+    ...tournament,
+    game: "Valorant",
+    registrationFeeAmount: 0,
+    paymentMethod: "free",
+    autoApproveRegistrations: true,
+    maxTeams: null,
+  };
+  let storedRegistration = null;
+  const tx = {
+    tournament: { findUnique: async () => freeTournament },
+    teamRegistration: {
+      count: async () => 0,
+      findMany: async () => [],
+      findFirst: async () => null,
+      create: async ({ data }) => {
+        createdRegistration = data;
+        storedRegistration = { ...data, tournament: freeTournament };
+        return { ...data, id: data.id };
+      },
+      findUnique: async () => storedRegistration,
+      update: async (args) => {
+        registrationUpdates.push(args);
+        storedRegistration = { ...storedRegistration, ...args.data };
+        return { ...storedRegistration };
+      },
+    },
+    registrationMember: {
+      createMany: async ({ data }) => ({ count: data.length }),
+      findMany: async () => [],
+    },
+    paymentTransaction: { create: async ({ data }) => data },
+    auditLog: { create: async ({ data }) => { audits.push(data); return data; } },
+  };
+  const prisma = {
+    oAuthAccount: {
+      findFirst: async () => ({
+        providerUserId: "900000000000000001",
+        user: { discordTag: "captain-discord" },
+      }),
+      findMany: async () => [],
+    },
+    user: { findMany: async () => [] },
+    tournament: { findFirst: async () => freeTournament },
+    teamRegistration: { findFirst: async () => null },
+    $transaction: async (work) => work(tx),
+  };
+  const { module: registrationService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: { prisma },
+    [uploadModulePath]: {
+      persistTeamLogoUpload: async () => null,
+      teamLogoDirectory: "uploads/team-logos",
+    },
+    [teamServicePath]: {
+      ensureTeamRegistrationSaved: async () => undefined,
+      sendTeamInvites: async () => undefined,
+    },
+    [registrationMailModulePath]: { sendRegistrationReceivedEmail: async () => undefined },
+    [paymentServicePath]: { assertPayHereConfigured: () => undefined },
+    [bankTransferServicePath]: {
+      assertBankTransferConfigured: () => undefined,
+      buildBankTransferInstructions: () => ({}),
+      getBankTransferAmountForSlot: () => 0,
+    },
+  });
+
+  try {
+    const result = await registrationService.createConfiguredRegistration({
+      slug: freeTournament.slug,
+      body: { ...body, members: JSON.stringify([]) },
+      user,
+    });
+
+    // The captain is the whole roster and there is no fee, so nothing is
+    // outstanding at the moment the row is written.
+    assert.equal(createdRegistration.status, "pending");
+    assert.equal(createdRegistration.paymentStatus, "paid");
+    assert.deepEqual(registrationUpdates[0].data, { status: "approved" });
+    assert.equal(result.registration.status, "approved");
+    assert.equal(audits.length, 1);
+    assert.equal(audits[0].actorUserId, null);
+    assert.equal(audits[0].source, "system");
+  } finally {
+    restore();
+  }
+});
+
+test("a reviewed tournament still submits its registration for approval", async () => {
+  let createdRegistration;
+  const registrationUpdates = [];
+  const freeTournament = {
+    ...tournament,
+    game: "Valorant",
+    registrationFeeAmount: 0,
+    paymentMethod: "free",
+    autoApproveRegistrations: false,
+  };
+  let storedRegistration = null;
+  const tx = {
+    tournament: { findUnique: async () => freeTournament },
+    teamRegistration: {
+      count: async () => 0,
+      findMany: async () => [],
+      findFirst: async () => null,
+      create: async ({ data }) => {
+        createdRegistration = data;
+        storedRegistration = { ...data, tournament: freeTournament };
+        return { ...data, id: data.id };
+      },
+      findUnique: async () => storedRegistration,
+      update: async (args) => {
+        registrationUpdates.push(args);
+        return storedRegistration;
+      },
+    },
+    registrationMember: {
+      createMany: async ({ data }) => ({ count: data.length }),
+      findMany: async () => [],
+    },
+    paymentTransaction: { create: async ({ data }) => data },
+    auditLog: { create: async ({ data }) => data },
+  };
+  const prisma = {
+    oAuthAccount: {
+      findFirst: async () => ({
+        providerUserId: "900000000000000001",
+        user: { discordTag: "captain-discord" },
+      }),
+      findMany: async () => [],
+    },
+    user: { findMany: async () => [] },
+    tournament: { findFirst: async () => freeTournament },
+    teamRegistration: { findFirst: async () => null },
+    $transaction: async (work) => work(tx),
+  };
+  const { module: registrationService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: { prisma },
+    [uploadModulePath]: {
+      persistTeamLogoUpload: async () => null,
+      teamLogoDirectory: "uploads/team-logos",
+    },
+    [teamServicePath]: {
+      ensureTeamRegistrationSaved: async () => undefined,
+      sendTeamInvites: async () => undefined,
+    },
+    [registrationMailModulePath]: { sendRegistrationReceivedEmail: async () => undefined },
+    [paymentServicePath]: { assertPayHereConfigured: () => undefined },
+    [bankTransferServicePath]: {
+      assertBankTransferConfigured: () => undefined,
+      buildBankTransferInstructions: () => ({}),
+      getBankTransferAmountForSlot: () => 0,
+    },
+  });
+
+  try {
+    const result = await registrationService.createConfiguredRegistration({
+      slug: freeTournament.slug,
+      body: { ...body, members: JSON.stringify([]) },
+      user,
+    });
+
+    assert.equal(createdRegistration.status, "pending");
+    assert.equal(registrationUpdates.length, 0);
+    assert.equal(result.registration.status, "pending");
+  } finally {
+    restore();
+  }
+});
+
 test("registration service enforces parent event windows on the initial lookup", async () => {
   for (const [label, series] of [
     ["before", { registrationOpenAt: new Date(Date.now() + 60_000), registrationCloseAt: null }],
