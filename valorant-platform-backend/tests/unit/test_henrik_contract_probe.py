@@ -54,7 +54,13 @@ def _account_body(name: str = REAL_NAME, tag: str = REAL_TAG, puuid: str = REAL_
         "data": {
             "puuid": puuid,
             "region": "eu",
-            "account_level": 128,
+            # A long, unmistakable sentinel rather than a realistic level.
+            # The leak assertion below is a substring search over the whole
+            # sanitized blob, and a three-digit value collides with incidental
+            # digits in it -- "128" matched the microseconds of a captured_at
+            # timestamp and failed the run. _project_account drops the field
+            # entirely, so the magnitude is irrelevant to what is under test.
+            "account_level": 8675309421,
             "name": name,
             "tag": tag,
             "card": {"small": "https://example.com/card_small.png", "id": "card_9"},
@@ -359,7 +365,7 @@ def test_cli_live_path_evidence_and_fixtures_are_sanitized(monkeypatch, tmp_path
     stdout, evidence, written = _run_cli(monkeypatch, tmp_path, ["--live"], fake=fake)
 
     blob = stdout + json.dumps(evidence)
-    for raw in (REAL_PUUID, REAL_NAME, REAL_TAG, REAL_MATCH, API_KEY, "Pro Player", "card_9", 128):
+    for raw in (REAL_PUUID, REAL_NAME, REAL_TAG, REAL_MATCH, API_KEY, "Pro Player", "card_9", 8675309421):
         assert str(raw) not in blob
 
     # Generic live_* fixture names only; deterministic names never written.
