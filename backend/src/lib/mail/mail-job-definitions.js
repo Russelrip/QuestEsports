@@ -54,6 +54,7 @@ const processQueuedMailJob = async (payload = {}, { jobId } = {}) => {
             verificationUrl: buildActionUrl(
               "/verify-email",
               getRawToken(payload),
+              payload.redirectTo || null,
             ),
           }),
       });

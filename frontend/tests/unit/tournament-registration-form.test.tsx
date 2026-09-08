@@ -146,16 +146,26 @@ describe("ConfiguredTournamentRegistrationForm", () => {
     expect(coachGroup).toBeInTheDocument();
     expect(within(coachGroup).getByDisplayValue("Saved Coach")).toBeInTheDocument();
     expect(within(coachGroup).getByDisplayValue("coach@example.com")).toBeInTheDocument();
-    expect(within(coachGroup).getByDisplayValue("0771111111")).toBeInTheDocument();
-    // The coach's Discord is resolved from their connected account at
-    // submission, so the form offers nothing to type it into.
+    // A saved team hydrates who is on the roster, and stops there. The phone,
+    // the Discord handle and the game id on an older saved row were typed by a
+    // captain into a previous version of that form: the handle is resolved from
+    // the coach's own connected account at submission, and the game id belongs
+    // to whichever tournament asked for it — replaying it here would fill this
+    // form in with another event's answer, for a different game, and hope
+    // somebody noticed.
+    expect(within(coachGroup).queryByDisplayValue("0771111111")).toBeNull();
     expect(within(coachGroup).queryByDisplayValue("coach-discord")).toBeNull();
-    expect(within(coachGroup).getByDisplayValue("Coach#001")).toBeInTheDocument();
+    expect(within(coachGroup).queryByDisplayValue("Coach#001")).toBeNull();
     expect(screen.getAllByDisplayValue("Saved Coach")).toHaveLength(1);
     expect(screen.getByRole("heading", { name: "Roster member 2" })).toBeInTheDocument();
 
-    const textboxes = screen.getAllByRole("textbox");
-    await user.type(textboxes[7], "Captain#001");
+    // Reusing a saved team no longer fills the game identifiers in, so the
+    // fields this tournament requires are still the captain's to answer — for
+    // this event, under this event's rules.
+    for (const textbox of screen.getAllByRole("textbox")) {
+      const input = textbox as HTMLInputElement;
+      if (input.required && !input.value) await user.type(input, "Captain#001");
+    }
     await user.click(screen.getByText("I have read and accept the tournament rulebook and competition rules."));
     await user.click(screen.getByText("I confirm that the registration information is accurate."));
     await user.click(screen.getByRole("button", { name: "Reserve slot and get bank details" }));

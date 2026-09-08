@@ -613,6 +613,8 @@ export const defaultPageDescriptions = {
   signup:
     "Create a Quest E-sports account to join tournaments, follow events, and stay ready for upcoming competitions.",
   profile: "View your account details and update your player profile.",
+  teamInvite:
+    "Your captain invited you to a Quest E-sports team. Sign in with the email they invited to accept.",
   admin: "Review user activity and monitor Quest E-sports account data.",
   adminUsers:
     "Create, update, and manage Quest E-sports user accounts and admin access.",

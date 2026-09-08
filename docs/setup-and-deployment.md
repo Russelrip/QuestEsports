@@ -115,7 +115,7 @@ SHOP_DELIVERY_FEE_LKR=500
 SHOP_ORDER_RESERVATION_MINUTES=30
 ```
 
-For purely local development, provider credentials can be left blank and `MAIL_DELIVERY_REQUIRED` can remain blank. The backend will still run, but verification, password reset, invite, email-change, and security-alert emails will be skipped instead of sent. Production defaults this flag to true and rejects false or incomplete mail configuration. Production also rejects `JOB_WORKER_ENABLED=false` while queued password-authentication email is required.
+For purely local development, provider credentials can be left blank and `MAIL_DELIVERY_REQUIRED` can remain blank. The backend will still run, but verification, password reset, email-change, and security-alert emails will be skipped instead of sent. Team invitations do not depend on mail at all — the invitation is a database row the invitee finds by signing in. Production defaults this flag to true and rejects false or incomplete mail configuration. Production also rejects `JOB_WORKER_ENABLED=false` while queued password-authentication email is required.
 If OAuth is not being used locally, leave the OAuth client ID and secret values blank.
 
 Frontend `frontend/.env.local`:
@@ -206,7 +206,7 @@ After the first admin exists, additional users can be managed through the admin 
 
 ## Email Configuration
 
-The codebase supports local development without mail delivery. Production requires a configured provider while password authentication is enabled; verification, reset, invite, and security workflows must not silently launch without delivery.
+The codebase supports local development without mail delivery. Production requires a configured provider while password authentication is enabled; verification, reset, and security workflows must not silently launch without delivery. Team invitations are deliberately not among them: see [Email System](./email-system.md).
 
 See [Email System](./email-system.md) for the complete email inventory, trigger rules, action links, token lifetimes, queue behavior, and operational checks.
 
@@ -678,7 +678,7 @@ The backend now uses a persistent `background_jobs` table for email delivery.
 
 Current behavior:
 
-- auth, invite, and security emails are enqueued instead of sent inline during the request
+- auth and security emails are enqueued instead of sent inline during the request
 - the API process starts a polling worker automatically when `JOB_WORKER_ENABLED=true`; the worker handles both transactional email and retryable upload cleanup jobs
 - failed jobs are retried with backoff until `JOB_WORKER_MAX_ATTEMPTS` is reached
 - production startup requires complete mail-provider configuration by default; a delivery failure keeps the job retryable and is never marked succeeded
@@ -815,7 +815,8 @@ Check all of the following:
 - verification emails contain the correct frontend URL
 - email-change confirmation emails contain the correct frontend URL
 - password reset emails contain the correct frontend URL
-- team invite emails contain the correct frontend URL
+- a team invitation appears under `/api/me/invitations` for the invited account, with no invitation email sent
+- a captain's copied onboarding link opens `/team-invite?member=...` and, signed out, shows only generic instructions
 - Google and Discord login redirect back to the expected frontend route when enabled
 - tournament banners render
 - tournament listing cards show prize pool, registration deadline, and tournament start

@@ -3,6 +3,7 @@ const { env } = require("../../config/env");
 const { HttpError } = require("../../lib/http-error");
 const { logger } = require("../../lib/logger");
 const { recordAudit, requestAuditContext } = require("../../lib/audit");
+const { normalizeSafeRedirectPath } = require("../../lib/validation");
 const {
   buildExpiredOAuthFlowCookie,
   buildExpiredOAuthLinkFlowCookie,
@@ -321,11 +322,20 @@ const discordCallback = asyncHandler(async (req, res) => {
   });
 });
 
+// Linking is rarely the thing somebody set out to do. It is the step in front
+// of something else — most often accepting a team invitation, which cannot be
+// done without a connected Discord account. Returning everyone to the account
+// tab drops them one page away from what they were in the middle of, with no
+// sign of where they had got to, so the caller may name where to come back to.
+//
+// Only a path on this site is accepted, by the same normalization the login
+// redirect uses; anything else falls back to the account tab.
 const startOAuthLink = async ({ provider, req, res }) => {
   const { authorizationUrl, flowCookie } = await createOAuthLinkAuthorization({
     provider,
     userId: req.user.id,
-    redirectTo: OAUTH_LINK_PROFILE_REDIRECT,
+    redirectTo:
+      normalizeSafeRedirectPath(req.query.redirect) || OAUTH_LINK_PROFILE_REDIRECT,
   });
 
   res.setHeader("Set-Cookie", flowCookie);
@@ -350,8 +360,13 @@ const startProviderLink = asyncHandler(async (req, res) => {
   await startProviderLinkHandlers[provider](req, res);
 });
 
-const getOAuthLinkRedirect = (marker) =>
-  getAppRedirectUrl(`${OAUTH_LINK_PROFILE_REDIRECT}&oauth=${marker}`);
+// The marker rides on whatever destination the flow was started with, so it
+// cannot assume a query string is already there.
+const getOAuthLinkRedirect = (marker, destination = OAUTH_LINK_PROFILE_REDIRECT) => {
+  const safeDestination = normalizeSafeRedirectPath(destination) || OAUTH_LINK_PROFILE_REDIRECT;
+  const separator = safeDestination.includes("?") ? "&" : "?";
+  return getAppRedirectUrl(`${safeDestination}${separator}oauth=${marker}`);
+};
 
 const recordOptionalSecurityAudit = async (entry) => {
   try {
@@ -382,7 +397,7 @@ const completeOAuthLink = async ({ provider, req, res }) => {
     });
 
     res.setHeader("Set-Cookie", buildExpiredOAuthLinkFlowCookie(provider));
-    res.redirect(getOAuthLinkRedirect("linked"));
+    res.redirect(getOAuthLinkRedirect("linked", result?.redirectTo));
   } catch (error) {
     logger.error("OAuth account link callback failed.", {
       provider,

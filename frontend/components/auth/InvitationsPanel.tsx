@@ -1,15 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useToastStore } from "@/hooks/useToastStore";
 import { getProviderLinkUrl } from "@/lib/account-linking";
+import { invitationsPath } from "@/lib/team-invite-links";
 import {
   fetchMyInvitations,
   respondToInvitation,
   type InvitationReadiness,
+  type InvitationReference,
   type TeamInvitation,
 } from "@/lib/teams";
 
@@ -45,31 +47,60 @@ const formatDeadline = (expiresAt: string | null) => {
   return `Expires in ${days} day${days === 1 ? "" : "s"}`;
 };
 
-export function InvitationsPanel() {
+// What to say about the reference a captain's link carried. Every one of these
+// is about the link, never about the invitation behind it: `mismatch` in
+// particular says only that this account cannot reach it — not whose it is, not
+// which team, not the address it was sent to.
+const REFERENCE_NOTICES: Record<string, { title: string; body: string }> = {
+  mismatch: {
+    title: "This invitation is not for this account",
+    body: "Invitations are attached to the email address they were sent to. Sign out and sign in with the exact address your captain invited, or ask them which one they used.",
+  },
+  answered: {
+    title: "You have already answered this invitation",
+    body: "Nothing further is needed. If you meant to change your answer, ask your captain to invite you again.",
+  },
+  expired: {
+    title: "This invitation ran out",
+    body: "Invitations are open for 72 hours. Ask your captain to send it again and it will reopen for another 72.",
+  },
+};
+
+export function InvitationsPanel({ memberReference = null }: { memberReference?: string | null }) {
   const [invitations, setInvitations] = useState<TeamInvitation[]>([]);
   const [readiness, setReadiness] = useState<InvitationReadiness | null>(null);
+  const [reference, setReference] = useState<InvitationReference | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [respondingId, setRespondingId] = useState<string | null>(null);
   const showToast = useToastStore((state) => state.showToast);
+  const focusedRef = useRef<HTMLLIElement | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      const result = await fetchMyInvitations();
+      const result = await fetchMyInvitations(memberReference);
       setInvitations(result.invitations);
       setReadiness(result.readiness);
+      setReference(result.reference);
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "Could not load your invitations.");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [memberReference]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Somebody who followed a link to one invitation should not have to find it
+  // among the others. It is scrolled to, never auto-answered.
+  useEffect(() => {
+    if (loading || reference?.state !== "waiting") return;
+    focusedRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [loading, reference]);
 
   const respond = async (invitation: TeamInvitation, decision: "accept" | "decline") => {
     setRespondingId(invitation.id);
@@ -94,6 +125,15 @@ export function InvitationsPanel() {
   };
 
   const needsDiscord = readiness ? !readiness.hasDiscord : false;
+  // An unverified address matches no invitation, so it has to be reported as
+  // itself. Told that the link was somebody else's, a player would go and ask
+  // their captain to resend something that was never the problem.
+  const needsVerification = readiness ? readiness.emailVerified === false : false;
+  const referenceNotice =
+    !needsVerification && reference ? REFERENCE_NOTICES[reference.state] : undefined;
+  // Linking is a detour, so it has to come back. Without this the connect
+  // button lands on the account tab and the invitation is a tab away again.
+  const discordLinkUrl = getProviderLinkUrl("discord", invitationsPath(memberReference));
 
   if (loading) {
     return (
@@ -112,6 +152,22 @@ export function InvitationsPanel() {
 
       {error ? <p className="mb-4 text-sm text-rose-300">{error}</p> : null}
 
+      {needsVerification ? (
+        <div className="mb-5 border border-amber-300/25 bg-amber-300/5 p-5">
+          <p className="text-sm font-semibold text-amber-100">Verify your email first</p>
+          <p className="mt-2 text-sm leading-6 text-slate-400">
+            An invitation is addressed to an email address, and Quest will only match one to
+            an address the account has proven it controls. Open the verification link we sent
+            you, then come back — anything waiting for you will be here.
+          </p>
+        </div>
+      ) : referenceNotice ? (
+        <div className="mb-5 border border-amber-300/25 bg-amber-300/5 p-5">
+          <p className="text-sm font-semibold text-amber-100">{referenceNotice.title}</p>
+          <p className="mt-2 text-sm leading-6 text-slate-400">{referenceNotice.body}</p>
+        </div>
+      ) : null}
+
       {needsDiscord && invitations.length > 0 ? (
         <div className="mb-5 border border-amber-300/25 bg-amber-300/5 p-5">
           <p className="text-sm font-semibold text-amber-100">
@@ -124,7 +180,7 @@ export function InvitationsPanel() {
           </p>
           <Button
             className="mt-4"
-            onClick={() => window.location.assign(getProviderLinkUrl("discord"))}
+            onClick={() => window.location.assign(discordLinkUrl)}
           >
             Connect Discord
           </Button>
@@ -143,8 +199,18 @@ export function InvitationsPanel() {
           {invitations.map((invitation) => {
             const deadline = formatDeadline(invitation.expiresAt);
             const busy = respondingId === invitation.id;
+            const focused =
+              reference?.state === "waiting" && reference.member === invitation.id;
             return (
-              <li key={invitation.id} className="border border-white/8 bg-[#11131c] p-5">
+              <li
+                key={invitation.id}
+                ref={focused ? focusedRef : undefined}
+                className={
+                  focused
+                    ? "border border-purple-300/40 bg-[#151327] p-5 shadow-[0_0_0_1px_rgba(192,132,252,0.25)]"
+                    : "border border-white/8 bg-[#11131c] p-5"
+                }
+              >
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="truncate text-lg text-white">{invitation.teamName}</p>

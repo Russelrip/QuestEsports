@@ -79,7 +79,11 @@ export default function SignupForm() {
     try {
       const { response, data } = await apiFetchJson<SignupApiResponse>("/api/signup", {
         method: "POST",
-        json: values,
+        // The destination rides along so the verification email can come back
+        // to it. Somebody who signed up in order to accept a team invitation
+        // cannot answer it until the address is verified, and by the time they
+        // return the link that sent them here is two redirects behind them.
+        json: nextPath ? { ...values, redirect: nextPath } : values,
       });
 
       const errorMessage = getApiErrorMessage(response, data, "Signup failed.");

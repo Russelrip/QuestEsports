@@ -1,8 +1,13 @@
 const { prisma } = require("../../lib/prisma");
-const { env } = require("../../config/env");
 const { logger } = require("../../lib/logger");
 const { createNotification } = require("../notifications/notification.service");
 const { notifyInviteOnDiscord } = require("./invite-discord-notice");
+const {
+  INVITATIONS_PATH,
+  buildInvitationUrl,
+  invitationsPath,
+  onboardingPath,
+} = require("./invite-paths");
 
 // How a roster invitation reaches the person it is for.
 //
@@ -17,10 +22,6 @@ const { notifyInviteOnDiscord } = require("./invite-discord-notice");
 // is usually the channel that actually works: they are teammates, and they were
 // already talking somewhere.
 
-const INVITATIONS_PATH = "/profile?tab=invitations";
-
-const buildInvitationUrl = () =>
-  `${env.APP_URL || "https://questesports.lk"}${INVITATIONS_PATH}`;
 
 // An invitation reaches a Quest account by user link, or by an address the
 // account has proven it controls. An unverified address is never matched:
@@ -78,7 +79,7 @@ const notifyInvite = async ({
         type: "team_invite",
         title: buildTitle({ teamName }),
         body: buildBody({ captainName, teamName, tournamentTitle }),
-        actionUrl: INVITATIONS_PATH,
+        actionUrl: invitationsPath(invitationId),
         userIds: [questUserId],
       });
       inApp = true;
@@ -91,6 +92,7 @@ const notifyInvite = async ({
   }
 
   const discordResult = await notifyInviteOnDiscord({
+    invitationId,
     userId: questUserId,
     emailNormalized,
     recipientName,
@@ -106,7 +108,7 @@ const notifyInvite = async ({
     // Whether this person can be reached inside Quest at all. False means the
     // captain has to send them the link, and the UI has to say so.
     hasQuestAccount: Boolean(questUserId),
-    invitationUrl: buildInvitationUrl(),
+    invitationUrl: buildInvitationUrl(invitationId),
   };
 };
 
@@ -131,5 +133,7 @@ module.exports = {
   notifyInvites,
   findQuestUserForInvite,
   buildInvitationUrl,
+  invitationsPath,
+  onboardingPath,
   INVITATIONS_PATH,
 };

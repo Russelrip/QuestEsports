@@ -37,6 +37,16 @@ export async function unlinkProvider(provider: OAuthProvider): Promise<LinkedPro
   return readProviders(data);
 }
 
-export function getProviderLinkUrl(provider: OAuthProvider): string {
-  return buildApiUrl(`${providerPath(provider)}/link`);
+// Linking is rarely the errand somebody set out on — it is the step in front of
+// something else, most often accepting a team invitation, which cannot be done
+// without a connected Discord account. `redirectTo` says where to come back to,
+// and the backend accepts it only if it is a path on this site.
+export function getProviderLinkUrl(
+  provider: OAuthProvider,
+  redirectTo?: string | null
+): string {
+  const url = buildApiUrl(`${providerPath(provider)}/link`);
+  if (!redirectTo) return url;
+  const separator = url.includes("?") ? "&" : "?";
+  return `${url}${separator}redirect=${encodeURIComponent(redirectTo)}`;
 }

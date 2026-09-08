@@ -34,7 +34,6 @@ Delivery is an at-least-once external side effect: a worker can lose its databas
 | Resent account verification | The existing unverified account email | Eligible `POST /api/email-verification/resend` | `Verify your Quest Esports account` | `${APP_URL}/verify-email?token=...` | 24 hours |
 | Password reset request | The existing account email | Eligible `POST /api/forgot-password` | `Reset your Quest Esports password` | `${APP_URL}/reset-password?token=...` | 20 minutes |
 | Email change confirmation | The requested new email address | Successful authenticated `POST /api/email-change/request` | `Confirm your new Quest Esports email` | `${APP_URL}/confirm-email-change?token=...` | 24 hours |
-| Team invitation | Every non-captain roster member who is not already accepted | Successful tournament registration | `Quest Esports team invitation` | `${APP_URL}/team-invite?token=...` | 72 hours |
 | Registration received | The captain/registrant email | Successful new or retried tournament registration submission | `Your Quest Esports registration was received` | None | No token |
 | Security alert | The account's current primary email | A supported account-security event | Event-specific | Profile link by default | No token |
 
@@ -84,25 +83,15 @@ After confirmation:
 
 The current implementation does not send a separate email-change warning to the old address.
 
-### Team invitations
+### Team invitations — retired
 
-Team invitations are created as part of a successful tournament registration. The registration synchronizes the captain's saved team roster and queues invitations for non-captain members who are not already accepted, including a selected coach. Coaches use the same invitation and acceptance flow as players.
+Quest does not send team-invitation email, and adding one back is not a small change of mind. An invitation used to be answerable only by presenting a token that had been emailed, which made a roster spot exactly as durable as the delivery: an email that never arrived was a spot nobody could take, and the captain's only recourse was to send it again and hope. It also left a credential in an inbox, and in whatever chat the link was forwarded to.
 
-The captain is linked to their account, recorded as accepted, and does not receive an invite. Existing accepted roster members with linked accounts also do not receive another invite. Pending invite links expire after 72 hours.
+An invitation is a `SavedTeamMember` row now, answered by the invitee's identity at `GET /api/me/invitations` and `POST /api/me/invitations/:id/respond`. `EMAIL_TEMPLATE_TYPES.teamInvite` is retired and drains rather than retries — see `backend/src/lib/mail/mail-job-definitions.js`.
 
-The invite page previews the invitation through:
+The notices that remain are in-app notifications and Discord DMs. Both are best effort and neither is the invitation: a notice that reaches nobody costs a nudge, not a roster spot. The captain is told what each channel actually reached, and can copy a member-specific onboarding link when nothing did. Copying a link is never reported as a delivery.
 
-```text
-GET /api/team-invite?token=...
-```
-
-The recipient accepts or declines through:
-
-```text
-POST /api/team-invite/respond
-```
-
-Responding requires a logged-in, verified account whose email matches the invited address. Acceptance links the account to both the actual tournament-registration member and the reusable saved-team member. Registration verification becomes `verified` when every member accepts, `flagged` if anyone declines, and remains `pending` while responses are outstanding.
+See `backend/src/modules/teams/codemap.md` for how an invitation is answered and what propagates from it.
 
 ### Registration received
 
@@ -139,7 +128,9 @@ The following areas collect or display email addresses but do not currently send
 
 Action tokens are cryptographically random 32-byte values represented as hexadecimal strings. The raw token is placed in the email link, while only its SHA-256 hash is stored in PostgreSQL.
 
-Verification, password-reset, and email-change tokens are single-use. Issuing a replacement marks older unused tokens of the same type as used. Team invite token hashes are stored on pending tournament-registration member records and mirrored on the current saved-team member record.
+Verification, password-reset, and email-change tokens are single-use. Issuing a replacement marks older unused tokens of the same type as used.
+
+No invitation token is minted anywhere. `inviteTokenHash` survives as a column and is cleared wherever an old value is still carried: a secret that has stopped meaning anything is not worth keeping a copy of.
 
 `APP_URL` must be the public frontend origin because email links land on frontend pages. For example:
 
@@ -239,7 +230,7 @@ After deploying email-related changes:
 4. Check `background_jobs` for queued or failed jobs and application logs for skipped deliveries.
 5. Confirm the selected provider accepts `MAIL_FROM` for the configured sending domain.
 6. Confirm replacement verification, reset, and email-change links invalidate older links.
-7. Confirm expired team invitations can no longer be accepted or declined.
+7. Confirm no team-invitation mail is enqueued by creating a team, renewing an invitation, or accepting one, while verification, password-reset and email-change mail still are.
 8. In the selected provider dashboard, monitor bounces, complaints, reputation, and sending limits. For SES, also monitor the active Region's quotas.
 
 ## Current Limitations

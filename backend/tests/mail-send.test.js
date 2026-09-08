@@ -58,6 +58,50 @@ test("buildActionUrl encodes a token that would otherwise break the query string
   }
 });
 
+test("buildActionUrl carries a destination back to where the errand started", () => {
+  const { module: mail, restore } = load();
+  try {
+    const url = mail.buildActionUrl(
+      "/verify-email",
+      "abc123",
+      "/profile?tab=invitations&member=member-7"
+    );
+    const parsed = new URL(url);
+    assert.equal(parsed.searchParams.get("token"), "abc123");
+    // Somebody who signed up in order to accept a team invitation cannot answer
+    // it until this address is verified, and by the time they come back the
+    // link that sent them here is two redirects behind them.
+    assert.equal(
+      parsed.searchParams.get("redirect"),
+      "/profile?tab=invitations&member=member-7"
+    );
+  } finally {
+    restore();
+  }
+});
+
+test("buildActionUrl refuses to send anybody off this site", () => {
+  const { module: mail, restore } = load();
+  try {
+    // The destination decides where a page sends somebody. An email is the one
+    // place a hostile value would arrive already looking legitimate, so
+    // anything but a path here is dropped rather than corrected.
+    for (const hostile of [
+      "https://evil.example.com/steal",
+      "//evil.example.com",
+      "/profile%2f..%2fadmin",
+      "\evil.example.com",
+      "javascript:alert(1)",
+    ]) {
+      const parsed = new URL(mail.buildActionUrl("/verify-email", "abc123", hostile));
+      assert.equal(parsed.origin, "https://questesports.lk");
+      assert.equal(parsed.searchParams.get("redirect"), null);
+    }
+  } finally {
+    restore();
+  }
+});
+
 test("nothing is sent when mail is not configured, and the caller is told", async () => {
   const { module: mail, sent, warnings, restore } = load({ configured: false });
   try {

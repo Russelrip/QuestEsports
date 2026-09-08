@@ -18,6 +18,7 @@ import {
   type TeamInviteStatus,
   updateSavedTeam,
 } from "@/lib/teams";
+import { onboardingUrl } from "@/lib/team-invite-links";
 import { getInitials } from "@/lib/utils";
 
 type EditableMember = ManageTeamMemberInput & {
@@ -45,7 +46,7 @@ const INVITE_STATUS_LABELS: Record<TeamInviteStatus, string> = {
 const describeBlocker = (member: EditableMember) => {
   if (member.inviteStatus !== "pending") return null;
   if (member.hasQuestAccount === false) {
-    return "No Quest account yet — send them the invitation link.";
+    return "No Quest account yet. Nothing has reached them — copy their onboarding link and send it.";
   }
   if (member.hasDiscord === false) {
     return "Signed up, but has not connected Discord. They cannot accept until they do.";
@@ -55,14 +56,16 @@ const describeBlocker = (member: EditableMember) => {
 
 const INVITE_RESEND_COOLDOWN_MS = 60 * 1000;
 
+// Role, name and email. A captain is filling this in about other people, and
+// the rest of who somebody is belongs to that person's own account — they bring
+// it with them when they accept. A game identifier is not asked for here at all
+// either: that is a tournament's question, asked by its own form under its own
+// rules, so the same saved team can enter events for different games.
 const emptyMember = (): EditableMember => ({
   key: `${Date.now()}-${Math.random()}`,
   role: "PLAYER",
   name: "",
   email: "",
-  phone: "",
-  discord: "",
-  riotId: "",
 });
 
 export function TeamSummaryGrid({
@@ -163,9 +166,6 @@ export default function TeamManagementPanel({
           role: member.role === "SUBSTITUTE" || member.role === "COACH" ? member.role : "PLAYER",
           name: member.name,
           email: member.email,
-          phone: member.phone || "",
-          discord: member.discord || "",
-          riotId: member.riotId || "",
           inviteStatus: member.inviteStatus,
           originalEmail: member.email,
           inviteSentAt: member.inviteSentAt,
@@ -205,9 +205,6 @@ export default function TeamManagementPanel({
           role: member.role,
           name: member.name,
           email: member.email,
-          phone: member.phone,
-          discord: member.discord,
-          riotId: member.riotId,
         })),
       });
       onTeamUpdated(result.team);
@@ -274,8 +271,15 @@ export default function TeamManagementPanel({
   };
 
   // The channel that always works: the captain already talks to these people.
+  //
+  // The link is that member's, and it is still not a credential — nothing in it
+  // is accepted as authority, and whoever opens it has to sign in as the person
+  // the invitation was addressed to before there is anything to see. What being
+  // member-specific buys is that it lands on the right invitation instead of a
+  // list, and that somebody with no Quest account yet gets told what to do
+  // rather than a login form with no explanation attached.
   const copyInvitationLink = async (member: EditableMember) => {
-    const url = `${window.location.origin}/profile?tab=invitations`;
+    const url = onboardingUrl(window.location.origin, member.key);
     try {
       await navigator.clipboard.writeText(url);
       setCopiedMemberKey(member.key);
@@ -320,7 +324,7 @@ export default function TeamManagementPanel({
           </div>
 
           <section className="grid gap-4">
-            <div className="flex flex-wrap items-end justify-between gap-3"><div><h4 className="text-xl text-white">Roster</h4><p className="mt-1 text-sm text-slate-400">Changing an email creates a new invitation. Accepted members with unchanged emails remain linked. Everyone must connect Discord before they can accept.</p></div><Button type="button" variant="secondary" onClick={() => setMembers((current) => [...current, emptyMember()])} disabled={members.length >= 20}>Add player</Button></div>
+            <div className="flex flex-wrap items-end justify-between gap-3"><div><h4 className="text-xl text-white">Roster</h4><p className="mt-1 text-sm text-slate-400">Role, name and email — everything else about a player comes from their own account when they accept. Changing an email creates a new invitation; accepted members with unchanged emails stay linked. Everyone must connect Discord before they can accept.</p></div><Button type="button" variant="secondary" onClick={() => setMembers((current) => [...current, emptyMember()])} disabled={members.length >= 20}>Add player</Button></div>
             <div className="grid gap-3 border border-purple-300/15 bg-purple-400/[0.03] p-4"><div className="flex items-center justify-between gap-3"><div><p className="font-semibold text-white">{captain?.name || selectedTeam.captainName}</p><p className="text-sm text-slate-400">{captain?.email || "Captain account"}</p></div><Badge>Captain</Badge></div></div>
             {members.map((member, index) => {
               const resendAvailableAt = member.inviteSentAt
@@ -363,7 +367,7 @@ export default function TeamManagementPanel({
                               {nudgingMemberId === member.key ? "Sending..." : emailChanged ? "Save email change first" : resendWaitSeconds > 0 ? `Remind again in ${resendWaitSeconds}s` : member.inviteStatus === "pending" ? "Remind" : "Invite again"}
                             </Button>
                             <Button type="button" variant="secondary" onClick={() => void copyInvitationLink(member)}>
-                              {copiedMemberKey === member.key ? "Link copied" : "Copy invite link"}
+                              {copiedMemberKey === member.key ? "Link copied" : "Copy onboarding link"}
                             </Button>
                           </div>
                         ) : null}
@@ -377,9 +381,6 @@ export default function TeamManagementPanel({
                     <FormField label="Role"><Select value={member.role} onChange={(event) => updateMember(member.key, { role: event.target.value as EditableMember["role"] })}><option value="PLAYER">Player</option><option value="SUBSTITUTE">Substitute</option><option value="COACH">Coach</option></Select></FormField>
                     <FormField label="Name" required><Input required value={member.name} onChange={(event) => updateMember(member.key, { name: event.target.value })} /></FormField>
                     <FormField label="Email" required><Input required type="email" value={member.email} onChange={(event) => updateMember(member.key, { email: event.target.value })} /></FormField>
-                    <FormField label="Phone"><Input type="tel" maxLength={50} value={member.phone} onChange={(event) => updateMember(member.key, { phone: event.target.value })} /></FormField>
-                    <FormField label="Discord"><Input value={member.discord} onChange={(event) => updateMember(member.key, { discord: event.target.value })} /></FormField>
-                    <FormField label="IGN / Game ID"><Input value={member.riotId} placeholder="Exact in-game name or player ID" onChange={(event) => updateMember(member.key, { riotId: event.target.value })} /></FormField>
                   </div>
                 </div>
               );

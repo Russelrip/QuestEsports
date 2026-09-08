@@ -19,6 +19,7 @@ const {
   isValidEmail,
   isPasswordWithinBcryptLimit,
   getSignupFieldErrors,
+  normalizeSafeRedirectPath,
 } = require("../../lib/validation");
 
 const MOBILE_OAUTH_GRANT_MINUTES = 2;
@@ -381,6 +382,10 @@ const createSignup = async ({ body }) => {
       email: user.email,
       firstName: user.firstName,
       rawToken: verificationToken.rawToken,
+      // Someone who signed up in order to accept a team invitation cannot
+      // answer it until this address is verified, and by the time they come
+      // back the link that sent them here is two redirects behind them.
+      redirectTo: normalizeSafeRedirectPath(body.redirect),
     });
   } catch (error) {
     logger.error("Failed to send verification email after signup.", {
