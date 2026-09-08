@@ -152,6 +152,21 @@ expect_refusal() {
   fi
 }
 
+# release.sh requires -x on the evidence consumer, and the rehearsal consumer
+# requires -x on the rehearsal verifier. Git is the only thing that carries that
+# bit onto the host: /var/www/QuestEsports is refreshed by checkout, so a mode
+# fixed by hand is silently reverted on the next deploy and the release refuses
+# again with an unrelated-looking error.
+repo_root="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd -P)"
+for verifier in ops/deploy/verify-backup-evidence.sh ops/rehearsal/verify-rehearsal-evidence.sh; do
+  mode="$(git -C "$repo_root" ls-files -s -- "$verifier" | awk '{print $1}')"
+  if [ "$mode" != 100755 ]; then
+    printf '%s
+' "FAIL: $verifier is $mode in git; it must be 100755 to survive a checkout" >&2
+    exit 1
+  fi
+done
+
 case_dir="$(build_case happy)"
 expect_success 'a complete release-bound evidence set is verified end to end' "$case_dir"
 
