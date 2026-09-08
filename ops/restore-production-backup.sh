@@ -360,7 +360,10 @@ validate_restore_target() {
       "$observed_ssl" == on &&
       "$observed_session_user" == "$restore_role" && -n "$server_addr" &&
       "$server_port" == 5432 && "$observed_appname" == quest-restore-target &&
-      "$server_addr" =~ ^((10|192\.168)\.[0-9]+\.[0-9]+|172\.(1[6-9]|2[0-9]|3[0-1])\.[0-9]+\.[0-9]+)$ ]] || {
+      # inet_server_addr() is an inet whose text form carries the netmask, so the
+      # private address arrives as 172.20.0.2/32. The 10.0.0.0/8 branch also only
+      # matched three octets. Same defect as the backup producer's identity check.
+      "$server_addr" =~ ^(10\.[0-9]+\.[0-9]+\.[0-9]+|192\.168\.[0-9]+\.[0-9]+|172\.(1[6-9]|2[0-9]|3[0-1])\.[0-9]+\.[0-9]+)(/[0-9]{1,2})?$ ]] || {
     echo "Restore target database, PostgreSQL major, TLS, or endpoint identity is not verified." >&2
     exit 1
   }
