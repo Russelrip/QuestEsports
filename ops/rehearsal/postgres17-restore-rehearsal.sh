@@ -353,11 +353,20 @@ while IFS='|' read -r schema tables objects; do [[ "$tables" =~ ^[0-9]+$ && "$ob
 (( public_tables > 0 && valorant_tables > 0 && public_objects > 0 && valorant_objects > 0 )) || fail "schema/object counts are not non-zero"
 ledger() {
   local schema="$1" table="$2" out="$3" count id completion
-  psql_query "$out" "SELECT COALESCE(j->>'id',j->>'migration_id',j->>'migration_name',j->>'name','') || '|' || CASE WHEN COALESCE(j->>'finished_at',j->>'completed_at',j->>'applied_at') IS NOT NULL OR COALESCE(j->>'applied','') IN ('t','true') THEN 'complete' ELSE 'incomplete' END FROM (SELECT to_jsonb(t) AS j FROM \"$schema\".\"$table\" t) rows ORDER BY 1" || return 1
+  psql_query "$out" "SELECT COALESCE(j->>'id',j->>'migration_id',j->>'migration_name',j->>'name','') || '|' || CASE WHEN COALESCE(j->>'finished_at',j->>'completed_at',j->>'applied_at') IS NOT NULL OR COALESCE(j->>'applied','') IN ('t','true') THEN 'complete' WHEN COALESCE(j->>'rolled_back_at','') <> '' THEN 'rolled_back' ELSE 'incomplete' END FROM (SELECT to_jsonb(t) AS j FROM \"$schema\".\"$table\" t) rows ORDER BY 1" || return 1
   count=0
   while IFS='|' read -r id completion; do
-    [[ "$id" =~ ^[A-Za-z0-9_.-]+$ && "$completion" == complete ]] || return 1
-    count=$((count+1))
+    # A rolled-back row is a recorded failure that was dealt with, not a
+    # migration still in flight -- Prisma writes one per failed attempt and
+    # leaves it beside the successful retry. Refusing those meant any database
+    # that had ever retried a migration could never pass this check. Only a row
+    # that neither finished nor rolled back is genuinely unresolved.
+    [[ "$id" =~ ^[A-Za-z0-9_.-]+$ ]] || return 1
+    case "$completion" in
+      complete) count=$((count+1)) ;;
+      rolled_back) ;;
+      *) return 1 ;;
+    esac
   done < "$out"
   (( count > 0 )) || return 1
   printf '%s' "$count"
