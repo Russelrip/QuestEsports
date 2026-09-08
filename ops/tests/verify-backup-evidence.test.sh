@@ -58,16 +58,21 @@ build_case() {
   local case_name="$1"
   local case_dir="$TEST_ROOT/$case_name"
   rm -rf -- "$case_dir"
-  mkdir -p "$case_dir/backups" "$case_dir/bin" "$case_dir/payload/public/poster-images" \
+  mkdir -p "$case_dir/backups" "$case_dir/bin" "$case_dir/payload/uploads/poster-images" \
            "$case_dir/payload/private/event-album-originals" "$case_dir/rehearsal"
-  printf 'poster\n' > "$case_dir/payload/public/poster-images/poster.png"
+  printf 'poster\n' > "$case_dir/payload/uploads/poster-images/poster.png"
   printf 'original\n' > "$case_dir/payload/private/event-album-originals/original.png"
-  inventory_tree "$case_dir/payload/public" "$case_dir/payload/public-upload-inventory.tsv"
+  # Production names the public tree after its upload root -- uploads, not the
+  # scope. The fixture mirrors that, so a consumer that assumes "public" fails
+  # here rather than in front of a real archive.
+  inventory_tree "$case_dir/payload/uploads" "$case_dir/payload/public-upload-inventory.tsv"
   inventory_tree "$case_dir/payload/private" "$case_dir/payload/private-upload-inventory.tsv"
   {
     printf 'release_sha=%s\n' "$RELEASE_SHA"
     printf 'database_scope=application_public_and_valorant_schemas\n'
     printf 'valorant_schema_included=true\n'
+    printf 'public_upload_root=/srv/quest-esports/uploads\n'
+    printf 'private_upload_root=/srv/quest-esports/private\n'
     printf 'public_upload_inventory=public-upload-inventory.tsv\n'
     printf 'private_upload_inventory=private-upload-inventory.tsv\n'
     printf 'public_upload_inventory_sha256=%s\n' "$(sha256sum "$case_dir/payload/public-upload-inventory.tsv" | awk '{print $1}')"
@@ -200,12 +205,23 @@ write_contract "$case_dir"
 expect_refusal 'a non-terminal or failed backup result is refused' "$case_dir" 'backup result is not successful'
 
 case_dir="$(build_case tampered-upload-tree)"
-printf 'tampered\n' > "$case_dir/payload/public/poster-images/poster.png"
+printf 'tampered\n' > "$case_dir/payload/uploads/poster-images/poster.png"
 tar --create --gzip --file "$case_dir/plaintext.tar.gz" -C "$case_dir/payload" .
 cp "$case_dir/plaintext.tar.gz" "$case_dir/backups/$ARCHIVE_NAME"
 printf '%s  %s\n' "$(sha256sum "$case_dir/backups/$ARCHIVE_NAME" | awk '{print $1}')" "$ARCHIVE_NAME" > "$case_dir/backups/$ARCHIVE_NAME.sha256"
 write_contract "$case_dir"
 expect_refusal 'an upload tree that diverges from its source inventory is refused' "$case_dir" 'does not match its source inventory'
+
+# The tree name is taken from the manifest, which is attacker-influenced input in
+# the sense that matters here: it must not be able to point the walk anywhere but
+# a single directory inside the extraction.
+case_dir="$(build_case unsafe-upload-root-name)"
+sed -i 's|^public_upload_root=.*|public_upload_root=/srv/quest-esports/../../etc|' "$case_dir/payload/manifest.txt"
+tar --create --gzip --file "$case_dir/plaintext.tar.gz" -C "$case_dir/payload" .
+cp "$case_dir/plaintext.tar.gz" "$case_dir/backups/$ARCHIVE_NAME"
+printf '%s  %s\n' "$(sha256sum "$case_dir/backups/$ARCHIVE_NAME" | awk '{print $1}')" "$ARCHIVE_NAME" > "$case_dir/backups/$ARCHIVE_NAME.sha256"
+write_contract "$case_dir"
+expect_refusal 'a manifest upload root that escapes the extraction is refused' "$case_dir" 'upload root'
 
 case_dir="$(build_case remote-label-mismatch)"
 CONTRACT_REMOTE_LABELS='primary,secondary' write_contract "$case_dir"
