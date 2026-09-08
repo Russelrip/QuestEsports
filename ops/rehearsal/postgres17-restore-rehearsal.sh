@@ -222,7 +222,7 @@ SELECT pg_sleep(60);
 SQL
   binding_pid=$!
   for attempt in {1..100}; do
-    if [[ -s "$output" ]] && grep -Eq '^quest-rehearsal-[0-9a-f]{64}\|[^|]+\|[^|]+\|[^|]+\|[0-9]+\|[0-9]+$' "$output"; then return 0; fi
+    if [[ -s "$output" ]] && grep -Eq '^quest-rehearsal-[0-9a-f]{40}\|[^|]+\|[^|]+\|[^|]+\|[0-9]+\|[0-9]+$' "$output"; then return 0; fi
     if ! kill -0 "$binding_pid" 2>/dev/null; then wait "$binding_pid" 2>/dev/null || true; binding_pid=""; return 1; fi
     sleep 0.1
   done
@@ -267,7 +267,11 @@ PY
 IFS='|' read -r mapped_host mapped_port <<< "$mapping"
 [[ "$mapped_host" == "$url_host" && "$mapped_port" == "$url_port" && "$url_port" =~ ^[0-9]+$ ]] || fail "DIRECT_URL does not match the inspected container port mapping"
 target_database="${runtime_endpoint##*|}"
-rehearsal_nonce="$(openssl rand -hex 32)" || fail "fresh target-binding nonce could not be generated"
+# PostgreSQL truncates application_name to NAMEDATALEN-1 = 63 bytes. The longest
+# prefix built from this nonce is "quest-runtime-probe-" at 20 characters, so a
+# 40-hex nonce is the largest that survives intact. A 64-hex one was silently
+# cut to 63 and every application_name comparison below could never match.
+rehearsal_nonce="$(openssl rand -hex 20)" || fail "fresh target-binding nonce could not be generated"
 rehearsal_app_name="quest-rehearsal-$rehearsal_nonce"; export PGAPPNAME="$rehearsal_app_name"
 start_binding_session "$rehearsal_app_name" "$scratch/connection-binding" "$scratch/connection-binding.stderr" || fail "target connection binding session could not be held open"
 validate_binding_output "$scratch/connection-binding" "$rehearsal_app_name" || fail "DIRECT_URL active connection binding is malformed"
@@ -335,7 +339,7 @@ print(f"{bindings[0].get('HostIp')}|{bindings[0].get('HostPort')}")
 PY
 )" || fail "post-restore target port mapping is unsafe"
 [[ "$mapping_after" == "$mapping" && "$mapping_after" == "$url_host|$url_port" ]] || fail "post-restore target port mapping changed"
-rehearsal_nonce_after="$(openssl rand -hex 32)" || fail "fresh post-restore target-binding nonce could not be generated"
+rehearsal_nonce_after="$(openssl rand -hex 20)" || fail "fresh post-restore target-binding nonce could not be generated"
 rehearsal_app_name_after="quest-rehearsal-$rehearsal_nonce_after"; export PGAPPNAME="$rehearsal_app_name_after"
 start_binding_session "$rehearsal_app_name_after" "$scratch/connection-binding-after" "$scratch/connection-binding-after.stderr" || fail "post-restore connection binding session could not be held open"
 validate_binding_output "$scratch/connection-binding-after" "$rehearsal_app_name_after" || fail "post-restore active connection binding is malformed"
@@ -399,7 +403,7 @@ runtime_psql_query read "$scratch/quest-read-probe" "SELECT session_user || '|' 
 IFS='|' read -r quest_read_probe_session_user quest_read_probe_current_user quest_read_probe_count quest_read_probe_application_name quest_read_probe_backend_pid quest_read_probe_ssl < "$scratch/quest-read-probe"
 [[ "$quest_read_probe_session_user" == quest_runtime && "$quest_read_probe_current_user" == quest_runtime && "$quest_read_probe_count" =~ ^[0-9]+$ && "$quest_read_probe_application_name" == "$runtime_psql_last_app" && "$quest_read_probe_backend_pid" =~ ^[0-9]+$ && "$quest_read_probe_ssl" == on ]] || fail "Quest database-backed read probe returned an invalid authenticated role, count, nonce session, or TLS status"
 runtime_psql_query write "$scratch/quest-write-probe" "BEGIN; INSERT INTO public.\"users\" (\"id\",\"first_name\",\"last_name\",\"email\",\"email_normalized\",\"username\",\"username_normalized\",\"password_hash\",\"role\",\"updated_at\") VALUES ('00000000-0000-0000-0000-000000000017','Quest','Rehearsal','quest-rehearsal-probe@example.invalid','quest-rehearsal-probe@example.invalid','quest_rehearsal_probe','quest_rehearsal_probe','rehearsal-probe','user',CURRENT_TIMESTAMP); SELECT session_user || '|' || current_user || '|write_verified|' || current_setting('application_name') || '|' || pg_backend_pid() || '|' || COALESCE((SELECT CASE WHEN ssl THEN 'on' ELSE 'off' END FROM pg_stat_ssl WHERE pid=pg_backend_pid()),'missing'); ROLLBACK" || fail "Quest runtime database-backed write probe failed"
-write_probe_row_regex='^quest_runtime\|quest_runtime\|write_verified\|quest-write-probe-[0-9a-f]{64}\|[0-9]+\|on$'
+write_probe_row_regex='^quest_runtime\|quest_runtime\|write_verified\|quest-write-probe-[0-9a-f]{40}\|[0-9]+\|on$'
 [[ "$(grep -Exc "$write_probe_row_regex" "$scratch/quest-write-probe" || true)" == 1 && "$(grep -Fxc 'BEGIN' "$scratch/quest-write-probe" || true)" == 1 && "$(grep -Fxc 'INSERT 0 1' "$scratch/quest-write-probe" || true)" == 1 && "$(grep -Fxc 'ROLLBACK' "$scratch/quest-write-probe" || true)" == 1 ]] || fail "Quest runtime write probe did not return exactly one BEGIN, one single-row INSERT, one proof row, and one ROLLBACK"
 IFS='|' read -r quest_write_probe_session_user quest_write_probe_current_user _ quest_write_probe_application_name quest_write_probe_backend_pid quest_write_probe_ssl < <(grep -E "$write_probe_row_regex" "$scratch/quest-write-probe")
 ! grep -Eiq '(^|[[:space:]])(ERROR|FATAL|PANIC)(:|[[:space:]])' "$scratch/quest-write-probe.stderr" || fail "Quest runtime write probe emitted an error"
