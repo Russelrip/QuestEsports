@@ -355,6 +355,16 @@ expect_new_artifact_refusal() { local label="$1" artifact="$2" expression="$3" e
 expect_new_artifact_refusal "unprotected public table" rls 's/public\tusers\tt/public\tusers\tf/' 'Quest RLS policy is incomplete'
 expect_new_artifact_refusal "policy-count/artifact mismatch" policy-counts 's/^public|2$/public|3/' 'public policy count is not recomputed from the signed artifact'
 expect_new_artifact_refusal "non-permission denial error" cross-schema-denial 's/^error_class=permission_denied$/error_class=timeout/' 'signed cross-schema denial is not bound to its nonce session and TLS'
+# A failed migration attempt stays in the ledger as a rolled_back row beside its
+# successful retry. The rehearsal treats that as settled and counts only applied
+# migrations, so the verifier must accept the row and leave the count alone --
+# production carries two such rows and could otherwise never be verified.
+cp "$tmp/evidence/rehearsal-quest-migrations.tsv" "$tmp/quest-migrations.good"
+printf '%s
+' '20260827_indexes_retry|rolled_back' >> "$tmp/evidence/rehearsal-quest-migrations.tsv"; resign_fixture
+verify_fixture >/dev/null || { echo "FAIL: a settled rolled_back ledger row was refused" >&2; exit 1; }
+echo "ok: rolled_back ledger row is accepted and not counted as applied"
+mv "$tmp/quest-migrations.good" "$tmp/evidence/rehearsal-quest-migrations.tsv"; resign_fixture
 expect_new_artifact_refusal "quiet-mode write output" quest-write-probe '/^BEGIN$/d; /^ROLLBACK$/d' 'signed write probe artifact is invalid'
 expect_new_artifact_refusal "plaintext session" target-session-tls 's/|on$/|off/' 'session-level pg_stat_ssl evidence is invalid or nonce-unbound'
 expect_new_artifact_refusal "failed cleanup" upload-cleanup 's/^status=verified$/status=failed/' 'signed disposable upload cleanup evidence is invalid'
