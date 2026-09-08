@@ -403,4 +403,35 @@ sed "/BACKUP_RCLONE_REMOTES=/,/^secondary=/d; /BACKUP_RCLONE_CONFIGS=/,/^seconda
 printf '%s\n' "BACKUP_RCLONE_REMOTE=one:production" "RCLONE_CONFIG=$TEST_ROOT/primary.conf" >> "$single_env"
 BACKUP_ENV_FILE="$single_env" BACKUP_RELEASE_LOCK_PATH="$TEST_ROOT/single.lock" \
   bash "$ROOT/ops/backup-production.sh" --test-fixture
+
+# The production target identity check, exercised against real probe output.
+# inet_server_addr() is an inet and its text form carries the netmask, so the
+# server reports 172.20.0.2/32; a pattern written for a bare address rejects the
+# very container it is meant to accept. Extracted from the script so the test
+# cannot drift from the condition it guards.
+identity_condition="$(sed -n 's/^\[\[ "$target_probe" =~ \(.*\) \]\] || {$/\1/p' "$ROOT/ops/backup-production-multi-remote.sh")"
+[[ -n "$identity_condition" ]] || { echo "FAIL: could not extract the target identity pattern" >&2; exit 1; }
+identity_matches() {
+  [[ "$1" =~ $identity_condition ]]
+}
+accepted_probes=(
+  "quest|170011|on|quest_backup|172.20.0.2/32|5432|quest-backup-target"
+  "quest|170011|on|quest_backup|172.20.0.2|5432|quest-backup-target"
+  "quest|170011|on|quest_backup|10.1.2.3/16|5432|quest-backup-target"
+  "quest|170011|on|quest_backup|192.168.5.6|5432|quest-backup-target"
+)
+refused_probes=(
+  "quest|170011|off|quest_backup|172.20.0.2/32|5432|quest-backup-target"
+  "quest|170011|on|postgres|172.20.0.2/32|5432|quest-backup-target"
+  "quest|170011|on|quest_backup|8.8.8.8/32|5432|quest-backup-target"
+  "quest|170011|on|quest_backup|172.20.0.2/32|55432|quest-backup-target"
+)
+for probe in "${accepted_probes[@]}"; do
+  identity_matches "$probe" || { echo "FAIL: identity rejected a valid private endpoint: $probe" >&2; exit 1; }
+done
+for probe in "${refused_probes[@]}"; do
+  ! identity_matches "$probe" || { echo "FAIL: identity accepted an unsafe endpoint: $probe" >&2; exit 1; }
+done
+printf '%s\n' 'target identity accepts the private Compose endpoint and refuses unsafe ones'
+
 printf 'backup multi-remote fixture tests passed\n'
