@@ -1079,7 +1079,11 @@ if [[ "$quest_migration_pending" == true || "$valorant_migration_pending" == tru
     root_file "$backup_evidence_consumer"
   fi
   [[ -n "$backup_evidence_consumer" && -x "$backup_evidence_consumer" ]] || die 'release-bound backup evidence consumer is unavailable.'
-  backup_evidence="$(BACKUP_RELEASE_SHA="$release_sha" "$backup_evidence_consumer" --release-sha "$release_sha" 2>/dev/null)" || die 'backup evidence consumer failed.'
+  # The consumer reads BACKUP_EVIDENCE_CONTRACT_FILE from its own environment,
+  # and release.env is sourced here without being exported, so the setting
+  # documented in release.env.example never reached it: a correct contract was
+  # refused as "missing or unsafe" on every migration release.
+  backup_evidence="$(BACKUP_RELEASE_SHA="$release_sha" BACKUP_EVIDENCE_CONTRACT_FILE="${BACKUP_EVIDENCE_CONTRACT_FILE:-}" "$backup_evidence_consumer" --release-sha "$release_sha" 2>/dev/null)" || die 'backup evidence consumer failed.'
   [[ "$backup_evidence" =~ ^verified-complete\ release_sha=${release_sha}\ schemas=verified:public,valorant\ uploads=verified:public,private\ archive=verified\ checksum=verified\ remote=verified$ ]] || die 'backup evidence did not prove the exact release-bound archive, checksum, schemas, uploads, and remote verification contract.'
 fi
 
