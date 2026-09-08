@@ -250,12 +250,15 @@ EOF
   : > "$tmp/target-binding.log"
   if ! env PATH="$tmp/bin:$PATH" REHEARSAL_TIME_COMMAND="$tmp/bin/time" FIXTURE_PAYLOAD_DIR="$tmp/wrapper-payload" TARGET_BINDING_MARKER="$tmp/target-binding.log" SECURITY_VERIFY_COMMAND="$tmp/security-hook" NO_WRITER_ADMISSION_COMMAND="$tmp/no-admission-hook" QUEST_LIVENESS_URL=https://quest-live.test/health QUEST_READINESS_URL=https://quest-ready.test/health VALORANT_HEALTH_URL=https://valorant-health.test/health VALORANT_CA_FILE="$tmp/ca/ca.crt" FREEZE_STATUS_URL=https://freeze.test/status FREEZE_MUTATION_URL=https://freeze.test/mutation FREEZE_CALLBACK_URL=https://freeze.test/callback FAILURE_INJECTION_BAD_CHECKSUM_COMMAND="$tmp/bad_checksum-hook" FAILURE_INJECTION_BAD_DECRYPTION_COMMAND="$tmp/bad_decryption-hook" FAILURE_INJECTION_WRONG_CA_COMMAND="$tmp/wrong_ca-hook" FAILURE_INJECTION_BLOCKED_NETWORK_COMMAND="$tmp/blocked_network-hook" FAILURE_INJECTION_FAILED_SERVICE_HEALTH_COMMAND="$tmp/failed_service_health-hook" FAILURE_INJECTION_ATTEMPTED_MUTATION_CALLBACK_COMMAND="$tmp/attempted_mutation_callback-hook" REHEARSAL_CONFIRMATION=DISPOSABLE_QUEST_REHEARSAL REHEARSAL_EVIDENCE_DIR="$tmp/evidence" BACKUP_ENV_FILE="$tmp/recovery.env" SOURCE_VERSION_EVIDENCE_FILE="$tmp/source-version.env" REHEARSAL_TARGET_SENTINEL_FILE="$tmp/target-sentinel.env" REHEARSAL_SIGNING_PRIVATE_KEY="$tmp/wrapper-signing-private.pem" REHEARSAL_RPO_SECONDS=86400 REHEARSAL_RPO_DECISION=met REHEARSAL_RTO_SECONDS=60 REHEARSAL_RTO_DECISION=met POSTGRES17_BIN="$tmp/bin" bash "$rehearsal" "$tmp/quest-production-20260827T000000Z.tar.gz.enc" >"$tmp/wrapper.log" 2>&1; then echo 'FAIL: wrapper-path target-binding fixture failed' >&2; cat "$tmp/wrapper.log" >&2; exit 1; fi
   env REHEARSAL_TRUSTED_SIGNING_PUBLIC_KEY="$tmp/wrapper-signing-public.pem" bash "$verify" "$tmp/quest-production-20260827T000000Z.tar.gz.enc" "$tmp/evidence" >/dev/null || { echo 'FAIL: wrapper-generated evidence did not pass its verifier' >&2; exit 1; }
-  [[ "$(grep -Ec 'quest-rehearsal-[0-9a-f]{64}\|quest_restore\|quest_recovery_admin\|quest_recovery_admin\|5432\|12345' "$tmp/target-binding.log")" -ge 2 ]] || { echo 'FAIL: wrapper-path fixture did not establish both direct bindings' >&2; cat "$tmp/target-binding.log" >&2; exit 1; }
-  [[ "$(grep -Ec 'quest-rehearsal-[0-9a-f]{64}\|quest_restore\|quest_recovery_admin\|active\|5432\|12345' "$tmp/target-binding.log")" -ge 2 ]] || { echo 'FAIL: wrapper-path fixture did not establish both independent bindings' >&2; cat "$tmp/target-binding.log" >&2; exit 1; }
+  [[ "$(grep -Ec 'quest-rehearsal-[0-9a-f]{40}\|quest_restore\|quest_recovery_admin\|quest_recovery_admin\|5432\|12345' "$tmp/target-binding.log")" -ge 2 ]] || { echo 'FAIL: wrapper-path fixture did not establish both direct bindings' >&2; cat "$tmp/target-binding.log" >&2; exit 1; }
+  [[ "$(grep -Ec 'quest-rehearsal-[0-9a-f]{40}\|quest_restore\|quest_recovery_admin\|active\|5432\|12345' "$tmp/target-binding.log")" -ge 2 ]] || { echo 'FAIL: wrapper-path fixture did not establish both independent bindings' >&2; cat "$tmp/target-binding.log" >&2; exit 1; }
   echo 'ok: successful wrapper-path pre/post evidence generation'
   [[ ! -e "$tmp/wrapper-parent" && ! -e "$tmp/wrapper-parent/public" && ! -e "$tmp/wrapper-parent/private" ]] || { echo 'FAIL: successful rehearsal did not remove disposable wrapper parent and roots' >&2; exit 1; }
 fi
-now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; sha() { for _ in {1..64}; do printf '%s' "$1"; done; }; nonce_value=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa; nonce_after_value=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; sha() { for _ in {1..64}; do printf '%s' "$1"; done; }; # Forty hex characters, matching the wrapper: PostgreSQL truncates
+# application_name at 63 bytes and the longest prefix built from this is
+# "quest-runtime-probe-".
+nonce_value=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa; nonce_after_value=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 printf '%s\n' "format_version=1" "evidence_status=complete" "rehearsal_mode=disposable" "restore_status=verified" "created_at_utc=$now" "restore_start_utc=$now" "restore_end_utc=$now" "restore_duration_seconds=12" "archive_name=quest-production-fixture.tar.gz.enc" "archive_sha256=$(sha a)" "checksum_status=verified" "decryption_status=verified" "manifest_database_scope=application_public_and_valorant_schemas" "manifest_valorant_schema_included=true" "source_postgres_major=17" "source_major_gate=none" "client_psql_major=17" "client_pg_restore_major=17" "client_pg_dump_major=17" "public_table_count=2" "valorant_table_count=2" "public_object_count=3" "valorant_object_count=3" "quest_migration_ledger_status=verified" "quest_migration_count=4" "valorant_migration_ledger_status=verified" "valorant_migration_count=4" "roles_status=verified" "owners_status=verified" "grants_status=verified" "default_acl_status=verified" "extensions_status=verified" "extensions_count=1" "settings_status=verified" "rls_status=verified" "rls_enabled_table_count=2" "rls_table_count=2" "public_upload_file_count=1" "public_upload_byte_count=10" "public_upload_checksum=$(sha b)" "private_upload_file_count=1" "private_upload_byte_count=10" "private_upload_checksum=$(sha c)" "quest_liveness_status=ok" "quest_readiness_status=ok" "quest_database_status=up" "valorant_health_status=ok" "valorant_database_status=up" "valorant_ca_status=verified" "freeze_mode=validation" "writers_disabled=true" "mutation_rejection=verified" "no_writer_admission=verified" "failure_injection_bad_checksum=passed" "failure_injection_bad_decryption=passed" "failure_injection_wrong_ca=passed" "failure_injection_blocked_network=passed" "failure_injection_failed_service_health=passed" "failure_injection_attempted_mutation_callback=passed" "resource_cpu_seconds=1.2" "resource_peak_memory_kb=2048" "resource_disk_bytes=4096" "rto_seconds=30" "rto_decision=met" > "$tmp/evidence/rehearsal-evidence.env"; chmod 600 "$tmp/evidence/rehearsal-evidence.env"
 sed -i 's#quest-production-fixture.tar.gz.enc#quest-production-20260827T000000Z.tar.gz.enc#' "$tmp/evidence/rehearsal-evidence.env"; sed -i 's#restore_duration_seconds=12#restore_duration_seconds=0#' "$tmp/evidence/rehearsal-evidence.env"; printf '%s\n' 'target_postgres_major=17' >> "$tmp/evidence/rehearsal-evidence.env"
 printf '%s\n' 'target_server_version_num=170004' 'target_ssl_status=on' 'public_policy_count=1' 'valorant_policy_count=1' 'runtime_policy_status=verified' 'roles_nobypassrls_status=verified' 'quest_read_write_probe_status=verified' 'quest_write_probe_status=verified' 'cross_schema_denial_status=verified' >> "$tmp/evidence/rehearsal-evidence.env"
@@ -353,4 +356,24 @@ sed -i 's/manifest_valorant_schema_included=true/manifest_valorant_schema_includ
 sed -i 's/manifest_valorant_schema_included=false/manifest_valorant_schema_included=true/' "$tmp/evidence/rehearsal-evidence.env"; resign_fixture; rebind_summary_field valorant_health_status failed; evidence_refused "wrong health evidence" "health status is not ok: valorant_health_status" verify_fixture
 rebind_summary_field valorant_health_status ok; rebind_summary_field valorant_ca_status failed; evidence_refused "wrong CA evidence" "status is not verified: valorant_ca_status" verify_fixture
 rebind_summary_field valorant_ca_status verified; rebind_summary_field freeze_mode off; evidence_refused "blocked writer/freeze evidence" "freeze evidence is incomplete" verify_fixture
+
+# PostgreSQL truncates application_name to NAMEDATALEN-1 = 63 bytes, and the
+# fixture's fake psql does not, so a nonce too long to survive looks fine here
+# and fails against a real server. Compute the longest name the script can build
+# and hold it under the real limit.
+rehearsal_script="$root/ops/rehearsal/postgres17-restore-rehearsal.sh"
+nonce_bytes="$(sed -n 's/^rehearsal_nonce="$(openssl rand -hex \([0-9]*\))".*/\1/p' "$rehearsal_script" | head -1)"
+[[ "$nonce_bytes" =~ ^[0-9]+$ ]] || { echo "FAIL: could not read the rehearsal nonce length" >&2; exit 1; }
+nonce_len=$(( nonce_bytes * 2 ))
+longest_prefix=0
+for prefix in quest-rehearsal- quest-runtime-probe- quest-write-probe- quest-denial-probe- quest-read-probe-; do
+  (( ${#prefix} > longest_prefix )) && longest_prefix=${#prefix}
+done
+longest=$(( longest_prefix + nonce_len ))
+if (( longest > 63 )); then
+  echo "FAIL: longest application_name is $longest bytes; PostgreSQL truncates at 63" >&2
+  exit 1
+fi
+printf '%s\n' "application_name fits PostgreSQL's 63-byte limit (longest $longest)"
+
 echo "PostgreSQL 17 rehearsal fixture tests passed (no Docker, database, VPS, or remote contacted)."
