@@ -6,16 +6,21 @@ OnFailure=quest-esports-backup-failure@%n.service
 
 [Service]
 Type=oneshot
-User=deploy
-Group=deploy
+# Docker socket access is root-equivalent, so granting it to deploy would hand
+# deploy root while appearing not to -- and the production runbook rules that
+# out explicitly: adding deploy to the Docker group 'is not an implicit
+# substitute'. NoNewPrivileges also forecloses a sudo wrapper. So the unit takes
+# the privilege it actually needs, openly, and hands the artifacts back to the
+# deploy group on the way out (see restore_artifact_ownership).
+User=root
 # /etc/quest-esports-backup is root:deploy 0750. backup-client-ca.crt is a
 # root:deploy 0640 trust bundle containing the issuer of quest-postgres.crt;
 # backup-client.{crt,key} are separate root:deploy 0640 client identity files.
 # Deploy is the only non-root identity permitted to traverse/read this material.
 # Server TLS remains under /etc/quest-esports/tls for the UID999 PostgreSQL
 # container contract.
-# The deploy service identity must be able to access the Docker socket so the
-# script can launch its locked-down PostgreSQL client on quest-shared.
+# The Docker socket is writable for the same reason: ProtectSystem=strict mounts
+# /run read-only, and connecting to a unix socket needs write access to it.
 Environment=BACKUP_ENV_FILE=/etc/quest-esports-backup.env
 Environment=POSTGRES_CA_FILE=/etc/quest-esports-backup/backup-client-ca.crt
 Environment=BACKUP_CLIENT_TLS_DIR=/etc/quest-esports-backup
@@ -29,4 +34,4 @@ PrivateTmp=true
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/srv/quest-esports /var/lock/quest-esports-release.lock
+ReadWritePaths=/srv/quest-esports /var/lock/quest-esports-release.lock /run/docker.sock

@@ -187,6 +187,7 @@ identities, then record the resulting ownership and modes:
 | `/srv/quest-esports/uploads` | `deploy:deploy`, `750` |
 | `/srv/quest-esports/private` | `deploy:deploy`, `700` |
 | `/srv/quest-esports/backups` | `deploy:deploy`, `700` |
+| Backup artifacts inside it | `root:deploy`, `0640` |
 | `/opt/quest-esports/releases` | `root:deploy`, `750` |
 | `/etc/quest-esports` | `root:root`, `750` |
 | `/etc/quest-esports-backup` | `root:deploy`, `750` |
@@ -217,6 +218,17 @@ server/container TLS and cannot be traversed by the `deploy:deploy` systemd
 service. Bootstrap must create `/etc/quest-esports-backup` as `root:deploy 0750`,
 then install `backup-client-ca.crt`, `backup-client.crt`, and
 `backup-client.key` there as `root:deploy 0640`. `POSTGRES_CA_FILE` in the
+
+The scheduled backup unit runs as `root`. The containerized PostgreSQL client
+needs the Docker socket, socket access is root-equivalent, and adding `deploy`
+to the Docker group would grant exactly that while appearing not to -- which
+the production runbook forbids outright. `NoNewPrivileges=true` also forecloses
+a sudo wrapper. So the unit takes the privilege openly and gives it straight
+back: `restore_artifact_ownership` chowns the archive, its checksum and the
+per-run result record to `root:deploy 0640` on every exit path, so the
+unprivileged freshness unit can still read them. `ProtectSystem=strict` mounts
+/run read-only, so `/run/docker.sock` is listed in `ReadWritePaths`: connecting
+to a unix socket requires write access to it.
 scheduled backup environment points to the trust bundle in this hierarchy.
 `backup-client-ca.crt` is a deploy-readable copy/bundle containing the issuer of
 `/etc/quest-esports/tls/quest-postgres.crt`, including any intermediate

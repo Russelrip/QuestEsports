@@ -482,6 +482,23 @@ result_path="$BACKUP_ROOT/$archive_name.results"
 # can leave a misleading pending status behind.
 printf 'archive=%s\nrelease_sha=%s\nstatus=running\nexit_status=running\nremote_label\tstatus\n' "$archive_name" "$backup_release_sha" > "$result_path"
 chmod 600 "$result_path"
+# Both invocation paths run as root now: the systemd unit because the
+# containerized PostgreSQL client needs the Docker socket, and the release
+# controller because it always did. root plus `umask 077` writes 0600 root:root
+# artifacts that the deploy-run freshness check cannot read, so ownership is
+# handed over in the same shape the client TLS material already uses --
+# root-owned and group-readable, never world-readable.
+backup_artifact_group="${BACKUP_ARTIFACT_GROUP:-deploy}"
+restore_artifact_ownership() {
+  local artifact
+  [[ "$(id -u)" == 0 ]] || return 0
+  for artifact in "${archive_path:-}" "${checksum_path:-}" "${result_path:-}"; do
+    [[ -n "$artifact" && -f "$artifact" && ! -L "$artifact" ]] || continue
+    chown "0:$backup_artifact_group" "$artifact" 2>/dev/null || true
+    chmod 0640 "$artifact" 2>/dev/null || true
+  done
+}
+
 finalize_result() {
   local status=$?
   trap - EXIT
@@ -494,6 +511,7 @@ finalize_result() {
       sed -i "s/^status=running$/status=failed/; s/^exit_status=running$/exit_status=$status/" "$result_path"
     fi
   fi
+  restore_artifact_ownership
   exit "$status"
 }
 trap finalize_result EXIT

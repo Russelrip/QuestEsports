@@ -111,8 +111,13 @@ test("scheduled backup TLS client material is readable by deploy without weakeni
   assert.match(backupScript, /0:\$\{backup_group_id\} 640/);
   assert.match(backupScript, /backup-client-ca\.crt/);
   assert.match(backupScript, /backup_client_tls_dir.*\/etc\/quest-esports-backup/);
-  assert.match(service, /^User=deploy$/m);
-  assert.match(service, /^Group=deploy$/m);
+  // The unit takes root openly rather than smuggling it in via the Docker
+  // group, which the production runbook forbids, and hands the artifacts back
+  // to the deploy group so the unprivileged freshness check can still read them.
+  assert.match(service, /^User=root$/m);
+  assert.doesNotMatch(service, /^(User|Group)=deploy$/m);
+  assert.match(service, /^ReadWritePaths=.*\/run\/docker\.sock$/m);
+  assert.match(backupScript, /restore_artifact_ownership/);
   assert.match(service, /\/etc\/quest-esports-backup.*0750/);
   assert.match(example, /root:deploy 0640/);
   assert.match(example, /^BACKUP_CLIENT_TLS_DIR=\/etc\/quest-esports-backup$/m);
