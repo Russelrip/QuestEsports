@@ -3454,3 +3454,81 @@ test("a failed write discards the freshly uploaded file", async () => {
     restore();
   }
 });
+
+// The admin registrations screen sends a tournament slug and a status together.
+// Nothing covered the list endpoint's filtering, only the export's, so a filter
+// silently dropped here would not have failed a test.
+test("listTeamRegistrations combines the tournament and status filters and honours pageSize", async () => {
+  const calls = [];
+  const { module: adminService, restore } = loadAdminService({
+    $transaction: async (operations) => Promise.all(operations),
+    teamRegistration: {
+      count: async (args) => {
+        calls.push({ operation: "count", ...args });
+        return 3;
+      },
+      findMany: async (args) => {
+        calls.push({ operation: "findMany", ...args });
+        return [];
+      },
+    },
+    tournament: { findMany: async () => [] },
+  });
+
+  try {
+  const result = await adminService.listTeamRegistrations({
+    tournament: "quest-cup",
+    status: "pending",
+    page: "2",
+    pageSize: "50",
+  });
+
+  const listing = calls.find((call) => call.operation === "findMany");
+  const counting = calls.find((call) => call.operation === "count");
+
+  assert.equal(listing.where.status, "pending");
+  assert.deepEqual(listing.where.tournament.OR, [
+    { id: "quest-cup" },
+    { slug: "quest-cup" },
+    { title: { contains: "quest-cup", mode: "insensitive" } },
+  ]);
+  // The count must see the same filter, or the pager reports a total for a
+  // different query than the rows it is paging.
+  assert.deepEqual(counting.where, listing.where);
+  assert.equal(listing.take, 50);
+  assert.equal(listing.skip, 50);
+  assert.equal(result.pagination.pageSize, 50);
+  } finally {
+    restore();
+  }
+});
+
+// The registrations table offers 100 rows per page. The shared pagination
+// ceiling is 50, so this endpoint opts into a higher one; a request beyond it
+// must still be clamped rather than letting a caller ask for everything.
+test("listTeamRegistrations allows 100 rows per page and clamps beyond it", async () => {
+  const seen = [];
+  const loadWithPageSize = () =>
+    loadAdminService({
+      $transaction: async (operations) => Promise.all(operations),
+      teamRegistration: {
+        count: async () => 0,
+        findMany: async (args) => {
+          seen.push(args.take);
+          return [];
+        },
+      },
+      tournament: { findMany: async () => [] },
+    });
+
+  for (const requested of ["100", "500"]) {
+    const { module: adminService, restore } = loadWithPageSize();
+    try {
+      await adminService.listTeamRegistrations({ pageSize: requested });
+    } finally {
+      restore();
+    }
+  }
+
+  assert.deepEqual(seen, [100, 100]);
+});

@@ -859,8 +859,10 @@ const deleteContactMessage = async (messageId) => {
   }
 };
 
+const REGISTRATION_LIST_MAX_PAGE_SIZE = 100;
+
 const listTeamRegistrations = async (query = {}) => {
-  const pagination = buildPagination(query);
+  const pagination = buildPagination(query, { maxPageSize: REGISTRATION_LIST_MAX_PAGE_SIZE });
   const where = buildRegistrationWhere(query);
 
   const [total, registrations, tournaments] = await prisma.$transaction([

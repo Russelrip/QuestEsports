@@ -7,11 +7,15 @@ const normalizePageNumber = (value, fallback) => {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 };
 
-const buildPagination = ({ page, pageSize }) => ({
+// maxPageSize is opt-in per endpoint rather than a single global ceiling: the
+// admin registrations table needs to show 100 rows at once, and raising the
+// shared limit would widen every other list endpoint's maximum response at the
+// same time.
+const buildPagination = ({ page, pageSize }, { maxPageSize = MAX_PAGE_SIZE } = {}) => ({
   page: normalizePageNumber(page, DEFAULT_PAGE),
   pageSize: Math.min(
     normalizePageNumber(pageSize, DEFAULT_PAGE_SIZE),
-    MAX_PAGE_SIZE
+    normalizePageNumber(maxPageSize, MAX_PAGE_SIZE)
   ),
 });
 

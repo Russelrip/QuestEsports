@@ -126,15 +126,18 @@ describe("admin event form", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     try {
-      actual.useAdminEventRegistrations("event-1", "captain", "valorant-cup", "Valorant", "waitlisted", 3);
+      actual.useAdminEventRegistrations("event-1", "captain", "valorant-cup", "Valorant", "waitlisted", 3, 50);
       const query = mocks.queryCalls.at(-1);
-      expect(query?.key).toEqual(["admin-event-registrations", "event-1", "captain", "valorant-cup", "Valorant", "waitlisted", 3]);
+      // pageSize is part of the key: the admin table lets an operator switch
+      // between 25/50/75/100, and a cached page of the previous size would
+      // otherwise be reused for the new one.
+      expect(query?.key).toEqual(["admin-event-registrations", "event-1", "captain", "valorant-cup", "Valorant", "waitlisted", 3, 50]);
       expect(query?.options).toEqual({ enabled: true });
       await query?.queryFn();
       const requestedUrl = String(fetchMock.mock.calls[0]?.[0]);
       const request = new URL(requestedUrl, "http://localhost");
       expect(request.pathname).toBe("/api/admin/events/event-1/registrations");
-      expect(Object.fromEntries(request.searchParams)).toEqual({ page: "3", pageSize: "10", search: "captain", tournament: "valorant-cup", game: "Valorant", status: "waitlisted" });
+      expect(Object.fromEntries(request.searchParams)).toEqual({ page: "3", pageSize: "50", search: "captain", tournament: "valorant-cup", game: "Valorant", status: "waitlisted" });
     } finally {
       vi.unstubAllGlobals();
     }

@@ -72,9 +72,16 @@ export function useAdminUsers(search: string, roleFilter: string, page: number) 
   });
 }
 
-export function useAdminRegistrations(search: string, tournament: string, status: string, page: number, enabled = true) {
-  return useApiQuery(["admin-registrations", search, tournament, status, page], async () => {
-    const params = createAdminSearchParams(page, 10);
+export function useAdminRegistrations(
+  search: string,
+  tournament: string,
+  status: string,
+  page: number,
+  pageSize: number,
+  enabled = true,
+) {
+  return useApiQuery(["admin-registrations", search, tournament, status, page, pageSize], async () => {
+    const params = createAdminSearchParams(page, pageSize);
     appendIfPresent(params, "search", search);
     appendIfPresent(params, "tournament", tournament);
     appendIfPresent(params, "status", status);
@@ -175,10 +182,13 @@ export function useAdminEventRegistrations(
   game = "",
   status = "",
   page = 1,
+  pageSize = 25,
   enabled = true,
 ) {
-  return useApiQuery(["admin-event-registrations", eventId, search, tournament, game, status, page], async () => {
-    const params = createAdminSearchParams(page, 10);
+  return useApiQuery(
+    ["admin-event-registrations", eventId, search, tournament, game, status, page, pageSize],
+    async () => {
+    const params = createAdminSearchParams(page, pageSize);
     appendIfPresent(params, "search", search);
     appendIfPresent(params, "tournament", tournament);
     appendIfPresent(params, "game", game);
@@ -188,5 +198,7 @@ export function useAdminEventRegistrations(
       tournaments: TournamentOption[];
       pagination: Pagination;
     }>(`/api/admin/events/${eventId}/registrations?${params.toString()}`);
-  }, { enabled });
+    },
+    { enabled },
+  );
 }
