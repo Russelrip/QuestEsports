@@ -28,7 +28,10 @@ membership_count_validation="$(grep -F 'membership_count="$(tr -d '\''[:space:]'
 [[ "$membership_count_validation" == *'[[ "$membership_count" == 0 ]]'* ]] || { echo "FAIL: membership count must validate an explicit zero" >&2; exit 1; }
 for aggregate_query in "$(grep -F 'psql_query "$scratch/grants-status"' "$rehearsal" 2>/dev/null || true)" "$(grep -F 'psql_query "$scratch/grant-aggregate"' "$rehearsal" 2>/dev/null || true)"; do
   [[ "$aggregate_query" == *"WHERE n.nspname='public' AND c.relkind='S'), true)"* && "$aggregate_query" == *"WHERE n.nspname='valorant' AND c.relkind='S'), true)"* ]] || { echo "FAIL: empty sequence aggregates must default to true" >&2; exit 1; }
-  [[ "$aggregate_query" == *"WHERE n.nspname='public' AND c.relkind IN ('r','p','f')), false)"* && "$aggregate_query" == *"WHERE n.nspname='valorant' AND c.relkind IN ('r','p','f')), false)"* ]] || { echo "FAIL: empty table aggregates must default to false" >&2; exit 1; }
+  # The exclusion is asserted alongside the false default: migration ledgers are
+  # migrator bookkeeping that the runtime roles must not reach, in production and
+  # therefore in any faithful restore of it.
+  [[ "$aggregate_query" == *"WHERE n.nspname='public' AND c.relkind IN ('r','p','f') AND c.relname NOT IN ('_prisma_migrations','_migration_ledger')), false)"* && "$aggregate_query" == *"WHERE n.nspname='valorant' AND c.relkind IN ('r','p','f') AND c.relname NOT IN ('_prisma_migrations','_migration_ledger')), false)"* ]] || { echo "FAIL: empty table aggregates must default to false" >&2; exit 1; }
 done
 grant_inventory_query="$(grep -F 'psql_query "$scratch/grants"' "$rehearsal" 2>/dev/null || true)"
 for privilege in \
