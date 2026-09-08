@@ -209,6 +209,16 @@ freshness_service="$root/ops/systemd/quest-esports-backup-freshness.service"
 grep -Fx 'Environment=BACKUP_ENV_FILE=/etc/quest-esports-backup.env' "$backup_service" >/dev/null
 grep -Fx 'After=network-online.target docker.service' "$backup_service" >/dev/null
 grep -Fx 'Wants=network-online.target docker.service' "$backup_service" >/dev/null
+# The unit takes root openly rather than smuggling it in through the Docker
+# group, which the production runbook forbids, and ProtectSystem=strict means
+# the socket has to be writable for a connect() to succeed.
+grep -Fx 'User=root' "$backup_service" >/dev/null
+! grep -Eq '^(User|Group)=deploy$' "$backup_service" >/dev/null
+grep -Fx 'ReadWritePaths=/srv/quest-esports /var/lock/quest-esports-release.lock /run/docker.sock' "$backup_service" >/dev/null
+# The freshness check still runs unprivileged, which is exactly why the backup
+# has to hand its artifacts back to the deploy group.
+grep -Fx 'User=deploy' "$freshness_service" >/dev/null
+grep -F 'restore_artifact_ownership' "$root/ops/backup-production-multi-remote.sh" >/dev/null
 grep -Fx 'Environment=POSTGRES_CA_FILE=/etc/quest-esports-backup/backup-client-ca.crt' "$backup_service" >/dev/null
 grep -Fx 'Environment=BACKUP_CLIENT_CERT_FILE=/etc/quest-esports-backup/backup-client.crt' "$backup_service" >/dev/null
 grep -Fx 'Environment=BACKUP_CLIENT_KEY_FILE=/etc/quest-esports-backup/backup-client.key' "$backup_service" >/dev/null
