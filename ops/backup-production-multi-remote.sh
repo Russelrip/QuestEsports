@@ -572,7 +572,11 @@ if ! target_probe="$(psql_target -tAc "SELECT current_database() || '|' || curre
   echo "PostgreSQL target identity probe failed" >&2
   exit 1
 fi
-[[ "$target_probe" =~ ^quest\|17[0-9]*\|on\|quest_backup\|((10|192\.168)\.[0-9]+\.[0-9]+|172\.(1[6-9]|2[0-9]|3[0-1])\.[0-9]+\.[0-9]+)\|5432\|quest-backup-target$ ]] || {
+# inet_server_addr() is an inet, and its text form carries the netmask, so the
+# private address arrives as 172.20.0.2/32 rather than 172.20.0.2. The 10.0.0.0/8
+# branch also only ever matched three octets, so a Docker network there could
+# never have verified either.
+[[ "$target_probe" =~ ^quest\|17[0-9]*\|on\|quest_backup\|(10\.[0-9]+\.[0-9]+\.[0-9]+|192\.168\.[0-9]+\.[0-9]+|172\.(1[6-9]|2[0-9]|3[0-1])\.[0-9]+\.[0-9]+)(/[0-9]{1,2})?\|5432\|quest-backup-target$ ]] || {
   echo "PostgreSQL target identity is not verified." >&2
   exit 1
 }
