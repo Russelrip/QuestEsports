@@ -275,8 +275,13 @@ rehearsal_nonce="$(openssl rand -hex 20)" || fail "fresh target-binding nonce co
 rehearsal_app_name="quest-rehearsal-$rehearsal_nonce"; export PGAPPNAME="$rehearsal_app_name"
 start_binding_session "$rehearsal_app_name" "$scratch/connection-binding" "$scratch/connection-binding.stderr" || fail "target connection binding session could not be held open"
 validate_binding_output "$scratch/connection-binding" "$rehearsal_app_name" || fail "DIRECT_URL active connection binding is malformed"
+# The container-side probe reaches PostgreSQL over the unix socket, where
+# inet_server_port() is NULL -- it reports the observing connection, not the
+# observed row. Coalescing that to 0 meant this cross-check compared 0 against
+# the binding session's 5432 and could never agree. current_setting('port') is
+# the server's listening port regardless of how the observer connected.
 docker_psql_query() { docker container exec --user postgres "${sentinel_cfg[container_id]}" psql -X -A -t -F '|' -d postgres -c "$2" >"$1" 2>/dev/null; }
-docker_psql_query "$scratch/docker-connection-binding" "SELECT application_name || '|' || datname || '|' || usename || '|' || COALESCE(state,'') || '|' || COALESCE(inet_server_port(),0) || '|' || pid FROM pg_stat_activity WHERE application_name='$rehearsal_app_name' AND backend_type='client backend'" || fail "independent container connection binding probe failed"
+docker_psql_query "$scratch/docker-connection-binding" "SELECT application_name || '|' || datname || '|' || usename || '|' || COALESCE(state,'') || '|' || current_setting('port') || '|' || pid FROM pg_stat_activity WHERE application_name='$rehearsal_app_name' AND backend_type='client backend'" || fail "independent container connection binding probe failed"
 [[ "$(wc -l < "$scratch/docker-connection-binding" | tr -d ' ')" == 1 ]] || fail "independent container connection binding did not observe exactly one active session"
 validate_container_binding "$scratch/docker-connection-binding" || fail "DIRECT_URL active connection does not match the independent container binding"
 stop_binding_session
@@ -343,7 +348,7 @@ rehearsal_nonce_after="$(openssl rand -hex 20)" || fail "fresh post-restore targ
 rehearsal_app_name_after="quest-rehearsal-$rehearsal_nonce_after"; export PGAPPNAME="$rehearsal_app_name_after"
 start_binding_session "$rehearsal_app_name_after" "$scratch/connection-binding-after" "$scratch/connection-binding-after.stderr" || fail "post-restore connection binding session could not be held open"
 validate_binding_output "$scratch/connection-binding-after" "$rehearsal_app_name_after" || fail "post-restore active connection binding is malformed"
-docker_psql_query "$scratch/docker-connection-binding-after" "SELECT application_name || '|' || datname || '|' || usename || '|' || COALESCE(state,'') || '|' || COALESCE(inet_server_port(),0) || '|' || pid FROM pg_stat_activity WHERE application_name='$rehearsal_app_name_after' AND backend_type='client backend'" || fail "post-restore independent container connection binding probe failed"
+docker_psql_query "$scratch/docker-connection-binding-after" "SELECT application_name || '|' || datname || '|' || usename || '|' || COALESCE(state,'') || '|' || current_setting('port') || '|' || pid FROM pg_stat_activity WHERE application_name='$rehearsal_app_name_after' AND backend_type='client backend'" || fail "post-restore independent container connection binding probe failed"
 [[ "$(wc -l < "$scratch/docker-connection-binding-after" | tr -d ' ')" == 1 ]] || fail "post-restore independent container connection binding did not observe exactly one active session"
 rehearsal_app_name="$rehearsal_app_name_after"; validate_container_binding "$scratch/docker-connection-binding-after" || fail "post-restore DIRECT_URL connection does not match the independent container binding"
 nonce_after_sha256="$(printf '%s' "$rehearsal_nonce_after" | sha256sum | cut -d' ' -f1)"
