@@ -15,7 +15,20 @@ if ! docker image inspect "$image" >/dev/null 2>&1; then
 fi
 
 root="$(mktemp -d "${TMPDIR:-/tmp}/quest-postgres-files.XXXXXXXX")"
-trap 'rm -rf -- "$root"' EXIT
+# The backup-client fixture below chowns its directory to root, which leaves the
+# unprivileged test process unable to unlink anything inside it -- rm needs write
+# permission on the containing directory, not on the files. Hand ownership back
+# the same way it was taken, or cleanup fails on Linux while passing on Docker
+# Desktop, where bind-mount ownership is emulated.
+cleanup_fixture_root() {
+  if [ -d "$root" ]; then
+    docker run --rm --network none --user 0:0 --entrypoint sh \
+      --mount "type=bind,source=$root,target=/fixture" \
+      "$image" -ec 'chown -R "$1":"$2" /fixture' -- "$(id -u)" "$(id -g)" >/dev/null 2>&1 || true
+  fi
+  rm -rf -- "$root"
+}
+trap cleanup_fixture_root EXIT
 printf '%s\n' 'disposable-password' > "$root/password"
 printf '%s\n' 'disposable-certificate' > "$root/server.crt"
 printf '%s\n' 'disposable-key' > "$root/server.key"

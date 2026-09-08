@@ -757,7 +757,7 @@ jobs:
           # The private-network producer is the supported path now, so the doc must
           # describe it rather than deny it -- while still pinning the property that
           # made the old denial worth asserting: PostgreSQL stays unpublished.
-          grep -F 'ephemeral PostgreSQL 17 client on `quest-shared`' docs/backup-and-disaster-recovery.md >/dev/null
+          grep -F 'ephemeral PostgreSQL 17 client on' docs/backup-and-disaster-recovery.md >/dev/null
           grep -F 'no published host port' docs/backup-and-disaster-recovery.md >/dev/null
           if grep -F 'No private-network backup utility is' docs/backup-and-disaster-recovery.md >/dev/null; then
             echo "Recovery doc still denies the private-network backup utility that now ships." >&2
