@@ -486,24 +486,33 @@ This workflow validates an encrypted application-database snapshot in disposable
 
 Perform this at least quarterly and after meaningful changes to the backup scripts, database major version, upload layout, encryption, or storage provider.
 
-### Recovery drops the backup role's default privileges
+### The backup role survives a recovery
 
 The restore runs `pg_restore --no-owner --no-acl` and re-derives every default
-privilege from `ops/docker/postgres/init/001-bootstrap-roles.sql`. That file
-does not mention `quest_backup`, but production grants it SELECT on tables and
-USAGE, SELECT on sequences as a default privilege in both schemas -- which is
-how the backup role reaches tables created after it was provisioned.
+privilege from `ops/docker/postgres/init/001-bootstrap-roles.sql`, so anything
+that file does not grant simply does not exist after a recovery.
 
-So a recovered database would not carry those defaults. Existing tables are
-unaffected, because the backup reads them through explicit grants, but any table
-created after the recovery would fall outside the backup role's reach and be
-dumped incomplete without any error. Verified 2026-09-08 by restoring a real
-production archive: the restored database reproduces the canonical twelve
-default-ACL rows exactly, and none of them name `quest_backup`.
+That file used not to mention `quest_backup` at all, while production granted it
+SELECT on tables and USAGE, SELECT on sequences as a *default* privilege in both
+schemas -- which is how the backup role reaches tables created after it was
+provisioned. A recovered database therefore lost those defaults: existing tables
+still worked, because the backup reads them through explicit grants, but any
+table created after the recovery fell outside the backup role's reach and would
+have been dumped incomplete. Verified 2026-09-08 by restoring a real production
+archive, whose default-ACL rows named no `quest_backup`.
 
-The fix is to add those grants to the canonical bootstrap so they survive a
-recovery. It is a provisioning change and is deliberately not bundled with the
-rehearsal corrections.
+The bootstrap now provisions the role itself: it creates `quest_backup`, grants
+USAGE on both schemas, SELECT on existing tables and SELECT, USAGE on existing
+sequences, and -- the part that actually closes the hole -- the matching default
+privileges for future objects. It is granted after the runtime role so the
+resulting aclitem ordering matches what production already holds, and
+`ops/rehearsal/rehearsal-contract.sh` expects those rows, so a recovery that
+fails to reproduce them is now a rehearsal failure rather than a silent gap.
+
+`quest_backup` is created with `BYPASSRLS`. That is deliberate and load-bearing:
+every runtime table carries a row security policy, and a dump taken without it
+would silently omit the rows the policy hides, producing an archive that restores
+cleanly while missing data. The role is otherwise unprivileged and read-only.
 
 ### Phase 8 rehearsal boundary
 

@@ -43,6 +43,9 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'quest_recovery_admin') THEN
     CREATE ROLE quest_recovery_admin LOGIN;
   END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'quest_backup') THEN
+    CREATE ROLE quest_backup LOGIN;
+  END IF;
 END
 $$;
 
@@ -74,6 +77,11 @@ ALTER ROLE val_migrator LOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NORE
 -- out of band; never add a PASSWORD clause here.
 ALTER ROLE quest_recovery_admin LOGIN NOINHERIT SUPERUSER NOCREATEDB CREATEROLE NOREPLICATION BYPASSRLS CONNECTION LIMIT 1;
 ALTER ROLE val_runtime LOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
+-- The backup reader needs BYPASSRLS: every runtime table carries a row security
+-- policy, and a dump taken without it silently omits the rows the policy hides,
+-- producing an archive that restores cleanly while missing data. It is otherwise
+-- unprivileged and read-only.
+ALTER ROLE quest_backup LOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION BYPASSRLS;
 
 -- There are deliberately no migrator SET ROLE memberships. The recovery
 -- superuser operates directly, with session_user=quest_recovery_admin, so the
@@ -88,7 +96,8 @@ BEGIN
     JOIN pg_roles AS granted_role ON granted_role.oid = pg_auth_members.roleid
     JOIN pg_roles AS member_role ON member_role.oid = pg_auth_members.member
     WHERE granted_role.rolname IN ('quest_migrator', 'quest_runtime', 'val_migrator', 'val_runtime')
-       OR member_role.rolname IN ('quest_migrator', 'quest_runtime', 'val_migrator', 'val_runtime', 'quest_recovery_admin')
+       OR granted_role.rolname = 'quest_backup'
+       OR member_role.rolname IN ('quest_migrator', 'quest_runtime', 'val_migrator', 'val_runtime', 'quest_recovery_admin', 'quest_backup')
   LOOP
     EXECUTE format('REVOKE %I FROM %I', membership.granted_role, membership.member_role);
   END LOOP;
@@ -330,7 +339,7 @@ $$;
 DO $$
 BEGIN
   EXECUTE format(
-    'GRANT CONNECT ON DATABASE %I TO quest_migrator, quest_runtime, val_migrator, val_runtime',
+    'GRANT CONNECT ON DATABASE %I TO quest_migrator, quest_runtime, val_migrator, val_runtime, quest_backup',
     current_database()
   );
   EXECUTE format(
@@ -391,6 +400,15 @@ GRANT USAGE ON SCHEMA public TO quest_runtime;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO quest_runtime;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO quest_runtime;
 
+-- The backup reader spans both schemas and is granted after the runtime role so
+-- the resulting aclitem ordering matches what production already holds. Without
+-- these the canonical backup cannot read a recovered database at all, and the
+-- default privileges below are what keep tables created after a recovery inside
+-- the backup instead of silently dropping out of it.
+GRANT USAGE ON SCHEMA public TO quest_backup;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO quest_backup;
+GRANT SELECT, USAGE ON ALL SEQUENCES IN SCHEMA public TO quest_backup;
+
 -- Prisma creates this table through the migrator connection. It must remain
 -- migrator-only even when this bootstrap repairs an existing database after
 -- migrations have already run.
@@ -408,6 +426,10 @@ $$;
 GRANT USAGE ON SCHEMA valorant TO val_runtime;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA valorant TO val_runtime;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA valorant TO val_runtime;
+
+GRANT USAGE ON SCHEMA valorant TO quest_backup;
+GRANT SELECT ON ALL TABLES IN SCHEMA valorant TO quest_backup;
+GRANT SELECT, USAGE ON ALL SEQUENCES IN SCHEMA valorant TO quest_backup;
 
 -- The sibling VALORANT migrator creates this ledger. Repair an existing target
 -- without requiring the table to exist during first bootstrap.
@@ -439,6 +461,10 @@ ALTER DEFAULT PRIVILEGES FOR ROLE quest_migrator IN SCHEMA public
 ALTER DEFAULT PRIVILEGES FOR ROLE quest_migrator IN SCHEMA public
   GRANT USAGE, SELECT ON SEQUENCES TO quest_runtime;
 ALTER DEFAULT PRIVILEGES FOR ROLE quest_migrator IN SCHEMA public
+  GRANT SELECT ON TABLES TO quest_backup;
+ALTER DEFAULT PRIVILEGES FOR ROLE quest_migrator IN SCHEMA public
+  GRANT SELECT, USAGE ON SEQUENCES TO quest_backup;
+ALTER DEFAULT PRIVILEGES FOR ROLE quest_migrator IN SCHEMA public
   REVOKE ALL ON FUNCTIONS FROM PUBLIC;
 ALTER DEFAULT PRIVILEGES FOR ROLE quest_migrator IN SCHEMA public
   REVOKE ALL ON ROUTINES FROM PUBLIC;
@@ -455,6 +481,10 @@ ALTER DEFAULT PRIVILEGES FOR ROLE val_migrator IN SCHEMA valorant
   REVOKE ALL ON SEQUENCES FROM PUBLIC;
 ALTER DEFAULT PRIVILEGES FOR ROLE val_migrator IN SCHEMA valorant
   GRANT USAGE, SELECT ON SEQUENCES TO val_runtime;
+ALTER DEFAULT PRIVILEGES FOR ROLE val_migrator IN SCHEMA valorant
+  GRANT SELECT ON TABLES TO quest_backup;
+ALTER DEFAULT PRIVILEGES FOR ROLE val_migrator IN SCHEMA valorant
+  GRANT SELECT, USAGE ON SEQUENCES TO quest_backup;
 ALTER DEFAULT PRIVILEGES FOR ROLE val_migrator IN SCHEMA valorant
   REVOKE ALL ON FUNCTIONS FROM PUBLIC;
 ALTER DEFAULT PRIVILEGES FOR ROLE val_migrator IN SCHEMA valorant
