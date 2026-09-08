@@ -60,17 +60,18 @@ rehearsal_canonical_acl_rows() {
   # Sequences are 'rU', not 'rwU': the bootstrap grants USAGE, SELECT ON
   # SEQUENCES, so the previous 'w' described a privilege nothing ever granted.
   #
-  # quest_backup appears because the backup role reads through pg_dump and
-  # needs to reach tables created after it was provisioned; without a default
-  # privilege a new table would silently fall out of the backup. Production
-  # grants it SELECT on tables and USAGE, SELECT on sequences in both schemas.
+  # No quest_backup rows, even though production has them. The restore runs
+  # pg_restore with --no-acl and re-derives every default privilege from the
+  # canonical bootstrap, so this describes what a restore guarantees rather than
+  # what production happens to hold. Production's extra quest_backup defaults do
+  # not survive a recovery -- see docs/backup-and-disaster-recovery.md.
   printf '%s\n' \
-    'quest_migrator|public|r|quest_runtime=arwd/quest_migrator,quest_backup=r/quest_migrator' \
-    'quest_migrator|public|S|quest_runtime=rU/quest_migrator,quest_backup=rU/quest_migrator' \
+    'quest_migrator|public|r|quest_runtime=arwd/quest_migrator' \
+    'quest_migrator|public|S|quest_runtime=rU/quest_migrator' \
     'quest_migrator|public|f|quest_migrator=X/quest_migrator' \
     'quest_migrator|public|T|quest_migrator=U/quest_migrator' \
-    'val_migrator|valorant|r|val_runtime=arwd/val_migrator,quest_backup=r/val_migrator' \
-    'val_migrator|valorant|S|val_runtime=rU/val_migrator,quest_backup=rU/val_migrator' \
+    'val_migrator|valorant|r|val_runtime=arwd/val_migrator' \
+    'val_migrator|valorant|S|val_runtime=rU/val_migrator' \
     'val_migrator|valorant|f|val_migrator=X/val_migrator' \
     'val_migrator|valorant|T|val_migrator=U/val_migrator' \
     'quest_migrator|<global>|f|quest_migrator=X/quest_migrator' \

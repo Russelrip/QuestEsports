@@ -486,6 +486,25 @@ This workflow validates an encrypted application-database snapshot in disposable
 
 Perform this at least quarterly and after meaningful changes to the backup scripts, database major version, upload layout, encryption, or storage provider.
 
+### Recovery drops the backup role's default privileges
+
+The restore runs `pg_restore --no-owner --no-acl` and re-derives every default
+privilege from `ops/docker/postgres/init/001-bootstrap-roles.sql`. That file
+does not mention `quest_backup`, but production grants it SELECT on tables and
+USAGE, SELECT on sequences as a default privilege in both schemas -- which is
+how the backup role reaches tables created after it was provisioned.
+
+So a recovered database would not carry those defaults. Existing tables are
+unaffected, because the backup reads them through explicit grants, but any table
+created after the recovery would fall outside the backup role's reach and be
+dumped incomplete without any error. Verified 2026-09-08 by restoring a real
+production archive: the restored database reproduces the canonical twelve
+default-ACL rows exactly, and none of them name `quest_backup`.
+
+The fix is to add those grants to the canonical bootstrap so they survive a
+recovery. It is a provisioning change and is deliberately not bundled with the
+rehearsal corrections.
+
 ### Phase 8 rehearsal boundary
 
 Use `ops/rehearsal/postgres17-restore-rehearsal.sh`, not a direct invocation of
