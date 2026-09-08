@@ -12,7 +12,14 @@ archive="$1"; dir="$2"
 [[ "$archive" == /* && -f "$archive" && ! -L "$archive" ]] || fail "selected archive is missing or unsafe"
 [[ "$(basename "$archive")" =~ ^quest-production-[0-9]{8}T[0-9]{6}Z\.tar\.gz\.enc$ ]] || fail "selected archive basename is invalid"
 checksum="$archive.sha256"; [[ -f "$checksum" && ! -L "$checksum" ]] || fail "selected archive checksum is missing"
-case "${archive,,}" in */questesports*|*/supabase*|*/var/www/quest-esports*|*/srv/quest-esports*|*/production/*) fail "selected archive path looks like production" ;; esac
+# The archive is an encrypted file, and its location says nothing about what
+# the rehearsal restored into: the target is proven separately by the
+# sentinel, nonce, container id and port mapping, and the evidence directory
+# is still refused below if it looks like production. Refusing the canonical
+# backup root here made the gate unsatisfiable, because verify-backup-evidence.sh
+# is required to pass exactly "$BACKUP_ROOT/<archive>" -- /srv/quest-esports/backups
+# in production -- so a correct rehearsal could never be verified.
+case "${archive,,}" in */questesports*|*/supabase*|*/production/*) fail "selected archive path looks like production" ;; esac
 [[ "$dir" == /* && "$dir" != / && -d "$dir" && ! -L "$dir" ]] || fail "evidence directory is missing or unsafe"
 for path in "$archive" "$checksum" "$dir"; do
   while IFS= read -r part; do
