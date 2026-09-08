@@ -217,19 +217,8 @@ while IFS=$'\t' read -r schema table protected policy roles command qual with_ch
   [[ "$schema" == public || "$schema" == valorant ]] || fail "raw RLS schema is unsafe"
   [[ -n "$table" && ( "$protected" == t || "$protected" == f ) && -n "$policy" && -n "$roles" && -n "$command" && -n "$qual" && -n "$with_check" ]] || fail "raw RLS row is incomplete"
   expected_role=quest_runtime; [[ "$schema" == valorant ]] && expected_role=val_runtime
-  # Every row is one table, ledger included: public_table_count/valorant_table_count
-  # come from the schema inventory, which counts the migration ledger too. Only the
-  # runtime *policy* assertion excludes it, so tallying tables inside that exclusion
-  # left the counts short by exactly one per schema and could never match.
-  [[ -z "${seen_runtime_rls_rows["$schema|$table"]+x}" ]] || fail "signed RLS artifact contains duplicate runtime table rows"
-  seen_runtime_rls_rows["$schema|$table"]=1
-  expected_policy_role=quest_runtime; ledger_table=_prisma_migrations; policy_refusal='Quest RLS policy is incomplete'
-  [[ "$schema" == valorant ]] && { expected_policy_role=val_runtime; ledger_table=_migration_ledger; policy_refusal='VALORANT RLS policy is incomplete'; }
-  if [[ "$schema" == public ]]; then public_rls_tables=$((public_rls_tables+1)); else valorant_rls_tables=$((valorant_rls_tables+1)); fi
-  if [[ "$table" != "$ledger_table" ]]; then
-    [[ "$protected" == t && "$policy" == "${table}_runtime_all" && "$roles" == "$expected_policy_role" && "$command" == 'ALL' && "$qual" == true && "$with_check" == true ]] || fail "$policy_refusal"
-    if [[ "$schema" == public ]]; then public_policy_rows=$((public_policy_rows+1)); else valorant_policy_rows=$((valorant_policy_rows+1)); fi
-  fi
+  if [[ "$schema" == valorant && "$table" != _migration_ledger ]]; then [[ -z "${seen_runtime_rls_rows["$schema|$table"]+x}" ]] || fail "signed RLS artifact contains duplicate runtime table rows"; seen_runtime_rls_rows["$schema|$table"]=1; valorant_rls_tables=$((valorant_rls_tables+1)); [[ "$protected" == t && "$policy" == "${table}_runtime_all" && "$roles" == "$expected_role" && "$command" == 'ALL' && "$qual" == true && "$with_check" == true ]] || fail "VALORANT RLS policy is incomplete"; valorant_policy_rows=$((valorant_policy_rows+1)); fi
+  if [[ "$schema" == public && "$table" != _prisma_migrations ]]; then [[ -z "${seen_runtime_rls_rows["$schema|$table"]+x}" ]] || fail "signed RLS artifact contains duplicate runtime table rows"; seen_runtime_rls_rows["$schema|$table"]=1; public_rls_tables=$((public_rls_tables+1)); [[ "$protected" == t && "$policy" == "${table}_runtime_all" && "$roles" == "$expected_role" && "$command" == 'ALL' && "$qual" == true && "$with_check" == true ]] || fail "Quest RLS policy is incomplete"; public_policy_rows=$((public_policy_rows+1)); fi
 done < "$dir/rehearsal-rls.tsv"
 [[ "$public_policy_rows" == "${e[public_policy_count]}" && "$valorant_policy_rows" == "${e[valorant_policy_count]}" && "$public_rls_tables" == "${e[public_table_count]}" && "$valorant_rls_tables" == "${e[valorant_table_count]}" ]] || fail "policy counts do not match semantically validated signed RLS rows"
 [[ "${o[extensions_inventory_sha256]}" == "${e[extensions_inventory_sha256]}" && "${o[settings_inventory_sha256]}" == "${e[settings_inventory_sha256]}" && "${o[extensions_before_inventory_sha256]}" == "${e[extensions_before_inventory_sha256]}" && "${o[settings_before_inventory_sha256]}" == "${e[settings_before_inventory_sha256]}" ]] || fail "inventory binding is inconsistent"
