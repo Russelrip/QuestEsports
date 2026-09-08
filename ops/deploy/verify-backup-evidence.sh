@@ -124,9 +124,17 @@ done
 
 declare -A remote_by_label=()
 declare -A config_by_label=()
-remote_entries="${BACKUP_RCLONE_REMOTES:-}"
+if [[ -n "${BACKUP_RCLONE_REMOTES+x}" ]]; then
+  remote_entries="$BACKUP_RCLONE_REMOTES"
+  config_entries="${BACKUP_RCLONE_CONFIGS:-}"
+else
+  [[ -n "${BACKUP_RCLONE_REMOTE:-}" ]] || refuse 'configured backup remotes are missing'
+  [[ -z "${BACKUP_RCLONE_CONFIGS:-}" ]] || refuse 'configured remote credentials require plural remotes'
+  [[ -n "${RCLONE_CONFIG:-}" ]] || refuse 'configured remote credentials are missing'
+  remote_entries="legacy=${BACKUP_RCLONE_REMOTE}"
+  config_entries="legacy=${RCLONE_CONFIG}"
+fi
 [[ -n "$remote_entries" ]] || refuse 'configured backup remotes are missing'
-config_entries="${BACKUP_RCLONE_CONFIGS:-}"
 [[ -n "$config_entries" ]] || refuse 'configured remote credentials are missing'
 while IFS= read -r config_entry || [[ -n "$config_entry" ]]; do
   [[ "$config_entry" == *=* ]] || refuse 'configured remote credential is malformed'

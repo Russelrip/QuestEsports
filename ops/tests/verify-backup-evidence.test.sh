@@ -155,6 +155,12 @@ expect_refusal() {
 case_dir="$(build_case happy)"
 expect_success 'a complete release-bound evidence set is verified end to end' "$case_dir"
 
+case_dir="$(build_case legacy-single-remote)"
+sed -i '/^BACKUP_RCLONE_REMOTES=/d; /^BACKUP_RCLONE_CONFIGS=/d' "$case_dir/backup.env"
+printf 'BACKUP_RCLONE_REMOTE=primary:quest/backups\nRCLONE_CONFIG=%s\n' "$case_dir/primary.conf" >> "$case_dir/backup.env"
+CONTRACT_REMOTE_LABELS=legacy write_contract "$case_dir"
+expect_success 'the transition-only singular remote contract is verified symmetrically' "$case_dir"
+
 case_dir="$(build_case wrong-release)"
 CONTRACT_RELEASE_SHA=2222222222222222222222222222222222222222 write_contract "$case_dir"
 expect_refusal 'a contract naming another release is refused' "$case_dir" 'not bound to the requested release'

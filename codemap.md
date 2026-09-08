@@ -29,7 +29,10 @@ The API routes and aggregate definitions are mapped in
 - `frontend/` — Next.js public pages, account/registration flows, and web admin.
 - `mobile-admin/` — private Android operations client.
 - `docs/` — API, operational, deployment, recovery, and security contracts.
-- `ops/` — production backup, restore, retention, and freshness tooling.
+- `ops/` — production backup, restore, retention, and freshness tooling. The
+  canonical backup runs an ephemeral, read-only PostgreSQL 17 client on
+  `quest-shared` and verifies the exact Compose database identity before using
+  mTLS; production PostgreSQL remains unpublished on the host.
   - `ops/docker/` — immutable production Compose topology and host Nginx
     ingress; PostgreSQL stays private and application publications are
     loopback-only. The frontend joins the internal application network and a

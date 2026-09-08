@@ -15,11 +15,28 @@ if ! docker image inspect "$image" >/dev/null 2>&1; then
 fi
 
 root="$(mktemp -d "${TMPDIR:-/tmp}/quest-postgres-files.XXXXXXXX")"
-trap 'rm -rf -- "$root"' EXIT
+# The backup-client fixture below chowns its directory to root, which leaves the
+# unprivileged test process unable to unlink anything inside it -- rm needs write
+# permission on the containing directory, not on the files. Hand ownership back
+# the same way it was taken, or cleanup fails on Linux while passing on Docker
+# Desktop, where bind-mount ownership is emulated.
+cleanup_fixture_root() {
+  if [ -d "$root" ]; then
+    docker run --rm --network none --user 0:0 --entrypoint sh \
+      --mount "type=bind,source=$root,target=/fixture" \
+      "$image" -ec 'chown -R "$1":"$2" /fixture' -- "$(id -u)" "$(id -g)" >/dev/null 2>&1 || true
+  fi
+  rm -rf -- "$root"
+}
+trap cleanup_fixture_root EXIT
 printf '%s\n' 'disposable-password' > "$root/password"
 printf '%s\n' 'disposable-certificate' > "$root/server.crt"
 printf '%s\n' 'disposable-key' > "$root/server.key"
 printf '%s\n' 'disposable-ca' > "$root/ca.crt"
+mkdir "$root/backup-client"
+printf '%s\n' 'disposable-backup-ca' > "$root/backup-client/backup-client-ca.crt"
+printf '%s\n' 'disposable-backup-certificate' > "$root/backup-client/backup-client.crt"
+printf '%s\n' 'disposable-backup-key' > "$root/backup-client/backup-client.key"
 chmod 640 "$root/password" "$root/server.key"
 chmod 640 "$root/server.crt"
 chmod 644 "$root/ca.crt"
@@ -29,6 +46,26 @@ chmod 644 "$root/ca.crt"
 docker run --rm --user 0:0 --entrypoint sh \
   --mount "type=bind,source=$root,target=/fixture" \
   "$image" -ec 'chown 0:999 /fixture/password /fixture/server.crt /fixture/server.key; chmod 0640 /fixture/password /fixture/server.crt /fixture/server.key; chown 0:0 /fixture/ca.crt; chmod 0644 /fixture/ca.crt'
+
+# The backup client uses the scheduled service UID with the deploy group, while
+# the mounted TLS directory and files retain their root:deploy 0750/0640 shape.
+docker run --rm --user 0:0 --entrypoint sh \
+  --mount "type=bind,source=$root/backup-client,target=/fixture" \
+  "$image" -ec 'chown 0:1001 /fixture /fixture/*; chmod 0750 /fixture; chmod 0640 /fixture/*'
+
+docker run --rm --network none --user 1002:1001 --read-only --cap-drop ALL \
+  --security-opt no-new-privileges --pids-limit 128 \
+  --tmpfs /tmp:rw,noexec,nosuid,size=16m --entrypoint bash \
+  --mount "type=bind,source=$root/backup-client,target=/run/quest-backup-tls,readonly" \
+  "$image" -ceu '
+    test -r /run/quest-backup-tls/backup-client-ca.crt
+    test -r /run/quest-backup-tls/backup-client.crt
+    test -r /run/quest-backup-tls/backup-client.key
+    test "$(stat -c %a /run/quest-backup-tls)" = 750
+    test "$(stat -c %a /run/quest-backup-tls/backup-client.key)" = 640
+    case "$(/usr/bin/psql --version)" in *"PostgreSQL) 17."*) ;; *) exit 1 ;; esac
+    case "$(/usr/bin/pg_dump --version)" in *"PostgreSQL) 17."*) ;; *) exit 1 ;; esac
+  '
 
 docker run --rm --user 999:999 --entrypoint sh \
   --mount "type=bind,source=$root/password,target=/run/secrets/postgres-admin-password,readonly" \
@@ -47,4 +84,4 @@ docker run --rm --user 999:999 --entrypoint sh \
     test "$(stat -c %a /run/postgresql/tls/server.key)" = 640
   '
 
-printf '%s\n' 'PostgreSQL UID/GID 999 server-file readability fixture passed'
+printf '%s\n' 'PostgreSQL server and backup-client file readability fixtures passed'

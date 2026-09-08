@@ -207,6 +207,8 @@ grep -F -- 'REVOKE ALL ON SCHEMA public FROM val_runtime' "$test_root/psql.log" 
 backup_service="$root/ops/systemd/quest-esports-backup.service"
 freshness_service="$root/ops/systemd/quest-esports-backup-freshness.service"
 grep -Fx 'Environment=BACKUP_ENV_FILE=/etc/quest-esports-backup.env' "$backup_service" >/dev/null
+grep -Fx 'After=network-online.target docker.service' "$backup_service" >/dev/null
+grep -Fx 'Wants=network-online.target docker.service' "$backup_service" >/dev/null
 grep -Fx 'Environment=POSTGRES_CA_FILE=/etc/quest-esports-backup/backup-client-ca.crt' "$backup_service" >/dev/null
 grep -Fx 'Environment=BACKUP_CLIENT_CERT_FILE=/etc/quest-esports-backup/backup-client.crt' "$backup_service" >/dev/null
 grep -Fx 'Environment=BACKUP_CLIENT_KEY_FILE=/etc/quest-esports-backup/backup-client.key' "$backup_service" >/dev/null

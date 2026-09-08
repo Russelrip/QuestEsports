@@ -386,7 +386,7 @@ test("operator documentation agrees on cutover, TLS, backup, and remaining host 
   const backupImplementation = read("ops/backup-production-multi-remote.sh");
   const backupExample = read("ops/quest-esports-backup.env.example");
 
-  for (const [name, document] of Object.entries({ setup, recovery, environment })) {
+  for (const [name, document] of Object.entries({ setup, environment })) {
     const normalized = document.replace(/\s+/g, " ");
     assert.match(normalized, /2026-08-31/);
     assert.match(normalized, /PostgreSQL \*{0,2}17\.11\*{0,2}/);
@@ -395,6 +395,14 @@ test("operator documentation agrees on cutover, TLS, backup, and remaining host 
     assert.match(normalized, /Supabase[^.]*stale[^.]*(?:not a rollback target|not.*rollback)/i, name);
     assert.match(normalized, /No rehearsal was performed|rehearsal[^.]*skipped|rehearsal[^.]*not performed/i, name);
   }
+  const normalizedRecovery = recovery.replace(/\s+/g, " ");
+  assert.match(normalizedRecovery, /2026-08-31/);
+  assert.match(normalizedRecovery, /PostgreSQL \*{0,2}17\*{0,2}/);
+  assert.match(normalizedRecovery, /quest-prod-postgres-1/);
+  assert.match(normalizedRecovery, /quest-postgres:5432/);
+  assert.match(normalizedRecovery, /no published host port/i);
+  assert.match(normalizedRecovery, /Supabase[^.]*stale[^.]*(?:not a rollback target|not.*rollback)/i);
+  assert.match(normalizedRecovery, /rehearsal[^.]*skipped|rehearsal[^.]*not performed/i);
 
   assert.match(ci.replace(/\s+/g, " "), /push to main.*CI.*Compose release/i);
   assert.match(ci.replace(/\s+/g, " "), /build, sign, and attest four application images/i);
@@ -409,8 +417,8 @@ test("operator documentation agrees on cutover, TLS, backup, and remaining host 
   assert.match(recovery, /Restore-drill status.*Skipped/i);
   assert.match(
     recovery,
-    /The backup pipeline requires `POSTGRES_CA_FILE`,\s*`BACKUP_CLIENT_CERT_FILE`, and\s*`BACKUP_CLIENT_KEY_FILE`/,
-    "backup documentation must use the canonical TLS variable names",
+    /backup client CA, certificate, and key are provisioned/i,
+    "backup documentation must record the provisioned TLS client material",
   );
   assertNoStaleBackupVariableNames(
     recoveryDocument,

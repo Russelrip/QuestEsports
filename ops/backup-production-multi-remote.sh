@@ -111,40 +111,64 @@ command -v readlink >/dev/null || {
   echo "Required backup command is unavailable: readlink" >&2
   exit 1
 }
+command -v grep >/dev/null || {
+  echo "Required backup command is unavailable: grep" >&2
+  exit 1
+}
 
-# Never resolve PostgreSQL clients through PATH.  Ubuntu's generic wrappers can
-# select an older major even when a PostgreSQL 17 installation is present.
-resolve_postgres_clients() {
-  local client variable path_variable candidate version_output
-  local -a clients=(psql pg_dump pg_restore)
-  if [[ -n "${POSTGRES17_BIN:-}" ]]; then
-    [[ "$POSTGRES17_BIN" == /* && "$POSTGRES17_BIN" != / && -d "$POSTGRES17_BIN" && ! -L "$POSTGRES17_BIN" ]] || {
-      echo "POSTGRES17_BIN must be an absolute non-symlink directory." >&2
+docker_bin="${DOCKER_BIN:-/usr/bin/docker}"
+postgres_target_container="${POSTGRES_TARGET_CONTAINER:-quest-prod-postgres-1}"
+postgres_target_network="${POSTGRES_TARGET_NETWORK:-quest-shared}"
+postgres_client_image='postgres:17-bookworm@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0'
+
+validate_postgres_container_target() {
+  local observed health project service image published aliases data_mount network_containers docker_info_error
+  [[ "$docker_bin" == /* && "$docker_bin" != / && -x "$docker_bin" && ! -L "$docker_bin" ]] || {
+    echo "Docker is missing or unsafe for the private PostgreSQL backup path." >&2
+    exit 1
+  }
+  if [[ "$backup_test_fixture" == false ]]; then
+    [[ "$docker_bin" == /usr/bin/docker && "$(realpath "$docker_bin" 2>/dev/null)" == "$docker_bin" &&
+       "$postgres_target_container" == quest-prod-postgres-1 && "$postgres_target_network" == quest-shared ]] || {
+      echo "PostgreSQL backup container topology is not canonical." >&2
       exit 1
     }
   fi
-  for client in "${clients[@]}"; do
-    variable="${client^^}_BIN"
-    path_variable="${client^^}_PATH"
-    candidate="${!variable:-${!path_variable:-${POSTGRES17_BIN:-}/$client}}"
-    [[ "$candidate" == /* && "$candidate" != / && -x "$candidate" && ! -L "$candidate" ]] || {
-      echo "Pinned PostgreSQL client is missing or unsafe: $client" >&2
-      exit 1
-    }
-    [[ "$(realpath "$candidate" 2>/dev/null)" == "$candidate" ]] || {
-      echo "Pinned PostgreSQL client must not contain a symlink: $client" >&2
-      exit 1
-    }
-    version_output="$("$candidate" --version 2>/dev/null)" || {
-      echo "Pinned PostgreSQL client version could not be inspected: $client" >&2
-      exit 1
-    }
-    [[ "$version_output" =~ PostgreSQL[^0-9]*17([.][0-9]+)?([^0-9]|$) ]] || {
-      echo "Pinned PostgreSQL client is not PostgreSQL 17: $client" >&2
-      exit 1
-    }
-    printf -v "${variable,,}" '%s' "$candidate"
-  done
+  # Distinguish "no daemon" from "no permission". The unit runs as `deploy`,
+  # which is deliberately not in the docker group -- the production runbook is
+  # explicit that adding it there "is not an implicit substitute" for the narrow
+  # sudo grant used by every other privileged hook. An operator who only sees
+  # "Docker is unavailable" reaches for exactly that forbidden fix, so name the
+  # supported one instead.
+  if ! docker_info_error="$("$docker_bin" info 2>&1 >/dev/null)"; then
+    case "$docker_info_error" in
+      *"permission denied"*|*"Got permission denied"*|*"dial unix"*)
+        echo "The backup identity cannot reach the Docker socket. Invoke this script through its root-owned wrapper with the narrow sudo grant; do not add deploy to the docker group." >&2
+        ;;
+      *)
+        echo "Docker is unavailable for the private PostgreSQL backup path." >&2
+        ;;
+    esac
+    exit 1
+  fi
+  health="$("$docker_bin" inspect --format '{{.State.Health.Status}}' "$postgres_target_container" 2>/dev/null)" || observed=false
+  project="$("$docker_bin" inspect --format '{{index .Config.Labels "com.docker.compose.project"}}' "$postgres_target_container" 2>/dev/null)" || observed=false
+  service="$("$docker_bin" inspect --format '{{index .Config.Labels "com.docker.compose.service"}}' "$postgres_target_container" 2>/dev/null)" || observed=false
+  image="$("$docker_bin" inspect --format '{{.Config.Image}}' "$postgres_target_container" 2>/dev/null)" || observed=false
+  published="$("$docker_bin" inspect --format '{{json .HostConfig.PortBindings}}' "$postgres_target_container" 2>/dev/null)" || observed=false
+  aliases="$("$docker_bin" inspect --format "{{join (index .NetworkSettings.Networks \"$postgres_target_network\").Aliases \",\"}}" "$postgres_target_container" 2>/dev/null)" || observed=false
+  data_mount="$("$docker_bin" inspect --format '{{range .Mounts}}{{if eq .Destination "/var/lib/postgresql/data"}}{{.Source}}{{end}}{{end}}' "$postgres_target_container" 2>/dev/null)" || observed=false
+  network_containers="$("$docker_bin" network inspect "$postgres_target_network" --format '{{range .Containers}}{{println .Name}}{{end}}' 2>/dev/null)" || observed=false
+  [[ "${observed:-true}" == true && "$health" == healthy && "$project" == quest-prod && "$service" == postgres &&
+     "$image" == "$postgres_client_image" && ( "$published" == '{}' || "$published" == null ) &&
+     "$data_mount" == "$POSTGRES_TARGET_DATA_ROOT" && "$(grep -Fxc "$postgres_target_container" <<< "$network_containers" || true)" == 1 ]] || {
+    echo "PostgreSQL backup target is not the approved private Compose container." >&2
+    exit 1
+  }
+  case ",$aliases," in
+    *,quest-postgres,*) ;;
+    *) echo "PostgreSQL backup target is missing its canonical network alias." >&2; exit 1 ;;
+  esac
 }
 
 validate_database_target() {
@@ -156,9 +180,9 @@ validate_database_target() {
     echo "Explicit PostgreSQL target settings are required." >&2
     exit 1
   }
-  [[ "$POSTGRES_TARGET_HOST" == 127.0.0.1 && "$POSTGRES_TARGET_PORT" == 55432 &&
+  [[ "$POSTGRES_TARGET_HOST" == quest-postgres && "$POSTGRES_TARGET_PORT" == 5432 &&
       "$POSTGRES_TARGET_DATABASE" == quest && "$POSTGRES_TARGET_MAJOR" == 17 ]] || {
-    echo "Backup target is not the approved PostgreSQL 17 loopback target." >&2
+    echo "Backup target is not the approved PostgreSQL 17 private Compose target." >&2
     exit 1
   }
   [[ "$POSTGRES_TARGET_DATA_ROOT" == /* && "$POSTGRES_TARGET_DATA_ROOT" != / &&
@@ -233,14 +257,13 @@ validate_database_target() {
   host="${host_port%%:*}"; port="${host_port##*:}"
   database="$path"
   [[ "$host" == "$POSTGRES_TARGET_HOST" && "$port" == "$POSTGRES_TARGET_PORT" &&
-      "$database" == "$POSTGRES_TARGET_DATABASE" && "$host" == 127.0.0.1 &&
-      "$port" == 55432 ]] || {
+      "$database" == "$POSTGRES_TARGET_DATABASE" && "$host" == quest-postgres &&
+      "$port" == 5432 ]] || {
     echo "DIRECT_URL does not bind to the verified PostgreSQL 17 target." >&2
     exit 1
   }
 }
 
-resolve_postgres_clients
 for setting in POSTGRES_CA_FILE; do
   [[ -n "${!setting:-}" && "${!setting}" == /* && "${!setting}" != / && -f "${!setting}" && ! -L "${!setting}" ]] || {
     echo "Required PostgreSQL TLS material is missing or unsafe: $setting" >&2
@@ -277,6 +300,7 @@ if [[ "$backup_test_fixture" == false ]]; then
   }
 fi
 validate_database_target
+validate_postgres_container_target
 
 if [[ ! "$BACKUP_AGE_RECIPIENT" =~ ^age1[0-9a-z]{58}$ ]]; then
   echo "BACKUP_AGE_RECIPIENT must be a valid age public recipient." >&2
@@ -501,9 +525,30 @@ chmod 700 "$resolved_private_root" "$private_event_album_original_root"
 
 work_directory="$(mktemp -d "$BACKUP_ROOT/.quest-backup-${timestamp}-XXXXXX")"
 
+postgres_client() {
+  local client="$1" application_name="$2"
+  shift 2
+  [[ "$client" == /usr/bin/psql || "$client" == /usr/bin/pg_dump ]] || {
+    echo "Unsupported PostgreSQL backup client." >&2
+    return 1
+  }
+  # The single-quoted program is evaluated by bash inside the client container.
+  # shellcheck disable=SC2016
+  printf '%s\n' "$DIRECT_URL" | "$docker_bin" run --rm --network "$postgres_target_network" \
+    --user "$(id -u):$(id -g)" --read-only --cap-drop ALL --security-opt no-new-privileges \
+    --pids-limit 128 --tmpfs /tmp:rw,noexec,nosuid,size=16m -i \
+    --mount "type=bind,src=$backup_client_tls_dir,dst=/run/quest-backup-tls,readonly" \
+    -e PGSSLMODE=verify-full \
+    -e PGSSLROOTCERT=/run/quest-backup-tls/backup-client-ca.crt \
+    -e PGSSLCERT=/run/quest-backup-tls/backup-client.crt \
+    -e PGSSLKEY=/run/quest-backup-tls/backup-client.key \
+    -e "PGAPPNAME=$application_name" --entrypoint /bin/bash "$postgres_client_image" \
+    -ceu 'IFS= read -r connection_url; client="$1"; shift; case "$client" in /usr/bin/psql) exec "$client" -X "$connection_url" "$@" ;; /usr/bin/pg_dump) exec "$client" "$connection_url" "$@" ;; *) exit 64 ;; esac' \
+    -- "$client" "$@"
+}
+
 psql_target() {
-  PGSSLMODE=verify-full PGSSLROOTCERT="$POSTGRES_CA_FILE" PGSSLCERT="$backup_client_cert_file" PGSSLKEY="$backup_client_key_file" PGAPPNAME=quest-backup-target \
-    "$psql_bin" -X "$DIRECT_URL" "$@"
+  postgres_client /usr/bin/psql quest-backup-target "$@"
 }
 if ! target_probe="$(psql_target -tAc "SELECT current_database() || '|' || current_setting('server_version_num') || '|' || CASE WHEN EXISTS (SELECT 1 FROM pg_stat_ssl WHERE pid = pg_backend_pid() AND ssl) THEN 'on' ELSE 'off' END || '|' || session_user || '|' || COALESCE(inet_server_addr()::text, '') || '|' || inet_server_port() || '|' || current_setting('application_name')" 2>/dev/null)"; then
   echo "PostgreSQL target identity probe failed" >&2
@@ -560,9 +605,9 @@ inventory_tree "$work_directory/$private_name" "$work_directory/private-upload-i
 public_upload_inventory_sha256="$(sha256sum "$work_directory/public-upload-inventory.tsv" | awk '{print $1}')"
 private_upload_inventory_sha256="$(sha256sum "$work_directory/private-upload-inventory.tsv" | awk '{print $1}')"
 
-PGSSLMODE=verify-full PGSSLROOTCERT="$POSTGRES_CA_FILE" PGSSLCERT="$backup_client_cert_file" PGSSLKEY="$backup_client_key_file" PGAPPNAME=quest-backup-dump \
-  "$pg_dump_bin" "$DIRECT_URL" --format=custom --schema=public --schema=valorant \
-  --no-owner --no-acl --file="$work_directory/database.dump" 2>/dev/null
+postgres_client /usr/bin/pg_dump quest-backup-dump \
+  --format=custom --schema=public --schema=valorant --no-owner --no-acl \
+  > "$work_directory/database.dump" 2>/dev/null
 rsync -a "$resolved_upload_root/" "$work_directory/$public_name/"
 rsync -a "$resolved_private_root/" "$work_directory/$private_name/"
 
