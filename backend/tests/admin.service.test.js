@@ -3487,8 +3487,10 @@ test("listTeamRegistrations combines the tournament and status filters and honou
   const counting = calls.find((call) => call.operation === "count");
 
   assert.equal(listing.where.status, "pending");
+  // No id clause for a slug. Tournament.id is @db.Uuid and PostgreSQL rejects
+  // the whole statement when a non-uuid literal is compared against it, which
+  // failed the request outright instead of simply not matching.
   assert.deepEqual(listing.where.tournament.OR, [
-    { id: "quest-cup" },
     { slug: "quest-cup" },
     { title: { contains: "quest-cup", mode: "insensitive" } },
   ]);
@@ -3531,4 +3533,34 @@ test("listTeamRegistrations allows 100 rows per page and clamps beyond it", asyn
   }
 
   assert.deepEqual(seen, [100, 100]);
+});
+
+// The filter still has to resolve a real tournament id, which is what the
+// tournament-scoped admin screens pass.
+test("listTeamRegistrations matches a tournament id only when the value is a uuid", async () => {
+  const identifier = "3f1b1c62-2a3d-4f7a-9b21-4c9e7d5f8a10";
+  const captured = [];
+  const { module: adminService, restore } = loadAdminService({
+    $transaction: async (operations) => Promise.all(operations),
+    teamRegistration: {
+      count: async () => 0,
+      findMany: async (args) => {
+        captured.push(args.where);
+        return [];
+      },
+    },
+    tournament: { findMany: async () => [] },
+  });
+
+  try {
+    await adminService.listTeamRegistrations({ tournament: identifier });
+  } finally {
+    restore();
+  }
+
+  assert.deepEqual(captured[0].tournament.OR, [
+    { id: identifier },
+    { slug: identifier },
+    { title: { contains: identifier, mode: "insensitive" } },
+  ]);
 });

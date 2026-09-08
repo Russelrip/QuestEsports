@@ -57,6 +57,7 @@ const {
   getTeamLogoUrl,
 } = require("../teams/team-logo");
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const REGISTRATION_STATUSES = new Set(["pending", "approved", "rejected", "waitlisted"]);
 const PAYMENT_STATUSES = new Set(["unpaid", "pending", "paid"]);
 const VERIFICATION_STATUSES = new Set(["pending", "verified", "flagged"]);
@@ -439,7 +440,12 @@ const buildRegistrationWhere = ({
     ...(normalizedTournament
       ? [{
           OR: [
-            { id: normalizedTournament },
+            // Tournament.id is @db.Uuid. The admin filter sends a slug, and
+            // PostgreSQL rejects the whole statement with "invalid input syntax
+            // for type uuid" when a non-uuid literal is compared against it --
+            // so an unguarded id clause failed the entire request rather than
+            // simply not matching. Slug and title still cover the filter.
+            ...(UUID_PATTERN.test(normalizedTournament) ? [{ id: normalizedTournament }] : []),
             { slug: normalizedTournament },
             { title: { contains: normalizedTournament, mode: "insensitive" } },
           ],
