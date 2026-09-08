@@ -93,7 +93,20 @@ manifest_value() { grep -m1 "^$1=" "$manifest" | cut -d= -f2-; }
 [[ "$(manifest_value release_sha)" == "$release_sha" ]] || refuse 'decrypted archive manifest is not bound to the requested release'
 [[ "$(manifest_value database_scope)" == application_public_and_valorant_schemas && "$(manifest_value valorant_schema_included)" == true ]] || refuse 'decrypted archive schema scope is incomplete'
 [[ "$(manifest_value public_upload_inventory)" == public-upload-inventory.tsv && "$(manifest_value private_upload_inventory)" == private-upload-inventory.tsv ]] || refuse 'decrypted archive upload inventories are missing'
-for root in public private; do [[ -d "$scratch/$root" && ! -L "$scratch/$root" ]] || refuse 'decrypted archive upload root is missing'; done
+# The tree inside the archive is named after the upload root it came from --
+# `uploads` and `private` in production -- not after the scope. Hardcoding
+# `public` here meant the consumer could never verify a real archive, only a
+# fixture built to match it. The names come from the manifest, which is already
+# bound to the release and hashed, and are constrained to a single safe path
+# segment so a manifest cannot point the walk outside the extraction directory.
+declare -A upload_tree=()
+for scope in public private; do
+  tree="$(basename -- "$(manifest_value "${scope}_upload_root")")"
+  [[ "$tree" =~ ^[A-Za-z0-9._-]+$ && "$tree" != . && "$tree" != .. ]] || refuse 'decrypted archive upload root name is unsafe'
+  [[ -d "$scratch/$tree" && ! -L "$scratch/$tree" ]] || refuse 'decrypted archive upload root is missing'
+  upload_tree["$scope"]="$tree"
+done
+[[ "${upload_tree[public]}" != "${upload_tree[private]}" ]] || refuse 'decrypted archive upload roots are not distinct'
 for inventory in public private; do
   file="$scratch/${inventory}-upload-inventory.tsv"
   [[ -f "$file" && ! -L "$file" ]] || refuse 'decrypted archive upload inventory is missing'
@@ -118,7 +131,7 @@ inventory_tree() {
   done < <(find -P "$root" -mindepth 1 -print0 | sort -z)
 }
 for inventory in public private; do
-  inventory_tree "$scratch/$inventory" "$scratch/${inventory}.actual" || refuse 'decrypted upload tree cannot be inventoried'
+  inventory_tree "$scratch/${upload_tree[$inventory]}" "$scratch/${inventory}.actual" || refuse 'decrypted upload tree cannot be inventoried'
   cmp -s "$scratch/${inventory}-upload-inventory.tsv" "$scratch/${inventory}.actual" || refuse 'decrypted upload tree does not match its source inventory'
 done
 
