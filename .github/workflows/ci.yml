@@ -714,15 +714,32 @@ jobs:
           grep -F 'ALTER DEFAULT PRIVILEGES FOR ROLE quest_migrator REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC' "$bootstrap" >/dev/null
           grep -F 'ALTER DEFAULT PRIVILEGES FOR ROLE val_migrator REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC' "$bootstrap" >/dev/null
 
+          # The canonical backup reaches PostgreSQL over quest-shared now, because
+          # production publishes no database port. The loopback pair below is the
+          # retired target and must not come back by accident.
           for setting in \
-            'POSTGRES_TARGET_HOST=127.0.0.1' \
-            'POSTGRES_TARGET_PORT=55432' \
+            'POSTGRES_TARGET_HOST=quest-postgres' \
+            'POSTGRES_TARGET_PORT=5432' \
             'POSTGRES_TARGET_DATABASE=quest' \
             'POSTGRES_TARGET_MAJOR=17' \
             'POSTGRES_TARGET_DATA_ROOT=/srv/quest-esports/postgres/17/data'; do
             grep -Fx "$setting" "$backup" >/dev/null
           done
-          grep -F 'POSTGRES17_BIN' ops/backup-production-multi-remote.sh >/dev/null
+          for retired in 'POSTGRES_TARGET_HOST=127.0.0.1' 'POSTGRES_TARGET_PORT=55432'; do
+            if grep -Fx "$retired" "$backup" >/dev/null; then
+              echo "Found the retired loopback backup target: $retired" >&2
+              exit 1
+            fi
+          done
+          # The client is the approved image run on the shared network, never a host
+          # binary and never a published port.
+          grep -F "$approved_postgres_ref" ops/backup-production-multi-remote.sh >/dev/null
+          grep -F 'quest-prod-postgres-1' ops/backup-production-multi-remote.sh >/dev/null
+          grep -F 'quest-shared' ops/backup-production-multi-remote.sh >/dev/null
+          if grep -E 'POSTGRES17_BIN|55432' ops/backup-production-multi-remote.sh >/dev/null; then
+            echo "The canonical backup must not resolve a host client or the retired loopback port." >&2
+            exit 1
+          fi
           grep -F 'quest_backup' ops/backup-production-multi-remote.sh >/dev/null
           grep -F -- '--no-acl' ops/restore-production-backup.sh >/dev/null
           grep -F 'DISPOSABLE_QUEST_REHEARSAL' "$rehearsal" >/dev/null
