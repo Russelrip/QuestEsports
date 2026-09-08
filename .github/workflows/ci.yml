@@ -754,7 +754,15 @@ jobs:
           grep -F 'stale recovery material and is not a rollback target' docs/production-runbook.md >/dev/null
           grep -F 'PostgreSQL is private to Compose; no public database port is allowed' docs/production-runbook.md >/dev/null
           grep -F 'Access-restricted' docs/production-runbook.md >/dev/null
-          grep -F 'No private-network backup utility is' docs/backup-and-disaster-recovery.md >/dev/null
+          # The private-network producer is the supported path now, so the doc must
+          # describe it rather than deny it -- while still pinning the property that
+          # made the old denial worth asserting: PostgreSQL stays unpublished.
+          grep -F 'ephemeral PostgreSQL 17 client on `quest-shared`' docs/backup-and-disaster-recovery.md >/dev/null
+          grep -F 'no published host port' docs/backup-and-disaster-recovery.md >/dev/null
+          if grep -F 'No private-network backup utility is' docs/backup-and-disaster-recovery.md >/dev/null; then
+            echo "Recovery doc still denies the private-network backup utility that now ships." >&2
+            exit 1
+          fi
           grep -F 'sudo systemctl disable --now quest-esports-backup.timer quest-esports-backup-freshness.timer' docs/backup-and-disaster-recovery.md >/dev/null
           grep -F 'sudo systemctl enable --now quest-esports-backup.timer quest-esports-backup-freshness.timer' docs/backup-and-disaster-recovery.md >/dev/null
           python - <<'PY'
