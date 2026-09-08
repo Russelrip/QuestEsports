@@ -3,6 +3,7 @@
 import { Fragment, useCallback, useEffect, useState } from "react";
 import AdminShell from "@/components/admin/AdminShell";
 import EmptyState from "@/components/ui/empty-state";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -57,36 +58,41 @@ const createRosterDraftMember = (
   gameId: "",
 });
 
+// The server clamps the registrations list at 100 rows per page.
+const REGISTRATION_PAGE_SIZES = [25, 50, 75, 100] as const;
+
 export default function AdminRegistrationsManager({ eventId, eventTitle }: { eventId?: string; eventTitle?: string } = {}) {
   const [search, setSearch] = useState("");
   const [tournament, setTournament] = useState("");
   const [game, setGame] = useState("");
   const [status, setStatus] = useState("");
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<number>(REGISTRATION_PAGE_SIZES[0]);
   const [downloading, setDownloading] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedRegistration, setSelectedRegistration] =
     useState<TeamRegistration | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState("");
+  // Only the free-text search is debounced. A dropdown emits one deliberate
+  // value, so delaying it just makes the filter look like it did nothing.
   const debouncedSearch = useDebouncedValue(search);
-  const debouncedTournament = useDebouncedValue(tournament);
-  const debouncedGame = useDebouncedValue(game);
-  const debouncedStatus = useDebouncedValue(status);
   const globalQuery = useAdminRegistrations(
     debouncedSearch,
-    debouncedTournament,
-    debouncedStatus,
+    tournament,
+    status,
     page,
+    pageSize,
     !eventId,
   );
   const eventQuery = useAdminEventRegistrations(
     eventId || "",
     debouncedSearch,
-    debouncedTournament,
-    debouncedGame,
-    debouncedStatus,
+    tournament,
+    game,
+    status,
     page,
+    pageSize,
     Boolean(eventId),
   );
   const { data, error, loading, refetch } = eventId ? eventQuery : globalQuery;
@@ -95,6 +101,14 @@ export default function AdminRegistrationsManager({ eventId, eventTitle }: { eve
   const tournaments = data?.tournaments || [];
   const games = Array.from(new Set(tournaments.map((item) => item.game).filter(Boolean))) as string[];
   const pagination = data?.pagination;
+  const selectedTournamentTitle = tournaments.find((item) => item.slug === tournament)?.title;
+  const activeFilterLabels = [
+    ...(search.trim() ? [`Search: ${search.trim()}`] : []),
+    ...(tournament ? [selectedTournamentTitle || tournament] : []),
+    ...(game ? [game] : []),
+    ...(status ? [status.charAt(0).toUpperCase() + status.slice(1)] : []),
+  ];
+  const hasActiveFilters = activeFilterLabels.length > 0;
   const registrationGroups = registrations.reduce<
     Array<{
       tournament: TeamRegistrationSummary["tournament"];
@@ -204,7 +218,7 @@ export default function AdminRegistrationsManager({ eventId, eventTitle }: { eve
                   Full rosters load only when you open a registration.
                 </p>
               </div>
-              <div className="grid gap-3 md:grid-cols-5">
+              <div className="grid gap-3 md:grid-cols-6">
                 <Input
                   value={search}
                   onChange={(event) => {
@@ -252,6 +266,20 @@ export default function AdminRegistrationsManager({ eventId, eventTitle }: { eve
                   <option value="rejected">Rejected</option>
                   <option value="waitlisted">Waitlisted</option>
                 </Select>
+                <Select
+                  aria-label="Registrations per page"
+                  value={String(pageSize)}
+                  onChange={(event) => {
+                    setPageSize(Number(event.target.value));
+                    setPage(1);
+                  }}
+                >
+                  {REGISTRATION_PAGE_SIZES.map((size) => (
+                    <option key={size} value={size}>
+                      Show {size}
+                    </option>
+                  ))}
+                </Select>
                 <Button
                   type="button"
                   variant="secondary"
@@ -263,6 +291,28 @@ export default function AdminRegistrationsManager({ eventId, eventTitle }: { eve
               </div>
             </div>
           </div>
+
+          {hasActiveFilters ? (
+            <div className="flex flex-wrap items-center gap-2 border-b border-white/10 px-5 py-3 sm:px-6">
+              <span className="text-xs uppercase tracking-wider text-slate-500">Filtered by</span>
+              {activeFilterLabels.map((label) => (
+                <Badge key={label}>{label}</Badge>
+              ))}
+              <button
+                type="button"
+                className="ml-auto text-xs text-purple-200 underline-offset-4 hover:underline"
+                onClick={() => {
+                  setSearch("");
+                  setTournament("");
+                  setGame("");
+                  setStatus("");
+                  setPage(1);
+                }}
+              >
+                Clear filters
+              </button>
+            </div>
+          ) : null}
 
           {loading ? (
             <div className="p-5 sm:p-6">

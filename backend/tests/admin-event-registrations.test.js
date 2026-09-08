@@ -46,7 +46,9 @@ test("event registration filtering combines event, game, status, search, and dat
       AND: [
         { seriesId: "event-1" },
         { game: { equals: "Valorant", mode: "insensitive" } },
-        { OR: [{ id: "valorant-cup" }, { slug: "valorant-cup" }, { title: { contains: "valorant-cup", mode: "insensitive" } }] },
+        // No id clause: Tournament.id is @db.Uuid and PostgreSQL rejects the
+        // whole statement when a slug is compared against it.
+        { OR: [{ slug: "valorant-cup" }, { title: { contains: "valorant-cup", mode: "insensitive" } }] },
       ],
     });
     assert.equal(where.status, "waitlisted");
