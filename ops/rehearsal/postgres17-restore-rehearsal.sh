@@ -356,7 +356,7 @@ psql_query "$scratch/database-size" "SELECT pg_database_size(current_database())
 database_size_bytes="$(tr -d '[:space:]' < "$scratch/database-size")"; [[ "$database_size_bytes" =~ ^[0-9]+$ && "$database_size_bytes" -gt 0 ]] || fail "database size evidence is invalid"
 
 psql_tsv() { psql -X -A -t -F $'\t' "$db_url" -c "$2" >"$1" 2>/dev/null; }
-psql_query "$scratch/counts" "SELECT n.nspname || '|' || count(*) FILTER (WHERE c.relkind IN ('r','p','f')) || '|' || count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname IN ('public','valorant') GROUP BY n.nspname ORDER BY n.nspname" || fail "schema/object query failed"
+psql_query "$scratch/counts" "SELECT n.nspname || '|' || count(*) FILTER (WHERE c.relkind IN ('r','p','f') AND c.relname NOT IN ('_prisma_migrations','_migration_ledger')) || '|' || count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname IN ('public','valorant') GROUP BY n.nspname ORDER BY n.nspname" || fail "schema/object query failed"
 public_tables=0; valorant_tables=0; public_objects=0; valorant_objects=0
 while IFS='|' read -r schema tables objects; do [[ "$tables" =~ ^[0-9]+$ && "$objects" =~ ^[0-9]+$ ]] || fail "schema/object output malformed"; [[ "$schema" == public ]] && public_tables="$tables" && public_objects="$objects"; [[ "$schema" == valorant ]] && valorant_tables="$tables" && valorant_objects="$objects"; done < "$scratch/counts"
 (( public_tables > 0 && valorant_tables > 0 && public_objects > 0 && valorant_objects > 0 )) || fail "schema/object counts are not non-zero"

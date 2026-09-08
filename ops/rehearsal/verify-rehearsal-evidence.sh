@@ -12,7 +12,14 @@ archive="$1"; dir="$2"
 [[ "$archive" == /* && -f "$archive" && ! -L "$archive" ]] || fail "selected archive is missing or unsafe"
 [[ "$(basename "$archive")" =~ ^quest-production-[0-9]{8}T[0-9]{6}Z\.tar\.gz\.enc$ ]] || fail "selected archive basename is invalid"
 checksum="$archive.sha256"; [[ -f "$checksum" && ! -L "$checksum" ]] || fail "selected archive checksum is missing"
-case "${archive,,}" in */questesports*|*/supabase*|*/var/www/quest-esports*|*/srv/quest-esports*|*/production/*) fail "selected archive path looks like production" ;; esac
+# The archive is an encrypted file, and its location says nothing about what
+# the rehearsal restored into: the target is proven separately by the
+# sentinel, nonce, container id and port mapping, and the evidence directory
+# is still refused below if it looks like production. Refusing the canonical
+# backup root here made the gate unsatisfiable, because verify-backup-evidence.sh
+# is required to pass exactly "$BACKUP_ROOT/<archive>" -- /srv/quest-esports/backups
+# in production -- so a correct rehearsal could never be verified.
+case "${archive,,}" in */questesports*|*/supabase*|*/production/*) fail "selected archive path looks like production" ;; esac
 [[ "$dir" == /* && "$dir" != / && -d "$dir" && ! -L "$dir" ]] || fail "evidence directory is missing or unsafe"
 for path in "$archive" "$checksum" "$dir"; do
   while IFS= read -r part; do
@@ -90,8 +97,16 @@ while IFS= read -r line || [[ -n "$line" ]]; do [[ "$line" =~ ^([a-z_]+)=([^[:sp
 for key in target_kind target_id container_id public_root private_root; do [[ -n "${s[$key]:-}" ]] || fail "target sentinel artifact is incomplete"; done
 [[ "${s[target_kind]}" == "${e[target_kind]}" && "${s[target_id]}" == "${e[target_id]}" && "${s[container_id]}" == "${e[target_container_id]}" ]] || fail "target sentinel artifact does not match evidence"
 for migration_artifact in rehearsal-quest-migrations-before.tsv rehearsal-valorant-migrations-before.tsv; do [[ "$(tr -d '\r' < "$dir/$migration_artifact")" == status\|absent ]] || fail "pre-restore migration inventory is not absent: $migration_artifact"; done
-for migration_artifact in rehearsal-quest-migrations.tsv rehearsal-valorant-migrations.tsv; do [[ "$(wc -l < "$dir/$migration_artifact" | tr -d ' ')" =~ ^[1-9][0-9]*$ ]] || fail "post-restore migration inventory is empty: $migration_artifact"; while IFS='|' read -r migration_id completion; do [[ "$migration_id" =~ ^[A-Za-z0-9_.-]+$ && "$completion" == complete ]] || fail "post-restore migration inventory is incomplete: $migration_artifact"; done < "$dir/$migration_artifact"; done
-[[ "$(wc -l < "$dir/rehearsal-quest-migrations.tsv" | tr -d ' ')" == "${e[quest_migration_count]}" && "$(wc -l < "$dir/rehearsal-valorant-migrations.tsv" | tr -d ' ')" == "${e[valorant_migration_count]}" ]] || fail "migration summary counts do not match signed inventories"
+for migration_artifact in rehearsal-quest-migrations.tsv rehearsal-valorant-migrations.tsv; do [[ "$(wc -l < "$dir/$migration_artifact" | tr -d ' ')" =~ ^[1-9][0-9]*$ ]] || fail "post-restore migration inventory is empty: $migration_artifact"; while IFS='|' read -r migration_id completion; do [[ "$migration_id" =~ ^[A-Za-z0-9_.-]+$ ]] || fail "post-restore migration inventory is incomplete: $migration_artifact"; # A failed attempt stays in the ledger as a rolled_back row beside its
+# successful retry, which the rehearsal itself treats as settled. Demanding
+# "complete" for every row meant any database that had ever retried a
+# migration could never be verified -- production has two such rows.
+case "$completion" in complete|rolled_back) ;; *) fail "post-restore migration inventory is incomplete: $migration_artifact" ;; esac; done < "$dir/$migration_artifact"; done
+# The rehearsal counts applied migrations, not ledger rows: a rolled_back row
+# is settled but was never applied. Counting every row here disagreed with
+# the producer on any database that had retried a migration.
+complete_rows() { grep -c '|complete$' "$1" || true; }
+[[ "$(complete_rows "$dir/rehearsal-quest-migrations.tsv")" == "${e[quest_migration_count]}" && "$(complete_rows "$dir/rehearsal-valorant-migrations.tsv")" == "${e[valorant_migration_count]}" ]] || fail "migration summary counts do not match signed inventories"
 [[ "$(sha256sum "$dir/rehearsal-ext-before.tsv" | cut -d' ' -f1)" == "${e[extensions_before_inventory_sha256]}" && "$(sha256sum "$dir/rehearsal-settings-before.tsv" | cut -d' ' -f1)" == "${e[settings_before_inventory_sha256]}" && "$(sha256sum "$dir/rehearsal-ext.tsv" | cut -d' ' -f1)" == "${e[extensions_inventory_sha256]}" && "$(sha256sum "$dir/rehearsal-settings.tsv" | cut -d' ' -f1)" == "${e[settings_inventory_sha256]}" ]] || fail "extension/settings artifacts are not bound"
 cmp -s "$dir/rehearsal-ext-before.tsv" "$dir/rehearsal-ext.tsv" || fail "extension inventory changed between before/after restore"
 cmp -s "$dir/rehearsal-settings-before.tsv" "$dir/rehearsal-settings.tsv" || fail "PostgreSQL settings changed between before/after restore"

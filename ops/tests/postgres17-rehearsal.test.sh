@@ -320,6 +320,14 @@ if command -v openssl >/dev/null 2>&1; then
   openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out "$tmp/signing-private.pem" >/dev/null 2>&1; openssl pkey -in "$tmp/signing-private.pem" -pubout -out "$tmp/signing-public.pem" >/dev/null 2>&1; chmod 600 "$tmp/signing-private.pem" "$tmp/signing-public.pem"
   (cd "$tmp/evidence" && for artifact in rehearsal-evidence.env rehearsal-observations.env rehearsal-source-version.env rehearsal-security-verifier.output rehearsal-target-sentinel.env rehearsal-failure-injections.tsv rehearsal-failure-bad_checksum.output rehearsal-failure-bad_decryption.output rehearsal-failure-wrong_ca.output rehearsal-failure-blocked_network.output rehearsal-failure-failed_service_health.output rehearsal-failure-attempted_mutation_callback.output rehearsal-failure-hook-bad_checksum.sh rehearsal-failure-hook-bad_decryption.sh rehearsal-failure-hook-wrong_ca.sh rehearsal-failure-hook-blocked_network.sh rehearsal-failure-hook-failed_service_health.sh rehearsal-failure-hook-attempted_mutation_callback.sh rehearsal-roles.tsv rehearsal-memberships.tsv rehearsal-owners.tsv rehearsal-grants.tsv rehearsal-acl.tsv rehearsal-ext-before.tsv rehearsal-ext.tsv rehearsal-settings-before.tsv rehearsal-settings.tsv rehearsal-rls.tsv rehearsal-schema-counts.tsv rehearsal-policy-counts.tsv rehearsal-target-session-tls.tsv rehearsal-quest-write-probe.tsv rehearsal-cross-schema-denial.tsv rehearsal-upload-cleanup.tsv rehearsal-quest-migrations-before.tsv rehearsal-valorant-migrations-before.tsv rehearsal-quest-migrations.tsv rehearsal-valorant-migrations.tsv rehearsal-target-docker-before.txt rehearsal-target-port-mapping.txt rehearsal-target-port-mapping-after.txt rehearsal-connection-binding.txt rehearsal-docker-connection-binding.txt rehearsal-target-docker-after.txt rehearsal-connection-binding-after.txt rehearsal-docker-connection-binding-after.txt rehearsal-quest-read-probe.tsv; do sha256sum "$artifact"; done) > "$tmp/evidence/rehearsal-evidence.manifest"; chmod 600 "$tmp/evidence/rehearsal-evidence.manifest"; openssl dgst -sha256 -sign "$tmp/signing-private.pem" -out "$tmp/evidence/rehearsal-evidence.sig" "$tmp/evidence/rehearsal-evidence.manifest"; chmod 600 "$tmp/evidence/rehearsal-evidence.sig"
   verify_fixture >/dev/null; echo "ok: valid signed evidence"
+  # verify-backup-evidence.sh is required to hand this verifier
+  # "$BACKUP_ROOT/<archive>", which in production is /srv/quest-esports/backups.
+  # Refusing that shape made the release gate unsatisfiable however correct the
+  # rehearsal was, so the canonical backup root must verify like any other path.
+  canonical_root="$tmp/srv/quest-esports/backups"; mkdir -p "$canonical_root"
+  cp "$tmp/quest-production-20260827T000000Z.tar.gz.enc" "$tmp/quest-production-20260827T000000Z.tar.gz.enc.sha256" "$canonical_root/"
+  env REHEARSAL_TRUSTED_SIGNING_PUBLIC_KEY="$tmp/signing-public.pem" bash "$verify" "$canonical_root/quest-production-20260827T000000Z.tar.gz.enc" "$tmp/evidence" >/dev/null || { echo "FAIL: canonical backup-root archive path was refused" >&2; exit 1; }
+  echo "ok: canonical backup-root archive path is accepted"
   cp "$tmp/evidence/rehearsal-evidence.sig" "$tmp/rehearsal-evidence.sig.good"; python3 - "$tmp/evidence/rehearsal-evidence.sig" <<'PY'
 import pathlib, sys
 p = pathlib.Path(sys.argv[1]); data = bytearray(p.read_bytes()); data[0] ^= 1; p.write_bytes(data)
@@ -347,6 +355,16 @@ expect_new_artifact_refusal() { local label="$1" artifact="$2" expression="$3" e
 expect_new_artifact_refusal "unprotected public table" rls 's/public\tusers\tt/public\tusers\tf/' 'Quest RLS policy is incomplete'
 expect_new_artifact_refusal "policy-count/artifact mismatch" policy-counts 's/^public|2$/public|3/' 'public policy count is not recomputed from the signed artifact'
 expect_new_artifact_refusal "non-permission denial error" cross-schema-denial 's/^error_class=permission_denied$/error_class=timeout/' 'signed cross-schema denial is not bound to its nonce session and TLS'
+# A failed migration attempt stays in the ledger as a rolled_back row beside its
+# successful retry. The rehearsal treats that as settled and counts only applied
+# migrations, so the verifier must accept the row and leave the count alone --
+# production carries two such rows and could otherwise never be verified.
+cp "$tmp/evidence/rehearsal-quest-migrations.tsv" "$tmp/quest-migrations.good"
+printf '%s
+' '20260827_indexes_retry|rolled_back' >> "$tmp/evidence/rehearsal-quest-migrations.tsv"; resign_fixture
+verify_fixture >/dev/null || { echo "FAIL: a settled rolled_back ledger row was refused" >&2; exit 1; }
+echo "ok: rolled_back ledger row is accepted and not counted as applied"
+mv "$tmp/quest-migrations.good" "$tmp/evidence/rehearsal-quest-migrations.tsv"; resign_fixture
 expect_new_artifact_refusal "quiet-mode write output" quest-write-probe '/^BEGIN$/d; /^ROLLBACK$/d' 'signed write probe artifact is invalid'
 expect_new_artifact_refusal "plaintext session" target-session-tls 's/|on$/|off/' 'session-level pg_stat_ssl evidence is invalid or nonce-unbound'
 expect_new_artifact_refusal "failed cleanup" upload-cleanup 's/^status=verified$/status=failed/' 'signed disposable upload cleanup evidence is invalid'
