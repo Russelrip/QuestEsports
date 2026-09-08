@@ -483,6 +483,13 @@ with open(sys.argv[1], encoding='utf-8') as f: value = json.load(f).get(sys.argv
 print(str(value).lower() if isinstance(value, bool) else value if value is not None else '')
 PY
 }
+json_nested() { python3 - "$1" "$2" "$3" <<'PY'
+import json, sys
+with open(sys.argv[1], encoding='utf-8') as f: parent = json.load(f).get(sys.argv[2]) or {}
+value = parent.get(sys.argv[3]) if isinstance(parent, dict) else None
+print(str(value).lower() if isinstance(value, bool) else value if value is not None else '')
+PY
+}
 get_json() { local url="$1" out="$2" ca="${3:-}" code; if [[ -n "$ca" ]]; then code="$(curl --silent --show-error --max-time 15 --cacert "$ca" -o "$out" -w '%{http_code}' "$url" 2>/dev/null)"; else code="$(curl --silent --show-error --max-time 15 -o "$out" -w '%{http_code}' "$url" 2>/dev/null)"; fi; [[ "$code" == 200 ]] && python3 -m json.tool "$out" >/dev/null 2>&1; }
 # The release controller accepts either shape for a healthy response, and the
 # Quest API only ever emits the second: its liveness and readiness endpoints
@@ -493,7 +500,12 @@ healthy_response() { local file="$1"; [[ "$(json_field "$file" status)" == ok ]]
 health() { local url="$1" name="$2" ca="${3:-}"; looks_production "$url" || fail "$name URL looks like production"; [[ "$url" =~ ^https?:// ]] || fail "$name URL is unsafe"; get_json "$url" "$scratch/$name.json" "$ca" || fail "$name health failed"; healthy_response "$scratch/$name.json" || fail "$name status is not ok"; }
 live="${QUEST_LIVENESS_URL:-}"; ready="${QUEST_READINESS_URL:-}"; val_health="${VALORANT_HEALTH_URL:-}"; ca="${VALORANT_CA_FILE:-}"
 [[ -n "$live" && -n "$ready" && -n "$val_health" && "$val_health" =~ ^https:// ]] || fail "health URLs are incomplete or VALORANT is not HTTPS"
-check_path "$ca" VALORANT_CA_FILE; [[ -f "$ca" && ! -L "$ca" && -r "$ca" ]] || fail "VALORANT CA file is missing"; health "$live" quest_liveness; health "$ready" quest_readiness; [[ "$(json_field "$scratch/quest_readiness.json" db)" == up ]] || fail "Quest database health is not up"; health "$val_health" valorant_health "$ca"; get_json "$val_health" "$scratch/valorant.json" "$ca" || fail "VALORANT health JSON failed"; [[ "$(json_field "$scratch/valorant.json" db)" == up ]] || fail "VALORANT database health is not up"
+# VALORANT reports db:up at the top level; Quest reports readiness.database and
+# calls it ready. Only the first was accepted, so a healthy Quest database read
+# as down. Both shapes are the services' own, and neither is going to change to
+# suit a rehearsal.
+database_up() { local file="$1"; [[ "$(json_field "$file" db)" == up ]] && return 0; [[ "$(json_nested "$file" readiness database)" == ready ]] && return 0; return 1; }
+check_path "$ca" VALORANT_CA_FILE; [[ -f "$ca" && ! -L "$ca" && -r "$ca" ]] || fail "VALORANT CA file is missing"; health "$live" quest_liveness; health "$ready" quest_readiness; database_up "$scratch/quest_readiness.json" || fail "Quest database health is not up"; health "$val_health" valorant_health "$ca"; get_json "$val_health" "$scratch/valorant.json" "$ca" || fail "VALORANT health JSON failed"; [[ "$(json_field "$scratch/valorant.json" db)" == up ]] || fail "VALORANT database health is not up"
 freeze="${FREEZE_STATUS_URL:-}"; mutation="${FREEZE_MUTATION_URL:-}"; callback="${FREEZE_CALLBACK_URL:-}"; [[ -n "$freeze" && -n "$mutation" && -n "$callback" ]] || fail "freeze and mutation/callback probes are required"; for url in "$freeze" "$mutation" "$callback"; do looks_production "$url" || fail "freeze probe URL looks like production"; done
 get_json "$freeze" "$scratch/freeze.json" || fail "freeze status failed"; [[ "$(json_field "$scratch/freeze.json" mode)" == validation && "$(json_field "$scratch/freeze.json" writersEnabled)" == false ]] || fail "freeze was not acknowledged"
 probe() { local url="$1" name="$2" h="$scratch/$name.h" b="$scratch/$name.b" code; code="$(curl --silent --show-error --max-time 15 -D "$h" -o "$b" -w '%{http_code}' -X POST -H 'Content-Type: application/json' --data '{}' "$url" 2>/dev/null)"; [[ "$code" == 503 ]] && grep -Eiq '^x-write-freeze:[[:space:]]*validation' "$h"; }; probe "$mutation" mutation || fail "mutation was admitted"; probe "$callback" callback || fail "callback was admitted"
