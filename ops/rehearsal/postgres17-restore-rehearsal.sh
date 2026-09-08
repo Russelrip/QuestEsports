@@ -484,7 +484,13 @@ print(str(value).lower() if isinstance(value, bool) else value if value is not N
 PY
 }
 get_json() { local url="$1" out="$2" ca="${3:-}" code; if [[ -n "$ca" ]]; then code="$(curl --silent --show-error --max-time 15 --cacert "$ca" -o "$out" -w '%{http_code}' "$url" 2>/dev/null)"; else code="$(curl --silent --show-error --max-time 15 -o "$out" -w '%{http_code}' "$url" 2>/dev/null)"; fi; [[ "$code" == 200 ]] && python3 -m json.tool "$out" >/dev/null 2>&1; }
-health() { local url="$1" name="$2" ca="${3:-}"; looks_production "$url" || fail "$name URL looks like production"; [[ "$url" =~ ^https?:// ]] || fail "$name URL is unsafe"; get_json "$url" "$scratch/$name.json" "$ca" || fail "$name health failed"; [[ "$(json_field "$scratch/$name.json" status)" == ok ]] || fail "$name status is not ok"; }
+# The release controller accepts either shape for a healthy response, and the
+# Quest API only ever emits the second: its liveness and readiness endpoints
+# return success:true with no status field at all. Requiring status:ok here made
+# the rehearsal stricter than the gate that actually admits a release, so a
+# healthy stack could never satisfy it.
+healthy_response() { local file="$1"; [[ "$(json_field "$file" status)" == ok ]] && return 0; [[ "$(json_field "$file" success)" == true ]] && return 0; return 1; }
+health() { local url="$1" name="$2" ca="${3:-}"; looks_production "$url" || fail "$name URL looks like production"; [[ "$url" =~ ^https?:// ]] || fail "$name URL is unsafe"; get_json "$url" "$scratch/$name.json" "$ca" || fail "$name health failed"; healthy_response "$scratch/$name.json" || fail "$name status is not ok"; }
 live="${QUEST_LIVENESS_URL:-}"; ready="${QUEST_READINESS_URL:-}"; val_health="${VALORANT_HEALTH_URL:-}"; ca="${VALORANT_CA_FILE:-}"
 [[ -n "$live" && -n "$ready" && -n "$val_health" && "$val_health" =~ ^https:// ]] || fail "health URLs are incomplete or VALORANT is not HTTPS"
 check_path "$ca" VALORANT_CA_FILE; [[ -f "$ca" && ! -L "$ca" && -r "$ca" ]] || fail "VALORANT CA file is missing"; health "$live" quest_liveness; health "$ready" quest_readiness; [[ "$(json_field "$scratch/quest_readiness.json" db)" == up ]] || fail "Quest database health is not up"; health "$val_health" valorant_health "$ca"; get_json "$val_health" "$scratch/valorant.json" "$ca" || fail "VALORANT health JSON failed"; [[ "$(json_field "$scratch/valorant.json" db)" == up ]] || fail "VALORANT database health is not up"
