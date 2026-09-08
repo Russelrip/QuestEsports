@@ -62,7 +62,7 @@ chmod 750 "$test_root/backup-client"
 chmod 640 "$test_root/backup-client/backup-client-ca.crt" "$test_root/backup-client/backup-client.crt" "$test_root/backup-client/backup-client.key"
 cat > "$fake_bin/postgres-target" <<EOF
 #!/usr/bin/env bash
-printf 'target_kind=postgresql17 database=quest host=127.0.0.1 port=55432 major=17 data_root=%s\n' "$backup_root"
+printf 'target_kind=postgresql17 database=quest host=quest-postgres port=5432 major=17 data_root=%s\n' "$backup_root"
 EOF
 
 cat > "$fake_bin/flock" <<'FAKE'
@@ -94,11 +94,58 @@ if [[ "${1:-}" == --version ]]; then
   exit 0
 fi
 printf '%s\n' "pg_dump $*" >> "$TEST_ROOT/pg_dump.log"
+written=false
 for argument in "$@"; do
   case "$argument" in
-    --file=*) printf 'fixture database dump\n' > "${argument#--file=}" ;;
+    --file=*) printf 'fixture database dump\n' > "${argument#--file=}"; written=true ;;
   esac
 done
+[[ "$written" == true ]] || printf 'fixture database dump\n'
+FAKE
+cat > "$fake_bin/docker" <<'FAKE'
+#!/usr/bin/env bash
+set -euo pipefail
+operation="${1:-}"
+shift || true
+fake_bin="$(dirname "$0")"
+case "$operation" in
+  info) exit 0 ;;
+  inspect)
+    template="$2"
+    case "$template" in
+      *State.Health.Status*) printf 'healthy\n' ;;
+      *com.docker.compose.project*) printf 'quest-prod\n' ;;
+      *com.docker.compose.service*) printf 'postgres\n' ;;
+      *Config.Image*) printf 'postgres:17-bookworm@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0\n' ;;
+      *HostConfig.PortBindings*) printf '{}\n' ;;
+      *NetworkSettings.Networks*) printf 'quest-prod-postgres-1,quest-postgres\n' ;;
+      *var/lib/postgresql/data*) printf '%s\n' "$BACKUP_ROOT" ;;
+      *) exit 2 ;;
+    esac
+    ;;
+  network)
+    [[ "$1" == inspect && "$2" == quest-shared ]] || exit 2
+    printf 'quest-prod-postgres-1\n'
+    ;;
+  run)
+    IFS= read -r connection_url
+    arguments=("$@")
+    passthrough=()
+    after_separator=false
+    for ((index=0; index < ${#arguments[@]}; index++)); do
+      if [[ "${arguments[$index]}" == -- ]]; then after_separator=true; continue; fi
+      [[ "$after_separator" == true ]] && passthrough+=("${arguments[$index]}")
+    done
+    client="$(basename "${passthrough[0]}")"
+    passthrough=("${passthrough[@]:1}")
+    case "$client" in
+      psql) "$fake_bin/psql" -X "$connection_url" "${passthrough[@]}" ;;
+      pg_dump) "$fake_bin/pg_dump" "$connection_url" "${passthrough[@]}" ;;
+      *) exit 2 ;;
+    esac
+    ;;
+  *) exit 2 ;;
+esac
 FAKE
 cat > "$fake_bin/age" <<'FAKE'
 #!/usr/bin/env bash
@@ -226,18 +273,20 @@ chmod 700 "$fake_bin"/*
 
 env_file="$test_root/backup.env"
 cat > "$env_file" <<EOF
-POSTGRES17_BIN=$fake_bin
+DOCKER_BIN=$fake_bin/docker
 POSTGRES_CA_FILE=$test_root/backup-client/backup-client-ca.crt
 BACKUP_CLIENT_TLS_DIR=$test_root/backup-client
 BACKUP_CLIENT_CERT_FILE=$test_root/backup-client/backup-client.crt
 BACKUP_CLIENT_KEY_FILE=$test_root/backup-client/backup-client.key
-POSTGRES_TARGET_HOST=127.0.0.1
-POSTGRES_TARGET_PORT=55432
+POSTGRES_TARGET_HOST=quest-postgres
+POSTGRES_TARGET_PORT=5432
+POSTGRES_TARGET_CONTAINER=quest-prod-postgres-1
+POSTGRES_TARGET_NETWORK=quest-shared
 POSTGRES_TARGET_DATABASE=quest
 POSTGRES_TARGET_MAJOR=17
 POSTGRES_TARGET_DATA_ROOT=$backup_root
 POSTGRES_TARGET_SENTINEL_COMMAND=$fake_bin/postgres-target
-DIRECT_URL=postgresql://quest_backup:fixture@127.0.0.1:55432/quest
+DIRECT_URL=postgresql://quest_backup:fixture@quest-postgres:5432/quest
 UPLOAD_ROOT=$upload_root
 PRIVATE_UPLOAD_ROOT=$private_root
 BACKUP_ROOT=$backup_root
@@ -317,16 +366,16 @@ grep -F "valorant schema is required" "$test_root/missing-schema.out" >/dev/null
   exit 1
 }
 
-# Removing the explicit pinned directory must fail even though PATH contains
-# fixture clients, proving that mutable discovery is not a supported fallback.
-sed '/^POSTGRES17_BIN=/d' "$env_file" > "$test_root/mutable.env"
-if BACKUP_ENV_FILE="$test_root/mutable.env" \
+# The private-network path must fail closed when its configured Docker binary is
+# unavailable; it must never fall back to a host PostgreSQL client or loopback.
+sed "s#^DOCKER_BIN=.*#DOCKER_BIN=$test_root/missing-docker#" "$env_file" > "$test_root/mutable.env"
+if MISSING_VALORANT=1 BACKUP_ENV_FILE="$test_root/mutable.env" \
     BACKUP_RELEASE_LOCK_PATH="$test_root/mutable.lock" \
     bash "$root/ops/backup-production.sh" --test-fixture >"$test_root/mutable.out" 2>&1; then
-  echo "backup accepted mutable PostgreSQL client discovery" >&2
+  echo "backup accepted a missing Docker client" >&2
   exit 1
 fi
-grep -F "Pinned PostgreSQL client is missing or unsafe" "$test_root/mutable.out" >/dev/null
+grep -F "Docker is missing or unsafe" "$test_root/mutable.out" >/dev/null
 
 # A payload with a public preview but no private originals root is not a valid
 # recovery point, even when its top-level private root is present.

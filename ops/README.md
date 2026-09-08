@@ -164,6 +164,11 @@ The wrapper acquires `/var/lock/quest-esports-release.lock` before the nested
 `/srv/quest-esports/backups/.quest-backup.lock`, and holds both through the
 archive, every upload/check, and the per-run `.results` record. The result file
 contains only the archive name, remote labels, and success/failure outcomes.
+The database snapshot uses the exact approved PostgreSQL 17 image as an
+ephemeral read-only client attached to `quest-shared`. Before connecting, the
+producer verifies `quest-prod-postgres-1`, its Compose labels and image, the
+durable data mount, the `quest-postgres` alias, and that no host port is
+published; the database session must still prove verify-full mTLS is active.
 
 **Classification: production-source read operation with a local cleanup side effect.** The script reads the configured production database and upload roots, creates and uploads an encrypted archive, and deletes local encrypted backup/checksum files older than `BACKUP_LOCAL_RETENTION_DAYS`; it does not delete production source data. `BACKUP_ENV_FILE` defaults to `/etc/quest-esports-backup.env` and is shown explicitly here.
 

@@ -43,9 +43,11 @@ cat > "$FAKE_BIN/pg_dump" <<'FAKE'
 #!/usr/bin/env bash
 if [[ "${1:-}" == --version ]]; then printf 'pg_dump (PostgreSQL) 17.4\n'; exit 0; fi
 printf '%s\n' "pg_dump $*" >> "$TEST_ROOT/pg_dump.log"
+written=false
 for argument in "$@"; do
-  case "$argument" in --file=*) printf 'fake postgres custom dump\n' > "${argument#--file=}" ;; esac
+  case "$argument" in --file=*) printf 'fake postgres custom dump\n' > "${argument#--file=}"; written=true ;; esac
 done
+[[ "$written" == true ]] || printf 'fake postgres custom dump\n'
 FAKE
 cat > "$FAKE_BIN/pg_restore" <<'FAKE'
 #!/usr/bin/env bash
@@ -123,22 +125,74 @@ case "$operation" in
   *) exit 2 ;;
 esac
 FAKE
+cat > "$FAKE_BIN/docker" <<'FAKE'
+#!/usr/bin/env bash
+set -euo pipefail
+operation="${1:-}"
+shift || true
+fake_bin="$(dirname "$0")"
+case "$operation" in
+  info) exit 0 ;;
+  inspect)
+    template="$2"
+    case "$template" in
+      *State.Health.Status*) printf 'healthy\n' ;;
+      *com.docker.compose.project*) printf 'quest-prod\n' ;;
+      *com.docker.compose.service*) printf 'postgres\n' ;;
+      *Config.Image*)
+        if [[ "${DOCKER_BAD_IMAGE:-0}" == 1 ]]; then printf 'postgres:17-bookworm@sha256:%064d\n' 0
+        else printf 'postgres:17-bookworm@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0\n'; fi ;;
+      *HostConfig.PortBindings*)
+        if [[ "${DOCKER_PUBLISHED:-0}" == 1 ]]; then printf '{"5432/tcp":[{"HostIp":"127.0.0.1","HostPort":"55432"}]}\n'
+        else printf '{}\n'; fi ;;
+      *NetworkSettings.Networks*) printf 'quest-prod-postgres-1,quest-postgres\n' ;;
+      *var/lib/postgresql/data*) printf '%s\n' "$BACKUP_ROOT" ;;
+      *) exit 2 ;;
+    esac
+    ;;
+  network)
+    [[ "$1" == inspect && "$2" == quest-shared ]] || exit 2
+    printf 'quest-prod-postgres-1\n'
+    ;;
+  run)
+    printf '%s\n' "$*" >> "$TEST_ROOT/docker.log"
+    IFS= read -r connection_url
+    arguments=("$@")
+    passthrough=()
+    after_separator=false
+    for ((index=0; index < ${#arguments[@]}; index++)); do
+      if [[ "${arguments[$index]}" == -- ]]; then after_separator=true; continue; fi
+      [[ "$after_separator" == true ]] && passthrough+=("${arguments[$index]}")
+    done
+    client="$(basename "${passthrough[0]}")"
+    passthrough=("${passthrough[@]:1}")
+    case "$client" in
+      psql) "$fake_bin/psql" -X "$connection_url" "${passthrough[@]}" ;;
+      pg_dump) "$fake_bin/pg_dump" "$connection_url" "${passthrough[@]}" ;;
+      *) exit 2 ;;
+    esac
+    ;;
+  *) exit 2 ;;
+esac
+FAKE
 chmod +x "$FAKE_BIN"/*
 
 ENV_FILE="$TEST_ROOT/backup.env"
 cat > "$ENV_FILE" <<EOF
-DIRECT_URL=postgresql://quest_backup:fixture@127.0.0.1:55432/quest
+DIRECT_URL=postgresql://quest_backup:fixture@quest-postgres:5432/quest
 UPLOAD_ROOT=$UPLOAD_ROOT
 PRIVATE_UPLOAD_ROOT=$PRIVATE_ROOT
 BACKUP_ROOT=$BACKUP_ROOT
 BACKUP_AGE_RECIPIENT=age1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-POSTGRES17_BIN=$FAKE_BIN
+DOCKER_BIN=$FAKE_BIN/docker
 POSTGRES_CA_FILE=$TEST_ROOT/backup-client/backup-client-ca.crt
 BACKUP_CLIENT_TLS_DIR=$TEST_ROOT/backup-client
 BACKUP_CLIENT_CERT_FILE=$TEST_ROOT/backup-client/backup-client.crt
 BACKUP_CLIENT_KEY_FILE=$TEST_ROOT/backup-client/backup-client.key
-POSTGRES_TARGET_HOST=127.0.0.1
-POSTGRES_TARGET_PORT=55432
+POSTGRES_TARGET_HOST=quest-postgres
+POSTGRES_TARGET_PORT=5432
+POSTGRES_TARGET_CONTAINER=quest-prod-postgres-1
+POSTGRES_TARGET_NETWORK=quest-shared
 POSTGRES_TARGET_DATABASE=quest
 POSTGRES_TARGET_MAJOR=17
 POSTGRES_TARGET_DATA_ROOT=$BACKUP_ROOT
@@ -154,7 +208,7 @@ BACKUP_REMOTE_MINIMUM_RECOVERY_POINTS=2
 EOF
 cat > "$FAKE_BIN/postgres-target" <<EOF
 #!/usr/bin/env bash
-printf 'target_kind=postgresql17 database=quest host=127.0.0.1 port=55432 major=17 data_root=%s\n' "$BACKUP_ROOT"
+printf 'target_kind=postgresql17 database=quest host=quest-postgres port=5432 major=17 data_root=%s\n' "$BACKUP_ROOT"
 EOF
 chmod 700 "$FAKE_BIN/postgres-target"
 export PATH="$FAKE_BIN:$PATH" FLOCK_LOG="$TEST_ROOT/flock.log" REMOTE_ROOT FLOCK_OWNER_TOKEN=owner-a TEST_ROOT
@@ -201,6 +255,28 @@ assert_file "$REMOTE_ROOT/primary.conf/production/$archive_name.sha256"
 assert_file "$REMOTE_ROOT/secondary.conf/production/$archive_name.sha256"
 assert_contains $'primary\tsuccess' "$BACKUP_ROOT/$archive_name.results"
 assert_contains $'secondary\tsuccess' "$BACKUP_ROOT/$archive_name.results"
+assert_contains '--network quest-shared' "$TEST_ROOT/docker.log"
+assert_contains '--read-only --cap-drop ALL --security-opt no-new-privileges' "$TEST_ROOT/docker.log"
+assert_contains 'postgres:17-bookworm@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0' "$TEST_ROOT/docker.log"
+if DOCKER_BAD_IMAGE=1 BACKUP_ENV_FILE="$ENV_FILE" BACKUP_RELEASE_LOCK_PATH="$TEST_ROOT/bad-image.lock" \
+    bash "$ROOT/ops/backup-production.sh" --test-fixture; then
+  printf 'expected unapproved PostgreSQL container image rejection\n' >&2
+  exit 1
+fi
+if DOCKER_PUBLISHED=1 BACKUP_ENV_FILE="$ENV_FILE" BACKUP_RELEASE_LOCK_PATH="$TEST_ROOT/published-port.lock" \
+    bash "$ROOT/ops/backup-production.sh" --test-fixture; then
+  printf 'expected published PostgreSQL port rejection\n' >&2
+  exit 1
+fi
+loopback_env="$TEST_ROOT/loopback.env"
+sed -e 's#@quest-postgres:5432/#@127.0.0.1:55432/#' \
+    -e 's/^POSTGRES_TARGET_HOST=.*/POSTGRES_TARGET_HOST=127.0.0.1/' \
+    -e 's/^POSTGRES_TARGET_PORT=.*/POSTGRES_TARGET_PORT=55432/' "$ENV_FILE" > "$loopback_env"
+if BACKUP_ENV_FILE="$loopback_env" BACKUP_RELEASE_LOCK_PATH="$TEST_ROOT/loopback.lock" \
+    bash "$ROOT/ops/backup-production.sh" --test-fixture; then
+  printf 'expected retired staging-loopback target rejection\n' >&2
+  exit 1
+fi
 [[ "$(sed -n '1p' "$FLOCK_LOG")" == 8 && "$(sed -n '2p' "$FLOCK_LOG")" == 8 &&
    "$(sed -n '3p' "$FLOCK_LOG")" == 9 ]] || exit 1
 

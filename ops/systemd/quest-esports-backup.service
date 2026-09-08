@@ -1,7 +1,7 @@
 [Unit]
 Description=Quest Esports encrypted production backup
-After=network-online.target
-Wants=network-online.target
+After=network-online.target docker.service
+Wants=network-online.target docker.service
 OnFailure=quest-esports-backup-failure@%n.service
 
 [Service]
@@ -14,6 +14,8 @@ Group=deploy
 # Deploy is the only non-root identity permitted to traverse/read this material.
 # Server TLS remains under /etc/quest-esports/tls for the UID999 PostgreSQL
 # container contract.
+# The deploy service identity must be able to access the Docker socket so the
+# script can launch its locked-down PostgreSQL client on quest-shared.
 Environment=BACKUP_ENV_FILE=/etc/quest-esports-backup.env
 Environment=POSTGRES_CA_FILE=/etc/quest-esports-backup/backup-client-ca.crt
 Environment=BACKUP_CLIENT_TLS_DIR=/etc/quest-esports-backup

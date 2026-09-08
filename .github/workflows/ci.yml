@@ -810,7 +810,7 @@ jobs:
             printf '%s\n' 'The PostgreSQL 17 readability gate must execute, not skip.' >&2
             exit 1
           fi
-          grep -Fx 'PostgreSQL UID/GID 999 server-file readability fixture passed' <<< "$readability_output" >/dev/null
+          grep -Fx 'PostgreSQL server and backup-client file readability fixtures passed' <<< "$readability_output" >/dev/null
           bash ops/tests/media-backup-contract.test.sh
           bash ops/tests/restore-production-backup.test.sh
           bash ops/tests/postgres17-rehearsal.test.sh

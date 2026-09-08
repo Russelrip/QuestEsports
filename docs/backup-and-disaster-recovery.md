@@ -1,6 +1,6 @@
 # Backup and Disaster Recovery
 
-Repository record date: August 31, 2026. The PostgreSQL 17 VPS cutover is
+Repository record date: September 8, 2026. The PostgreSQL 17 VPS cutover is
 closed as completed on 2026-08-31; this record still does not replace live
 verification of backup, destination, timer, or service state.
 
@@ -8,8 +8,9 @@ This is the source of truth for Quest Esports production backup, restore testing
 
 ## Safety rules
 
-1. Never test a restore against live production: PostgreSQL 17.11 in VPS
-   `quest-postgres` at `127.0.0.1:5433`, or the live upload directories.
+1. Never test a restore against live production: PostgreSQL 17 in Compose
+   container `quest-prod-postgres-1` (private endpoint `quest-postgres:5432`),
+   or the live upload directories.
 2. Never print or commit `/etc/quest-esports-backup.env` or any protected per-remote rclone configuration.
 3. Never place the private `age` identity in Git, Google Drive, email, chat, support tickets, or a normal cloud-synced folder.
 4. Always require both an encrypted archive and its matching `.sha256` file.
@@ -25,9 +26,9 @@ Visitor maintenance mode alone is not a write freeze: background jobs and the Pa
 | --- | --- |
 | Cutover status | Completed on 2026-08-31; PostgreSQL 17 on the VPS is the current production target |
 | Migration source/rollback material | Supabase remains intact but stale recovery material; it is not a rollback target after the first VPS writer |
-| Production target | PostgreSQL 17.11 in VPS container `quest-postgres`, reached at `127.0.0.1:5433`, with durable data at `/srv/quest-esports/postgres/17/data` |
-| Staging coexistence | Native PostgreSQL 16.15 remains on `127.0.0.1:5432` during staging and initial validation |
-| Backend | France VPS, `/var/www/QuestEsports`, PM2 process `quest-backend` owned by `deploy` |
+| Production target | PostgreSQL 17 in Compose container `quest-prod-postgres-1`, reached privately as `quest-postgres:5432` on `quest-shared`, with no published host port and durable data at `/srv/quest-esports/postgres/17/data` |
+| Staging overlay | `ops/docker/compose.postgres-staging.yml` publishes `127.0.0.1:55432` only when explicitly applied for host-run maintenance; it is not part of production Compose |
+| Backend | France VPS, `/var/www/QuestEsports`, Compose service `quest-prod-backend-1` |
 | Public uploads | `/srv/quest-esports/uploads` |
 | Public event-album previews | `/srv/quest-esports/uploads/poster-images` (WebP previews) |
 | Private uploads | `/srv/quest-esports/private` |
@@ -36,20 +37,21 @@ Visitor maintenance mode alone is not a write freeze: background jobs and the Pa
 | Active off-site destinations | Protected environment labels and destinations; owner verification required |
 | Historical destination | Retained only according to the protected multi-remote configuration; owner verification required |
 | Encryption | `age` public-recipient encryption; private identity kept offline |
-| Automation | Repository provides locked backup/freshness services and timers; the scheduled backup has failed since `2026-08-30 04:20` because the host lacks the certificate and `POSTGRES_TARGET_*` settings required by `backup-production-multi-remote.sh` |
-| Interim backup coverage | `quest-pg17-interim-backup.{service,timer}` covers the gap and must be removed once the real backup pipeline is provisioned |
+| Automation | The canonical producer uses an ephemeral PostgreSQL 17 client on `quest-shared`, preserving verify-full mTLS without publishing PostgreSQL. Before this correction it incorrectly required the staging-only `127.0.0.1:55432` endpoint. |
+| Interim backup coverage | Retire `quest-pg17-interim-backup.timer`, `quest-media-interim-backup.timer`, and `quest-pg17-interim-freshness.timer` only after this change is deployed and a canonical `quest-production-*.tar.gz.enc` recovery point succeeds |
 | Schedule | Daily at 02:15 UTC with up to 15 minutes randomized delay; missed runs are persistent |
 | Restore-drill status | Skipped; the hard rehearsal gate was not performed and cannot be satisfied retroactively |
-| Remaining trust risks | Missing TLS material blocks Compose adoption and the backup pipeline; unrestricted deploy-root access and two GitHub Actions keys remain active risks for Tasks 3 and 6 |
+| Remaining trust risks | The backup client CA, certificate, and key were provisioned on 2026-09-01; the stale published-port assumption was the remaining canonical-backup blocker. Offline decryption and rehearsal-signing key custody remain owner-controlled recovery prerequisites. |
 
-The backup pipeline requires `POSTGRES_CA_FILE`, `BACKUP_CLIENT_CERT_FILE`, and
-`BACKUP_CLIENT_KEY_FILE` before the real scheduled service can be restored.
-The checked-in systemd units pin these values to the deploy-readable paths
+The backup client CA, certificate, and key are provisioned as of 2026-09-01.
+The checked-in systemd units pin them to the deploy-readable paths
 `/etc/quest-esports-backup/backup-client-ca.crt`, `backup-client.crt`, and
 `backup-client.key`, and refuse to invoke the wrapper unless
-`/var/www/QuestEsports` is available as the working directory. A missing
-certificate, target setting, or working tree is a failed prerequisite; it is
-not evidence of a successful backup and must not be hidden by an interim job.
+`/var/www/QuestEsports` is available as the working directory. The canonical
+backup blocker was the producer's stale dependency on the staging-only
+`127.0.0.1:55432` publication, not missing TLS material. A missing certificate,
+target setting, Docker/network prerequisite, or working tree is still a failed
+prerequisite and must not be hidden by an interim job.
 
 The checked-in record describes the configured remotes as using separate,
 QuestEsports-owned credentials. Remote labels, destinations, and token state
@@ -230,26 +232,31 @@ with `openssl verify -purpose sslserver`; the backup connection retains
 Host validation and the backup script reject any other production hierarchy or
 permissions.
 
-Install PostgreSQL client 17, `age`, `rclone`, and `rsync`. The generic Ubuntu `pg_dump` may still resolve to PostgreSQL 16, so the backup environment pins `/usr/lib/postgresql/17/bin` at the start of `PATH`.
+Install Docker, `age`, `rclone`, and `rsync`, and keep the exact approved
+PostgreSQL 17 image available locally. The backup does not use a host
+`pg_dump`; both clients run from the pinned image on `quest-shared`.
 
 The backup takes an exclusive `flock`, copies both immutable upload trees, runs the database dump, and copies the upload trees a second time before packaging. This closes the common gap where a database row commits while its file is omitted from the archive. PostgreSQL and the VPS filesystem still cannot participate in one distributed transaction, so the application must keep random upload filenames immutable and quarterly restore verification remains required.
 
 ### Backup endpoint lifecycle
 
-The checked-in host backup service uses the exact PostgreSQL 17 VPS target in
-`ops/quest-esports-backup.env.example`: `127.0.0.1:55432`, database `quest`,
-and role `quest_backup`. It uses the separately provisioned backup client
-trust bundle, certificate, and key from `/etc/quest-esports-backup`, with the
+The checked-in backup service uses the exact PostgreSQL 17 Compose target in
+`ops/quest-esports-backup.env.example`: `quest-postgres:5432` on
+`quest-shared`, database `quest`, and role `quest_backup`. It launches the
+approved `postgres:17-bookworm` digest as a short-lived read-only client and
+first verifies the exact `quest-prod-postgres-1` Compose identity, durable data
+mount, network alias, and absence of a published host port. It uses the
+provisioned backup client trust bundle, certificate, and key from
+`/etc/quest-esports-backup`, with the
 bundle containing the PostgreSQL server issuer and the certificate/key remaining
 a separate client identity. It must never use the former Paris Supabase
 session pooler.
-The supported host-run backup and restore path is to keep or reapply
-`ops/docker/compose.postgres-staging.yml` while the PostgreSQL service is in
-use. It remains bound to `127.0.0.1` only; it is never a public database port.
-No private-network backup utility is implemented or supported. There is no
-supported transition back to Supabase: after the first VPS writer, every
-backup and restore must target PostgreSQL 17 or the change is a release
-blocker.
+The staging overlay is no longer required for backups. Host-run restores still
+use `ops/docker/compose.postgres-staging.yml`, bound only to
+`127.0.0.1:55432`, because the destructive restore primitive has not moved into
+the private network. There is no supported transition back to Supabase: after
+the first VPS writer, every backup and restore must target PostgreSQL 17 or the
+change is a release blocker.
 
 If host backup or restore access is intentionally suspended, use these exact
 controls before stopping PostgreSQL or changing the Compose invocation:
@@ -259,18 +266,17 @@ sudo systemctl disable --now quest-esports-backup.timer quest-esports-backup-fre
 sudo systemctl stop quest-esports-backup.service quest-esports-backup-freshness.service
 ```
 
-Before a subsequent host backup or freshness check, reapply the overlay, start
-PostgreSQL, verify the loopback endpoint, and re-enable the timers. This
-enablement is for backup/freshness operations only:
+Before a subsequent backup, start PostgreSQL from the production Compose file,
+verify the private target and `quest-shared` attachment, and re-enable the
+timers. Do not apply the staging overlay for backup or freshness operations:
 
 ```bash
 COMPOSE_ENV=/etc/quest-esports/quest.production.env
 docker compose --env-file "$COMPOSE_ENV" \
-  -f ops/docker/compose.production.yml \
-  -f ops/docker/compose.postgres-staging.yml up -d postgres
+  -f ops/docker/compose.production.yml up -d postgres
 docker compose --env-file "$COMPOSE_ENV" \
-  -f ops/docker/compose.production.yml \
-  -f ops/docker/compose.postgres-staging.yml ps postgres
+  -f ops/docker/compose.production.yml ps postgres
+docker network inspect quest-shared
 sudo systemctl enable --now quest-esports-backup.timer quest-esports-backup-freshness.timer
 ```
 
@@ -680,12 +686,12 @@ Supabase URL toggle on this path.
      RESTORE_CONFIRMATION=RESTORE_QUEST_PRODUCTION \
      RESTORE_PRODUCTION_AUTHORIZED=1 \
      RESTORE_TARGET_AUTHORIZATION=production \
-     BACKUP_ENV_FILE=/etc/quest-esports-backup.env \
+     BACKUP_ENV_FILE=/secure/recovery/quest-esports-recovery.env \
      bash /var/www/QuestEsports/ops/restore-production-backup.sh \
      /secure/archives/quest-production-YYYYMMDDTHHMMSSZ.tar.gz.enc
    ```
 
-   The protected backup environment and canonical sentinel supply the exact
+   The separately protected recovery environment and canonical sentinel supply the exact
    target identity, TLS files, and the dedicated `quest_recovery_admin` restore
    credential contract;
    verify them without printing values. Never point this command at Supabase.
@@ -715,7 +721,7 @@ Restore uploads and database before admitting user writes. Then run the full pro
 
 | Symptom | Check | Safe response |
 | --- | --- | --- |
-| `pg_dump` version mismatch | `/usr/lib/postgresql/17/bin/pg_dump --version` and backup `PATH` | Install/pin client 17; do not downgrade the server |
+| Backup PostgreSQL client image unavailable | `docker image inspect <approved-postgres-17-digest>` | Restore the exact pinned image; never fall back to a host client or publish PostgreSQL |
 | `find: Failed to restore initial working directory` | Current directory is `/root` while running as `deploy` | `cd /var/www/QuestEsports` and rerun |
 | rclone authentication failure | OAuth app status, Drive API, token revocation, remote name | Re-authorize interactively without printing config; retest manual and systemd paths |
 | Archive exists without checksum | Service journal and remote listing | Treat it as incomplete; do not restore it |

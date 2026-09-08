@@ -41,7 +41,9 @@ test("production backup wrapper locks before delegated two-pass snapshot", () =>
   const firstUploadCopy = implementationScript.indexOf(
     'rsync -a "$resolved_upload_root/" "$work_directory/$public_name/"'
   );
-  const databaseDump = implementationScript.indexOf('"$pg_dump_bin" "$DIRECT_URL"');
+  const databaseDump = implementationScript.indexOf(
+    "postgres_client /usr/bin/pg_dump quest-backup-dump"
+  );
   const secondUploadCopy = implementationScript.indexOf(
     'rsync -a "$resolved_upload_root/" "$work_directory/$public_name/"',
     firstUploadCopy + 1
