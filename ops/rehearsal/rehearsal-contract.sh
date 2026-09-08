@@ -55,13 +55,22 @@ rehearsal_live_gate_token() {
 }
 
 rehearsal_canonical_acl_rows() {
+  # Verified against production and against the canonical bootstrap SQL.
+  #
+  # Sequences are 'rU', not 'rwU': the bootstrap grants USAGE, SELECT ON
+  # SEQUENCES, so the previous 'w' described a privilege nothing ever granted.
+  #
+  # quest_backup appears because the backup role reads through pg_dump and
+  # needs to reach tables created after it was provisioned; without a default
+  # privilege a new table would silently fall out of the backup. Production
+  # grants it SELECT on tables and USAGE, SELECT on sequences in both schemas.
   printf '%s\n' \
-    'quest_migrator|public|r|quest_runtime=arwd/quest_migrator' \
-    'quest_migrator|public|S|quest_runtime=rwU/quest_migrator' \
+    'quest_migrator|public|r|quest_runtime=arwd/quest_migrator,quest_backup=r/quest_migrator' \
+    'quest_migrator|public|S|quest_runtime=rU/quest_migrator,quest_backup=rU/quest_migrator' \
     'quest_migrator|public|f|quest_migrator=X/quest_migrator' \
     'quest_migrator|public|T|quest_migrator=U/quest_migrator' \
-    'val_migrator|valorant|r|val_runtime=arwd/val_migrator' \
-    'val_migrator|valorant|S|val_runtime=rwU/val_migrator' \
+    'val_migrator|valorant|r|val_runtime=arwd/val_migrator,quest_backup=r/val_migrator' \
+    'val_migrator|valorant|S|val_runtime=rU/val_migrator,quest_backup=rU/val_migrator' \
     'val_migrator|valorant|f|val_migrator=X/val_migrator' \
     'val_migrator|valorant|T|val_migrator=U/val_migrator' \
     'quest_migrator|<global>|f|quest_migrator=X/quest_migrator' \
