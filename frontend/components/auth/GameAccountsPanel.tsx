@@ -228,16 +228,23 @@ export default function GameAccountsPanel({ className = "" }: GameAccountsPanelP
         </p>
       </div>
 
-      <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border border-cyan-300/20 bg-cyan-400/[0.06] p-4">
-        <p className="max-w-lg text-sm leading-6 text-slate-300">
-          <span className="font-semibold text-white">Already on the VALORANT leaderboard?</span>{" "}
-          You registered there with the same Discord account, so Quest can connect that account
-          for you — there is nothing to look up or retype.
-        </p>
-        <Button type="button" variant="secondary" disabled={importing} onClick={() => void importFromLeaderboard()}>
-          {importing ? "Importing…" : "Import from leaderboard"}
-        </Button>
-      </div>
+      {/* Only for somebody with nothing connected yet. It is a shortcut past the
+          Riot ID field, so once that field has been answered it is an offer to
+          do something already done — clutter in the one place that should be
+          unambiguous. Withheld while loading too, so it never appears and then
+          vanishes under the cursor. */}
+      {!loading && !valorant ? (
+        <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border border-cyan-300/20 bg-cyan-400/[0.06] p-4">
+          <p className="max-w-lg text-sm leading-6 text-slate-300">
+            <span className="font-semibold text-white">Already on the VALORANT leaderboard?</span>{" "}
+            You registered there with the same Discord account, so Quest can connect that account
+            for you — there is nothing to look up or retype.
+          </p>
+          <Button type="button" variant="secondary" disabled={importing} onClick={() => void importFromLeaderboard()}>
+            {importing ? "Importing…" : "Import from leaderboard"}
+          </Button>
+        </div>
+      ) : null}
 
       {notice ? <p className="mt-5 border border-emerald-300/20 bg-emerald-400/8 p-3 text-sm text-emerald-100" role="status">{notice}</p> : null}
       {error ? <p className="mt-5 border border-rose-300/20 bg-rose-400/8 p-3 text-sm leading-6 text-rose-100" role="alert">{error}</p> : null}
