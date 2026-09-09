@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findGameAccount, gameAccountRiotId } from "../../lib/game-accounts";
+import { findGameAccount, gameAccountRiotId, leaderboardRegistrationMessage } from "../../lib/game-accounts";
 import type { GameAccount } from "../../lib/game-accounts";
 
 // A connected account is the only version of a player's game identity that was
@@ -47,5 +47,35 @@ describe("game account identity", () => {
     expect(findGameAccount([account()], "cs2")).toBeNull();
     expect(findGameAccount([], "valorant")).toBeNull();
     expect(findGameAccount(null, "valorant")).toBeNull();
+  });
+});
+
+describe("leaderboard registration outcome", () => {
+  it("confirms a new leaderboard entry", () => {
+    expect(leaderboardRegistrationMessage({ state: "registered" })).toMatch(/on the VALORANT leaderboard/);
+  });
+
+  it("stays quiet when there is nothing for the player to do", () => {
+    // Already on it, or the leaderboard could not be reached. Neither is the
+    // player's problem, and neither should interrupt a successful connection.
+    expect(leaderboardRegistrationMessage({ state: "already" })).toBeNull();
+    expect(leaderboardRegistrationMessage({ state: "unavailable" })).toBeNull();
+    expect(leaderboardRegistrationMessage(null)).toBeNull();
+  });
+
+  it("tells a player when their leaderboard entry points at an older account", () => {
+    // The one case they must act on. A stale entry is worse than an absent one:
+    // it looks current and is wrong, and the leaderboard cannot be re-pointed.
+    const message = leaderboardRegistrationMessage({
+      state: "diverged",
+      registeredName: "OldName",
+      registeredTag: "0000",
+    });
+    expect(message).toMatch(/OldName#0000/);
+    expect(message).toMatch(/admin/i);
+  });
+
+  it("still explains a divergence when the older account cannot be named", () => {
+    expect(leaderboardRegistrationMessage({ state: "diverged" })).toMatch(/a different account/);
   });
 });

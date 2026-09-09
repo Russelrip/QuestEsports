@@ -7,6 +7,7 @@ import { buildValorantTrackerProfileUrl } from "@/lib/valorant";
 import {
   getMyGameAccounts,
   importValorantFromLeaderboard,
+  leaderboardRegistrationMessage,
   linkValorantAccount,
   requestValorantChange,
   resolveValorantAccount,
@@ -126,8 +127,16 @@ export default function GameAccountsPanel({ className = "" }: GameAccountsPanelP
     setError("");
     setNotice("");
     try {
-      await linkValorantAccount(riotId.trim());
-      setNotice("Your VALORANT account is connected.");
+      const account = await linkValorantAccount(riotId.trim());
+      // Connecting also puts them on the leaderboard, so the confirmation says
+      // what actually happened there — including the one case they have to act
+      // on, an entry still pointing at an account they no longer use.
+      const leaderboard = leaderboardRegistrationMessage(account.leaderboard);
+      setNotice(
+        leaderboard
+          ? `Your VALORANT account is connected. ${leaderboard}`
+          : "Your VALORANT account is connected."
+      );
       setRiotId("");
       setResolved(null);
       await refresh();
@@ -213,7 +222,9 @@ export default function GameAccountsPanel({ className = "" }: GameAccountsPanelP
           <h3 id="game-accounts-heading" className="mt-2 text-2xl text-white">Game accounts</h3>
         </div>
         <p className="max-w-sm text-sm leading-6 text-slate-400">
-          Connect the account you compete on. Your captain will not need to type it when registering a team.
+          Connect the account you compete on. Your captain will not need to type it when
+          registering a team, and it puts you on the VALORANT leaderboard — there is no
+          separate registration.
         </p>
       </div>
 

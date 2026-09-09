@@ -30,6 +30,8 @@ export type GameAccount = {
   linkedAt: string | null;
   verifiedAt: string | null;
   lastSyncedAt: string | null;
+  /** Set when this account was just connected; absent when merely listed. */
+  leaderboard?: LeaderboardRegistrationResult | null;
 };
 
 export type ResolvedGameAccount = {
@@ -123,6 +125,47 @@ export async function resolveValorantAccount(riotId: string): Promise<ResolvedGa
   const resolved = unwrap<ResolvedGameAccount>(data);
   if (!resolved) throw new Error("Could not look up that Riot ID.");
   return resolved;
+}
+
+/**
+ * What happened on the VALORANT leaderboard when an account was connected.
+ *
+ * `diverged` is the one worth showing: their leaderboard entry points at a
+ * different account, and the leaderboard has no way to be re-pointed. A stale
+ * entry is worse than an absent one — it looks current and is wrong — so the
+ * player is told rather than left to discover it in a ranking.
+ */
+export type LeaderboardRegistrationState =
+  | "registered"
+  | "already"
+  | "diverged"
+  | "unavailable";
+
+export type LeaderboardRegistrationResult = {
+  state: LeaderboardRegistrationState;
+  registeredName?: string | null;
+  registeredTag?: string | null;
+};
+
+export function leaderboardRegistrationMessage(
+  result: LeaderboardRegistrationResult | null | undefined,
+): string | null {
+  if (!result) return null;
+  switch (result.state) {
+    case "registered":
+      return "You are now on the VALORANT leaderboard.";
+    case "diverged": {
+      const older =
+        result.registeredName && result.registeredTag
+          ? `${result.registeredName}#${result.registeredTag}`
+          : "a different account";
+      return `Your leaderboard entry still points at ${older}. Contact an admin to move it to this account.`;
+    }
+    case "already":
+    case "unavailable":
+    default:
+      return null;
+  }
 }
 
 export async function linkValorantAccount(riotId: string): Promise<GameAccount> {
