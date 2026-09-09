@@ -173,6 +173,152 @@ test("real PostgreSQL protects sessions and claims a queued job only once", {
   }
 });
 
+// A saved-team roster is assembled from two queries that mocks cannot judge:
+// one `findMany` whose `where` is an OR of a verified-address match and a
+// linked-account match, and one `findFirst` that answers a member reference by
+// the same identity rule the listing uses. A mocked client accepts any `where`
+// at all, so the shape is only really checked here.
+//
+// The behaviour matters as much as the shape. Resolving by address alone
+// reported somebody who accepted and later changed their account email as
+// having no Quest account, on a roster they were already on.
+test("a roster resolves its members by linked account against real PostgreSQL", {
+  skip: !runDatabaseTests,
+}, async () => {
+  const { prisma } = require("../src/lib/prisma");
+  const { listProfileTeams } = require("../src/modules/teams/team.service");
+  const { listInvitationsForUser } = require("../src/modules/teams/invitation.service");
+  const suffix = crypto.randomUUID();
+  const captainId = crypto.randomUUID();
+  const acceptedUserId = crypto.randomUUID();
+  const teamId = crypto.randomUUID();
+  const acceptedMemberId = crypto.randomUUID();
+  const pendingMemberId = crypto.randomUUID();
+  const invitedAddress = `invited-${suffix}@example.com`;
+  const strangerAddress = `stranger-${suffix}@example.com`;
+
+  const createUser = (id, handle, extra = {}) => prisma.user.create({
+    data: {
+      id,
+      firstName: "Integration",
+      lastName: "Player",
+      email: `${handle}-${suffix}@example.com`,
+      emailNormalized: `${handle}-${suffix}@example.com`,
+      username: `${handle}-${suffix}`,
+      usernameNormalized: `${handle}-${suffix}`,
+      passwordHash: "integration-test-hash",
+      emailVerified: true,
+      emailVerifiedAt: new Date(),
+      ...extra,
+    },
+  });
+
+  try {
+    await createUser(captainId, "captain");
+    // Accepted the invitation at `invitedAddress`, then changed the address on
+    // their account. The link is what still identifies them.
+    await createUser(acceptedUserId, "moved", { discordTag: `realhandle-${suffix}` });
+    await prisma.oAuthAccount.create({
+      data: {
+        id: crypto.randomUUID(),
+        userId: acceptedUserId,
+        provider: "discord",
+        providerUserId: `discord-${suffix}`,
+      },
+    });
+
+    await prisma.savedTeam.create({
+      data: {
+        id: teamId,
+        captainUserId: captainId,
+        name: `Integration Roster ${suffix}`,
+        country: "Sri Lanka",
+        teamTag: "INT",
+        members: {
+          create: [
+            {
+              id: crypto.randomUUID(),
+              userId: captainId,
+              role: "CAPTAIN",
+              memberOrder: 0,
+              name: "Integration Captain",
+              email: `captain-${suffix}@example.com`,
+              emailNormalized: `captain-${suffix}@example.com`,
+              inviteStatus: "accepted",
+            },
+            {
+              id: acceptedMemberId,
+              userId: acceptedUserId,
+              role: "PLAYER",
+              memberOrder: 1,
+              name: "Moved Player",
+              email: invitedAddress,
+              emailNormalized: invitedAddress,
+              // What a captain typed in an older version of the form. Still on
+              // the row, and superseded by the connected account above.
+              discord: "captain-typed-this",
+              inviteStatus: "accepted",
+            },
+            {
+              id: pendingMemberId,
+              role: "SUBSTITUTE",
+              memberOrder: 1,
+              name: "No Account Yet",
+              email: strangerAddress,
+              emailNormalized: strangerAddress,
+              discord: "also-typed",
+              inviteStatus: "pending",
+              inviteSentAt: new Date(),
+              inviteExpiresAt: new Date(Date.now() + 72 * 60 * 60 * 1000),
+            },
+          ],
+        },
+      },
+    });
+
+    const teams = await listProfileTeams({ user: { id: captainId } });
+    const roster = teams.find((team) => team.id === teamId);
+    assert.ok(roster);
+
+    const accepted = roster.members.find((member) => member.id === acceptedMemberId);
+    // The address on this row belongs to nobody now. Only the link finds them.
+    assert.equal(accepted.hasQuestAccount, true);
+    assert.equal(accepted.hasDiscord, true);
+    assert.equal(accepted.discord, `realhandle-${suffix}`);
+    assert.equal(accepted.userId, undefined);
+
+    const pending = roster.members.find((member) => member.id === pendingMemberId);
+    assert.equal(pending.hasQuestAccount, false);
+    assert.equal(pending.hasDiscord, false);
+    // Nothing live to replace it with, so the stored value is left rather than
+    // blanked: losing data to say nothing helps nobody.
+    assert.equal(pending.discord, "also-typed");
+
+    // A reference to an invitation this account cannot reach. The findFirst
+    // behind it carries the same identity filter as the listing, so possession
+    // of the reference adds nothing.
+    const stranger = { id: acceptedUserId, emailVerified: true, emailNormalized: `moved-${suffix}@example.com` };
+    const { invitations, reference } = await listInvitationsForUser({
+      user: stranger,
+      memberReference: pendingMemberId,
+    });
+    assert.deepEqual(invitations, []);
+    assert.deepEqual(reference, { state: "mismatch", member: null });
+
+    // And one that is theirs, already answered.
+    const answered = await listInvitationsForUser({
+      user: stranger,
+      memberReference: acceptedMemberId,
+    });
+    assert.deepEqual(answered.reference, { state: "answered", member: acceptedMemberId });
+  } finally {
+    await prisma.savedTeam.deleteMany({ where: { id: teamId } });
+    await prisma.oAuthAccount.deleteMany({ where: { userId: acceptedUserId } });
+    await prisma.user.deleteMany({ where: { id: { in: [captainId, acceptedUserId] } } });
+    await prisma.$disconnect();
+  }
+});
+
 test("VALORANT public-schema tables exist and are RLS-protected", {
   skip: !runDatabaseTests,
 }, async () => {

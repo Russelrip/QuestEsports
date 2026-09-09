@@ -19,13 +19,15 @@ import {
   createSavedTeam,
 } from "@/lib/teams";
 
+// Role, name and email. A captain is filling this in about other people, and
+// the rest of who somebody is belongs to that person's own account: they bring
+// it with them when they accept. A game identifier is not asked for here at all
+// — that is a tournament's question, asked by its own form under its own rules,
+// so the same saved team can enter events for different games.
 const emptyMember = (): CreateTeamMemberInput => ({
   role: "PLAYER",
   name: "",
   email: "",
-  phone: "",
-  discord: "",
-  riotId: "",
 });
 
 const formatFileSize = (bytes: number) =>
@@ -240,7 +242,7 @@ export default function RegistrationForm() {
                   Members
                 </h3>
                 <p className="mt-1 text-xs uppercase tracking-[0.08em] text-slate-500">
-                  An invitation email will be sent to each team member.
+                  Each member gets an invitation waiting in their Quest account.
                 </p>
               </div>
 
@@ -308,37 +310,6 @@ export default function RegistrationForm() {
                         value={member.email}
                         onChange={(event) =>
                           updateMember(index, "email", event.target.value)
-                        }
-                      />
-                    </FormField>
-                    <FormField label="Phone">
-                      <Input
-                        type="tel"
-                        maxLength={50}
-                        placeholder="Contact number"
-                        value={member.phone || ""}
-                        onChange={(event) =>
-                          updateMember(index, "phone", event.target.value)
-                        }
-                      />
-                    </FormField>
-                    <FormField label="Discord">
-                      <Input
-                        maxLength={100}
-                        placeholder="Discord username"
-                        value={member.discord || ""}
-                        onChange={(event) =>
-                          updateMember(index, "discord", event.target.value)
-                        }
-                      />
-                    </FormField>
-                    <FormField label="Riot ID / IGN">
-                      <Input
-                        maxLength={100}
-                        placeholder="Name#123"
-                        value={member.riotId || ""}
-                        onChange={(event) =>
-                          updateMember(index, "riotId", event.target.value)
                         }
                       />
                     </FormField>

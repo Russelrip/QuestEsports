@@ -104,6 +104,9 @@ export default function ProfileView() {
   const [matchRooms, setMatchRooms] = useState<MatchRoomSummary[]>([]);
   const [avatarSaving, setAvatarSaving] = useState(false);
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
+  // The reference from a captain's copied link. It grants nothing — the backend
+  // still answers by identity — and only decides which invitation is focused.
+  const [memberReference, setMemberReference] = useState<string | null>(null);
   const [showCreatedTeamNotice, setShowCreatedTeamNotice] = useState(false);
   const { data: teamsData, setData: setTeamsData, loading: teamsLoading, error: teamsError } = useTeams(Boolean(user));
   const showToast = useToastStore((state) => state.showToast);
@@ -133,9 +136,10 @@ export default function ProfileView() {
     if (params.get("tab") === "account") {
       setActiveTab("account");
     } else if (params.get("tab") === "invitations") {
-      // Every invitation notice points here, and so does the redirect from the
-      // old emailed invite links.
+      // Every invitation notice points here, and so does the onboarding page a
+      // captain's copied link starts at.
       setActiveTab("invitations");
+      setMemberReference(params.get("member"));
     } else if (params.get("tab") === "teams") {
       setActiveTab("teams");
       setSelectedTeamId(params.get("team"));
@@ -145,7 +149,17 @@ export default function ProfileView() {
 
   useEffect(() => {
     if (!isLoading && !user) {
-      router.replace("/login");
+      // Carrying the whole destination, not just the fact that a login is
+      // needed. Someone arriving from an invitation link has already been sent
+      // somewhere specific; dropping them on the dashboard afterwards makes
+      // them go and find it again, and the link they were sent is by then two
+      // redirects behind them.
+      const destination = `${window.location.pathname}${window.location.search}`;
+      router.replace(
+        destination === "/profile"
+          ? "/login"
+          : `/login?redirect=${encodeURIComponent(destination)}`
+      );
       return;
     }
 
@@ -458,7 +472,7 @@ export default function ProfileView() {
               </div>
             ) : activeTab === "invitations" ? (
               <div className="grid min-w-0 gap-8">
-                <InvitationsPanel />
+                <InvitationsPanel memberReference={memberReference} />
               </div>
             ) : activeTab === "account" ? (
               <div className="grid min-w-0 gap-8">

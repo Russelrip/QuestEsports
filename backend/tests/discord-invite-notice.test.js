@@ -184,19 +184,23 @@ test("a recipient with no Discord is skipped quietly", async () => {
   }
 });
 
-test("the message carries no invite token", async () => {
+test("the message carries no invite token and does not promise an email", async () => {
   const { module: notice, restore } = loadNotice();
   try {
-    const message = notice.buildInviteMessage(invite);
+    const message = notice.buildInviteMessage({ ...invite, invitationId: "member-9" });
     assert.match(message, /Example Team/);
     assert.match(message, /Russel/);
     assert.match(message, /Quest Ascension/);
     // A token in a DM is a credential sitting in a chat log. The recipient is
     // already signed in to Quest to see the invitation.
     assert.doesNotMatch(message, /token/i);
-    assert.match(message, /questesports\.lk\/profile/);
-    // And it says the email exists, so nobody thinks the DM is the only copy.
-    assert.match(message, /by email/i);
+    // The member reference is not one either: it only decides which of this
+    // account's own invitations the page scrolls to.
+    assert.match(message, /questesports\.lk\/profile\?tab=invitations&member=member-9/);
+    // There is no invitation email any more, so the DM must not say there is
+    // one on its way — that was the line that made a missing DM look survivable
+    // for a reason that had stopped being true.
+    assert.doesNotMatch(message, /by email/i);
   } finally {
     restore();
   }

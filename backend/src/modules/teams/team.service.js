@@ -69,10 +69,17 @@ const runTeamSyncTransaction = async (work) =>
     })
   );
 
+// `phone`, `discord` and `riotId` are read, never written. They are whatever a
+// captain typed into an older version of this form, kept so an existing team
+// does not appear to lose data — but `attachRosterReadiness` overwrites
+// `discord` with the accepting account's own handle wherever there is one,
+// because a guess about somebody else's Discord and their actual connected
+// account are not interchangeable and only one of them can be relied on.
 const mapSavedTeamMember = (member) => ({
   id: member.id,
   role: member.role,
   memberOrder: member.memberOrder,
+  userId: member.userId || null,
   name: member.name,
   email: member.email,
   phone: member.phone,
@@ -122,27 +129,40 @@ const mapSavedTeam = (team, userId) => ({
 // to. Those are different problems with different fixes, and only the captain
 // is in a position to go and chase either of them.
 //
-// Resolved by verified address, the same rule the invitation itself uses: an
-// unverified address proves nothing about who controls it.
+// Resolved by the account the row is linked to, or by a verified address — the
+// same two identities the invitation itself is answered by. An unverified
+// address proves nothing about who controls it, and the link is checked first
+// because someone who accepted and later changed their account email is still
+// the person on this roster.
+//
+// It is also where the roster's Discord handle comes from. A captain used to
+// type it, which meant it could say anything at all; the accepting user's own
+// connected account is the only version of it that is true by construction, so
+// it replaces whatever an older team stored.
 const attachRosterReadiness = async (teams) => {
+  const allMembers = teams.flatMap((team) => team.members || []);
   const emails = [
-    ...new Set(
-      teams
-        .flatMap((team) => team.members || [])
-        .map((member) => normalizeEmail(member.email))
-        .filter(Boolean)
-    ),
+    ...new Set(allMembers.map((member) => normalizeEmail(member.email)).filter(Boolean)),
   ];
+  const linkedUserIds = [...new Set(allMembers.map((member) => member.userId).filter(Boolean))];
 
   // Narrow client projections cannot read accounts back. Readiness is an
   // addition to the roster, never a precondition for returning it, so a scope
   // that cannot look one up reports nothing rather than failing the caller —
   // the same pattern the registration-member lookups here already use.
-  if (emails.length === 0 || typeof prisma.user?.findMany !== "function") return teams;
+  if (
+    (emails.length === 0 && linkedUserIds.length === 0) ||
+    typeof prisma.user?.findMany !== "function"
+  ) return teams;
 
   const users = await prisma.user.findMany({
-    where: { emailNormalized: { in: emails }, emailVerified: true },
-    select: { id: true, emailNormalized: true },
+    where: {
+      OR: [
+        { emailNormalized: { in: emails }, emailVerified: true },
+        { id: { in: linkedUserIds } },
+      ],
+    },
+    select: { id: true, emailNormalized: true, emailVerified: true, discordTag: true },
   });
   const discordLinked = users.length > 0 && typeof prisma.oAuthAccount?.findMany === "function"
     ? await prisma.oAuthAccount.findMany({
@@ -151,20 +171,40 @@ const attachRosterReadiness = async (teams) => {
     })
     : [];
   const discordUserIds = new Set(discordLinked.map((account) => account.userId));
-  const readinessByEmail = new Map(
-    users.map((account) => [
-      account.emailNormalized,
-      { hasQuestAccount: true, hasDiscord: discordUserIds.has(account.id) },
-    ])
+  // A handle only replaces the stored one when there is a handle to replace it
+  // with. An account that has never connected Discord would otherwise blank out
+  // whatever an older team was carrying, which loses data to say nothing.
+  const presentAccount = (account) => ({
+    hasQuestAccount: true,
+    hasDiscord: discordUserIds.has(account.id),
+    ...(account.discordTag ? { discord: account.discordTag } : {}),
+  });
+  const accountsById = new Map(users.map((account) => [account.id, account]));
+  const verifiedAccountsByEmail = new Map(
+    users
+      .filter((account) => account.emailVerified && account.emailNormalized)
+      .map((account) => [account.emailNormalized, account])
   );
 
   return teams.map((team) => ({
     ...team,
-    members: (team.members || []).map((member) => ({
-      ...member,
-      ...(readinessByEmail.get(normalizeEmail(member.email))
-        || { hasQuestAccount: false, hasDiscord: false }),
-    })),
+    members: (team.members || []).map((member) => {
+      const account =
+        (member.userId ? accountsById.get(member.userId) : null) ||
+        verifiedAccountsByEmail.get(normalizeEmail(member.email)) ||
+        null;
+      // The join key, not something the roster needs to publish: a captain is
+      // told whether a teammate has an account, not what its id is.
+      const presented = { ...member };
+      delete presented.userId;
+
+      return {
+        ...presented,
+        ...(account
+          ? presentAccount(account)
+          : { hasQuestAccount: false, hasDiscord: false }),
+      };
+    }),
   }));
 };
 
@@ -225,13 +265,15 @@ const parseStandaloneMembers = (value) => {
       throw new HttpError(400, "Team members must be players, substitutes, or coaches.");
     }
 
+    // Role, name and email, and nothing else. Anything a captain typed about
+    // somebody's Discord or game identity is that captain's guess about another
+    // person's account; the accepting user's own linked account is the only
+    // honest source for it. See parseManagedMembers for what happens to values
+    // an older team already carries.
     return {
       role,
       name: normalizeText(member?.name),
       email: normalizeEmail(member?.email),
-      phone: normalizeText(member?.phone) || null,
-      discord: normalizeText(member?.discord) || null,
-      riotId: normalizeText(member?.riotId) || null,
     };
   });
 
@@ -244,9 +286,6 @@ const parseStandaloneMembers = (value) => {
       (member) => !member.name || !isValidEmail(member.email)
         || member.name.length > 100
         || member.email.length > 254
-        || (member.phone && member.phone.length > 50)
-        || (member.discord && member.discord.length > 100)
-        || (member.riotId && member.riotId.length > 100)
     )
   ) {
     throw new HttpError(400, "Each team member needs valid roster details.");
@@ -339,9 +378,6 @@ const createSavedTeam = async ({ user, body, file }) => {
             name: member.name,
             email: member.email,
             emailNormalized: member.email,
-            phone: member.phone,
-            discord: member.discord,
-            riotId: member.riotId,
             inviteStatus: "pending",
             inviteTokenHash: null,
             inviteSentAt,
@@ -414,9 +450,6 @@ const parseManagedMembers = (value) => {
       memberOrder: roleCounts[role],
       name: normalizeText(member?.name),
       email: normalizeEmail(member?.email),
-      phone: normalizeText(member?.phone) || null,
-      discord: normalizeText(member?.discord) || null,
-      riotId: normalizeText(member?.riotId) || null,
     };
   });
 
@@ -430,10 +463,7 @@ const parseManagedMembers = (value) => {
         !member.name ||
         !isValidEmail(member.email) ||
         member.name.length > 100 ||
-        member.email.length > 254 ||
-        (member.phone && member.phone.length > 50) ||
-        (member.discord && member.discord.length > 100) ||
-        (member.riotId && member.riotId.length > 100)
+        member.email.length > 254
     )
   ) {
     throw new HttpError(400, "Each team member needs valid roster details.");
@@ -510,6 +540,13 @@ const updateSavedTeam = async ({ teamId, user, body, file }) => {
         teamId,
         userId: existingMember.userId,
         ...member,
+        // Carried, not re-collected. These rows are deleted and recreated on
+        // every save, so dropping the columns here would erase what an older
+        // team already holds — but nothing new is ever written into them, and
+        // the form no longer offers them.
+        phone: existingMember.phone,
+        discord: existingMember.discord,
+        riotId: existingMember.riotId,
         emailNormalized: member.email,
         inviteStatus: existingMember.inviteStatus,
         // Dropped rather than carried over. Any hash still on an old row
@@ -786,6 +823,14 @@ const nudgeTeamInvite = async ({ teamId, memberId, user, now = new Date() }) => 
   };
 };
 
+// Mirrors a tournament roster into the saved team that outlives it.
+//
+// What crosses over is the roster itself — who is on it, in what role, and
+// where their invitation stands. The game identifier does not. It was collected
+// because that tournament's rules asked for it, it is already recorded on the
+// registration member and in the registration's own snapshot, and copying it
+// here would make it a property of the team: reused, unasked, the next time the
+// same roster enters something for a different game entirely.
 const syncSavedTeamFromRegistration = async ({
   tx,
   registrationId,
@@ -932,9 +977,6 @@ const syncSavedTeamFromRegistration = async ({
           name: member.name,
           email,
           emailNormalized: email,
-          phone: member.phone || null,
-          discord: member.discord,
-          riotId: member.riotId,
           inviteStatus: "accepted",
           inviteTokenHash: null,
           inviteSentAt: acceptedMember?.inviteSentAt || null,
@@ -967,9 +1009,6 @@ const syncSavedTeamFromRegistration = async ({
           name: member.name,
           email,
           emailNormalized: email,
-          phone: member.phone || null,
-          discord: member.discord,
-          riotId: member.riotId,
           inviteStatus: "declined",
           inviteTokenHash: null,
           inviteSentAt: member.inviteSentAt || null,
@@ -1000,9 +1039,6 @@ const syncSavedTeamFromRegistration = async ({
           name: member.name,
           email,
           emailNormalized: email,
-          phone: member.phone || null,
-          discord: member.discord,
-          riotId: member.riotId,
           inviteStatus: "pending",
           inviteTokenHash: null,
           inviteSentAt: activePendingMember.inviteSentAt,
@@ -1040,9 +1076,6 @@ const syncSavedTeamFromRegistration = async ({
         name: member.name,
         email,
         emailNormalized: email,
-        phone: member.phone || null,
-        discord: member.discord,
-        riotId: member.riotId,
         inviteStatus: "pending",
         inviteTokenHash: null,
         inviteSentAt,
@@ -1130,9 +1163,6 @@ const syncTeamRegistrationToProfile = async ({ registrationId, requirePaid }) =>
     order: member.memberOrder,
     name: member.name,
     email: member.email,
-    phone: member.phone,
-    discord: member.discord,
-    riotId: member.riotId,
     userId: member.userId,
     inviteStatus: member.inviteStatus,
     inviteSentAt: member.inviteSentAt,
@@ -1164,9 +1194,6 @@ const syncTeamRegistrationToProfile = async ({ registrationId, requirePaid }) =>
             order: member.memberOrder,
             name: member.name,
             email: member.email,
-            phone: member.phone,
-            discord: member.discord,
-            riotId: member.riotId,
             userId: member.userId,
             inviteStatus: member.inviteStatus,
             inviteSentAt: member.inviteSentAt,

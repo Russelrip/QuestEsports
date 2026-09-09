@@ -721,7 +721,8 @@ Behavior:
 - The captain email is taken from the authenticated user session, not the form.
 - Registration fails if member emails are invalid or duplicated.
 - Registration and slot allocation are serialized in a Prisma transaction.
-- Successful registration also synchronizes a `SavedTeam` roster and sends invite emails to non-captain members.
+- Successful registration also synchronizes a `SavedTeam` roster and creates an invitation row for each non-captain member. No invitation email is sent; each member finds the invitation by signing in. In-app and Discord notices are attempted and are best effort.
+- The registration collects whatever game identifier that tournament's rules ask for. It stays on the registration member and its snapshot; it is not copied into the saved team, so the same roster can enter events for different games.
 - The captain is linked and accepted automatically. Other members remain pending until they respond using a verified account with the invited email address.
 - Solo events omit team roster requirements and render player entries publicly after approval.
 - Free registration confirms immediately.
@@ -801,39 +802,50 @@ Returns teams the logged-in user captains or has accepted an invitation to join.
 
 Protected route requiring a verified account. Creates a reusable profile team from multipart team/roster fields and an optional `teamLogo`; it does not register the team for a tournament.
 
+Each roster member is `role`, `name` and `email`. Contact, Discord and game-identity values submitted alongside them are ignored: a captain fills this in about other people, and the rest of who somebody is comes from that person's own account when they accept.
+
 ### `PATCH /api/teams/:teamId`
 
 Protected multipart route requiring a verified account and team captain ownership. Updates the reusable team's name, country, tag, organization request, logo, and roster. Accepted members with unchanged email addresses remain linked; new or changed members receive fresh invitations. Tournament-registration history is not rewritten.
+
+As with creation, only `role`, `name` and `email` are read. Contact, Discord and game-identity values already stored on an existing member are carried across the save so an older team does not appear to lose data, but nothing new is ever written into them.
 
 ### `DELETE /api/teams/:teamId`
 
 Protected route requiring a verified account and team captain ownership. Deletes the reusable team and roster only when the team has no tournament registrations. Registered teams must be retained.
 
-### `GET /api/team-invite?token=...`
+### `POST /api/teams/:teamId/members/:memberId/nudge`
 
-Public route.
+Protected route requiring a verified account and team captain ownership. Reopens the 72-hour window on an unanswered invitation (`pending`, `declined` or `expired` — never `accepted`) and announces it again over the in-app and Discord channels. Rate limited, with a 60-second per-invitation cooldown.
 
-Returns invite preview details for a tournament-registration member invite token.
+The response reports what each channel actually reached, plus `hasQuestAccount` and an `invitationUrl` the captain can send themselves. It never reports a copied link as a delivery.
 
-### `POST /api/team-invite/respond`
+### `GET /api/me/invitations`
 
-Protected route requiring a verified account. The account email must match the invited email address.
+Protected route. Returns the invitations addressed to the signed-in user, resolved by the account an invitation row is linked to or by an address that account has proven it controls. An unverified address matches nothing.
 
-Body:
+There is no token and no anonymous preview. An invitation is a durable row; possession of a link is never authority to read or answer one.
 
-```json
-{
-  "token": "invite-token",
-  "decision": "accept"
-}
-```
+Optional `member` query parameter: the reference from a captain's copied link. It selects nothing — the invitations returned are identical without it — and is answered separately in `reference.state` so the page can explain a link that led somewhere unexpected:
 
-Accepted values:
+- `waiting` — the reference names an invitation in the list, which the UI focuses
+- `answered` / `expired` — this account's invitation, no longer open
+- `mismatch` — not reachable by this account. Deliberately says nothing else: not whose it is, not which team, not the address it was sent to
+- `none` — no reference was supplied
 
-- `accept`
-- `decline`
+`readiness` reports `hasQuestAccount`, `hasDiscord` and `emailVerified`, so the page can offer the fix rather than only refusing.
 
-Accepting links both the tournament-registration member and saved-team member to the account. The registration verification status becomes `verified` when every member has accepted, `flagged` when any member declines, and otherwise remains `pending`.
+### `POST /api/me/invitations/:invitationId/respond`
+
+Protected route requiring a verified account. Body: `{ "decision": "accept" | "decline" }`.
+
+Accepting requires a connected Discord account and links the saved-team member to the accepting user; declining does not require Discord. Nothing the captain typed about that person is promoted to their identity by the acceptance.
+
+Concurrent responses are serialized: the pending row is consumed conditionally, and a second answer receives `409`. Acceptance propagates to the `RegistrationMember` rows the spot stands for, scoped to registrations whose status is still open to their roster (`pending`, `waitlisted`) — never by payment. The registration verification status becomes `verified` when every member has accepted, `flagged` when any member declines, and otherwise remains `pending`.
+
+### `GET /team-invite?member=...`
+
+A frontend route, not an API endpoint. Signed out it renders generic onboarding instructions with sign-in and create-account actions; it resolves nothing and names no team, captain or address. Signed in it forwards to `/profile?tab=invitations&member=...`.
 
 ## Rulebook Endpoints
 

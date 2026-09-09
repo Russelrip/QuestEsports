@@ -118,7 +118,11 @@ Also stores:
 
 - the linked player account after acceptance
 - invite status and response time
-- the single-use invite token hash and expiry
+- the invitation's send time and expiry
+
+`invite_token_hash` survives as a nullable column and is always null. No
+invitation token is minted anywhere: an invitation is answered by the invitee's
+identity, and the column is cleared wherever an old value is still carried.
 
 Roles:
 

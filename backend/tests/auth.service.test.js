@@ -380,6 +380,58 @@ test("createSignup writes passwordSetAt for a local-password account", async () 
   }
 });
 
+test("signup carries a safe destination into the verification email, and nothing else", async () => {
+  const sent = [];
+  const tx = {
+    user: { create: async (args) => ({ ...user, ...args.data, id: "new-user" }) },
+    verificationToken: {
+      updateMany: async () => ({ count: 0 }),
+      create: async () => undefined,
+    },
+  };
+  const signup = (redirect) => ({
+    body: {
+      firstName: "New",
+      lastName: "Player",
+      email: "new@example.com",
+      username: "new-player",
+      password: "correct-password",
+      confirmPassword: "correct-password",
+      terms: true,
+      ...(redirect === undefined ? {} : { redirect }),
+    },
+  });
+  const { module: authService, restore } = loadAuthService({
+    prismaOverride: {
+      user: { findFirst: async () => null },
+      $transaction: async (callback) => callback(tx),
+    },
+    additionalMocks: {
+      [verificationEmailModulePath]: {
+        sendVerificationEmail: async (args) => { sent.push(args); },
+      },
+    },
+  });
+
+  try {
+    // Somebody who signed up in order to accept a team invitation cannot answer
+    // it until this address is verified. Without the destination, the link that
+    // sent them here is two redirects behind them by the time they come back.
+    await authService.createSignup(signup("/profile?tab=invitations&member=member-7"));
+    assert.equal(sent[0].redirectTo, "/profile?tab=invitations&member=member-7");
+
+    // An email is the one place a hostile destination would arrive already
+    // looking legitimate, so anything but a path on this site is dropped.
+    await authService.createSignup(signup("https://evil.example.com/steal"));
+    assert.equal(sent[1].redirectTo, null);
+
+    await authService.createSignup(signup(undefined));
+    assert.equal(sent[2].redirectTo, null);
+  } finally {
+    restore();
+  }
+});
+
 test("resetPassword writes a fresh passwordSetAt marker", async () => {
   let updateArgs;
   const tx = {

@@ -191,12 +191,12 @@ Use this checklist for manual QA, user acceptance testing (UAT), pre-release aud
 - [ ] TEAM-007 Only the captain can edit or delete the team.
 - [ ] TEAM-008 Captain can update metadata, replace/remove logo, add/remove members, and change roles within limits.
 - [ ] TEAM-009 Changing a member email sends a new invitation while unchanged accepted members stay linked.
-- [ ] TEAM-010 New invitations use the correct recipient, team/captain details, environment URL, and token.
-- [ ] TEAM-011 `/team-invite` previews a valid invite correctly when logged out.
+- [ ] TEAM-010 New invitations reach the right person over the channels that succeeded, and no invitation email is sent.
+- [ ] TEAM-011 `/team-invite` shows generic onboarding only when logged out — no team, captain, player or email is revealed to a link-holder.
 - [ ] TEAM-012 Accepting an invite requires login to the matching verified email account.
 - [ ] TEAM-013 A matching user can accept and then appears as a linked team member.
 - [ ] TEAM-014 A matching user can decline and the captain sees the declined state.
-- [ ] TEAM-015 Wrong-account, expired, invalid, and already-used invite tokens are rejected safely.
+- [ ] TEAM-015 A wrong, expired, or already-answered member reference is refused with a message that reveals nothing about the invitation behind it.
 - [ ] TEAM-016 A removed member can no longer manage or appear in the team after refresh.
 - [ ] TEAM-017 Deleting a team asks for confirmation, removes it from dashboards, and does not delete unrelated registrations.
 - [ ] TEAM-018 Requesting “Quest E-sports” organization does not become verified until an admin approves it.

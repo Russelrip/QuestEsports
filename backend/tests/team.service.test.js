@@ -109,9 +109,13 @@ test("createSavedTeam stores the captain and sends standalone member invites", a
     const createdSubstitute = createdMembers.find((member) => member.role === "SUBSTITUTE");
     assert.equal(createdPlayer.memberOrder, 1);
     assert.equal(createdCoach.memberOrder, 1);
-    assert.equal(createdCoach.phone, "0770000000");
-    assert.equal(createdCoach.discord, "coach-discord");
-    assert.equal(createdCoach.riotId, "CoachName#123");
+    // A saved team holds role, name and email. Whatever a captain typed about
+    // somebody else's phone, Discord or game identity is their guess about
+    // another person's account, and it is not written down as if it were that
+    // person's own: the one who accepts brings their real account with them.
+    assert.equal(createdCoach.phone, undefined);
+    assert.equal(createdCoach.discord, undefined);
+    assert.equal(createdCoach.riotId, undefined);
     assert.equal(createdCoach.inviteStatus, "pending");
     // No token is minted any more: the row is the invitation, and it is
     // answered by the identity of whoever signs in to claim it.
@@ -158,6 +162,11 @@ test("updateSavedTeam lets the captain replace roster details and preserves acce
         role: "PLAYER",
         memberOrder: 1,
         emailNormalized: "accepted@example.com",
+        // Typed by a captain into an older version of this form. Still on the
+        // row, and an edit must not quietly drop it.
+        phone: "0110000000",
+        discord: "legacy-discord",
+        riotId: "LegacyName#000",
         inviteStatus: "accepted",
         inviteSentAt: new Date("2026-01-01"),
         inviteRespondedAt: new Date("2026-01-02"),
@@ -270,9 +279,12 @@ test("updateSavedTeam lets the captain replace roster details and preserves acce
     assert.equal(createdMembers[0].id, "accepted-member");
     assert.equal(createdMembers[0].userId, "user-2");
     assert.equal(createdMembers[0].role, "COACH");
-    assert.equal(createdMembers[0].phone, "0770000000");
-    assert.equal(createdMembers[0].discord, "coach-discord");
-    assert.equal(createdMembers[0].riotId, "CoachName#123");
+    // These rows are deleted and recreated on every save, so what an older team
+    // already carries has to be carried across — but it is carried, not
+    // re-collected: the values the request tried to set are ignored.
+    assert.equal(createdMembers[0].phone, "0110000000");
+    assert.equal(createdMembers[0].discord, "legacy-discord");
+    assert.equal(createdMembers[0].riotId, "LegacyName#000");
     assert.equal(createdMembers[0].inviteStatus, "accepted");
     assert.equal(createdMembers[1].inviteStatus, "pending");
     // An outstanding invitation survives the edit, but the stale token on it
@@ -833,7 +845,13 @@ test("registration coach sync persists a pending invite and dispatches the norma
     });
 
     const coach = savedMembers.find((member) => member.role === "COACH");
-    assert.equal(coach.phone, null);
+    // The registration collected these because that tournament asked for them.
+    // They stay on the registration and in its snapshot; carrying them here
+    // would turn one event's answer into a property of the team, reused unasked
+    // the next time the same roster enters something for a different game.
+    assert.equal(coach.phone, undefined);
+    assert.equal(coach.discord, undefined);
+    assert.equal(coach.riotId, undefined);
     assert.equal(coach.inviteStatus, "pending");
     assert.equal(coach.inviteTokenHash, null);
     // The deadline outlives the token. An invitation still runs out; what
@@ -1385,7 +1403,8 @@ test("syncSavedTeamFromRegistration links the registration and creates account-b
 
     const [captainRecord, playerRecord, coachRecord] = savedMemberCreateCalls[0].data;
     assert.equal(captainRecord.userId, "user-1");
-    assert.equal(captainRecord.phone, null);
+    assert.equal(captainRecord.phone, undefined);
+    assert.equal(captainRecord.riotId, undefined);
     assert.equal(captainRecord.inviteStatus, "accepted");
     assert.equal(playerRecord.userId, undefined);
     assert.equal(playerRecord.inviteStatus, "pending");
@@ -1395,7 +1414,7 @@ test("syncSavedTeamFromRegistration links the registration and creates account-b
     assert.ok(playerRecord.inviteExpiresAt instanceof Date);
     assert.equal(coachRecord.role, "COACH");
     assert.equal(coachRecord.memberOrder, 1);
-    assert.equal(coachRecord.phone, "0771111111");
+    assert.equal(coachRecord.phone, undefined);
     assert.equal(coachRecord.inviteStatus, "pending");
     assert.equal(coachRecord.inviteTokenHash, null);
     assert.equal(inviteDispatches[1].invitationId, coachRecord.id);
@@ -1644,7 +1663,8 @@ test("syncSavedTeamFromRegistration leaves a live invitation alone instead of an
     });
 
     assert.deepEqual(dispatches, []);
-    assert.equal(savedRows[0].phone, null);
+    assert.equal(savedRows[0].phone, undefined);
+    assert.equal(savedRows[0].riotId, undefined);
     // Outstanding because nobody answered it and it has not run out — the
     // deadline is what says so, not a token. Any hash left on the old row is
     // dropped, because it can no longer authorize anything.
@@ -2254,5 +2274,145 @@ test("removing a saved team logo records the removal so it cannot be resurrected
     assert.ok(cleared.logoClearedAt instanceof Date, "the removal is timestamped so it reads as deliberate");
   } finally {
     restore();
+  }
+});
+
+test("roster readiness follows the linked account, not the address the captain typed", async () => {
+  const userQueries = [];
+  const prismaMock = {
+    prisma: {
+      savedTeam: {
+        findMany: async () => [
+          {
+            id: "saved-team-1",
+            captainUserId: "captain-user",
+            name: "Quest Five",
+            logoName: null,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            captainUser: { firstName: "Quest", lastName: "Captain", username: "captain" },
+            members: [
+              {
+                id: "accepted-member",
+                userId: "user-2",
+                role: "PLAYER",
+                memberOrder: 1,
+                name: "Accepted Player",
+                // They accepted, then changed the address on their account.
+                // Resolving by address alone would report them as having no
+                // Quest account at all, on a roster they are already on.
+                email: "old@example.com",
+                discord: "captain-typed-this",
+                inviteStatus: "accepted",
+              },
+              {
+                id: "stranger-member",
+                userId: null,
+                role: "SUBSTITUTE",
+                memberOrder: 1,
+                name: "No Account Yet",
+                email: "nobody@example.com",
+                discord: "also-typed",
+                inviteStatus: "pending",
+              },
+            ],
+          },
+        ],
+      },
+      user: {
+        findMany: async (args) => {
+          userQueries.push(args);
+          return [
+            {
+              id: "user-2",
+              emailNormalized: "new@example.com",
+              emailVerified: true,
+              discordTag: "realhandle",
+            },
+          ];
+        },
+      },
+      oAuthAccount: {
+        findMany: async () => [{ userId: "user-2" }],
+      },
+    },
+  };
+  const { module: teamService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: prismaMock,
+    [noticeModulePath]: noticeMock(),
+  });
+
+  try {
+    const [team] = await teamService.listProfileTeams({ user: { id: "captain-user" } });
+    const [accepted, stranger] = team.members;
+
+    assert.equal(accepted.hasQuestAccount, true);
+    assert.equal(accepted.hasDiscord, true);
+    // The handle comes from the connected account. What the captain typed was
+    // a guess about somebody else's Discord and could have said anything.
+    assert.equal(accepted.discord, "realhandle");
+    // The join key is not something the roster publishes.
+    assert.equal(accepted.userId, undefined);
+
+    assert.equal(stranger.hasQuestAccount, false);
+    assert.equal(stranger.hasDiscord, false);
+    // Nothing live to replace it with, so the stored value is left alone rather
+    // than blanked: losing data to say nothing helps nobody.
+    assert.equal(stranger.discord, "also-typed");
+
+    assert.deepEqual(userQueries[0].where.OR[1], { id: { in: ["user-2"] } });
+  } finally {
+    restore();
+  }
+});
+
+
+// A roster spot is filled by a person saying yes. Nothing here goes looking a
+// player up — not on Riot, not on the leaderboard, not on Discord beyond the
+// account they connected themselves — because a lookup would put a guess about
+// somebody's identity back on the roster by a different route, and this whole
+// module exists to stop that. The game identifier a tournament needs is asked
+// for by that tournament's own form.
+test("nothing in the invitation path looks a player up anywhere", async () => {
+  const fs = require("node:fs");
+  const moduleDirectory = path.join(__dirname, "../src/modules/teams");
+
+  for (const entry of fs.readdirSync(moduleDirectory).filter((name) => name.endsWith(".js"))) {
+    const source = fs.readFileSync(path.join(moduleDirectory, entry), "utf8");
+    assert.doesNotMatch(
+      source,
+      /require\([^)]*(valorant|riot|leaderboard|game-accounts?)[^)]*\)/i,
+      `${entry} must not reach for an identity lookup`
+    );
+  }
+});
+
+// The invitation is a row, and every notice is best effort on top of it. That
+// only stays true if nothing in this module quietly acquires a mail dependency
+// again: the moment a roster spot depends on a delivery, an email that never
+// arrives is a spot nobody can take.
+test("nothing in the invitation path can enqueue mail", async () => {
+  const fs = require("node:fs");
+  const moduleDirectory = path.join(__dirname, "../src/modules/teams");
+  const sources = fs
+    .readdirSync(moduleDirectory)
+    .filter((entry) => entry.endsWith(".js"))
+    .map((entry) => ({
+      entry,
+      source: fs.readFileSync(path.join(moduleDirectory, entry), "utf8"),
+    }));
+
+  assert.ok(sources.length > 0);
+  for (const { entry, source } of sources) {
+    assert.doesNotMatch(
+      source,
+      /require\([^)]*(mail|email)[^)]*\)/i,
+      `${entry} must not reach for the mail queue`
+    );
+    assert.doesNotMatch(
+      source,
+      /EMAIL_TEMPLATE_TYPES|["']teamInvite["']/,
+      `${entry} must not name the retired mail template`
+    );
   }
 });

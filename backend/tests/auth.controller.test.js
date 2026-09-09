@@ -377,7 +377,7 @@ test("mobile OAuth grant exchange issues an admin bearer session", async () => {
   }
 });
 
-test("OAuth account-link handlers use the authenticated user and a fixed profile redirect", async () => {
+test("OAuth account-link handlers use the authenticated user and default to the account tab", async () => {
   const linkAuthorizationCalls = [];
   const linkCallbackCalls = [];
   const providerListCalls = [];
@@ -674,6 +674,80 @@ test("OAuth unlink controller preserves safe last-login-method errors", async ()
         assert.equal(error.message.includes("provider token"), false);
         return true;
       }
+    );
+  } finally {
+    restore();
+  }
+});
+
+// Connecting Discord is almost never the errand somebody set out on. It is the
+// step in front of accepting a team invitation — which cannot be done without
+// it — so the flow has to be able to come back to where it interrupted.
+test("an account link returns to the destination it was started from", async () => {
+  const linkAuthorizationCalls = [];
+  const { module: controller, restore } = loadModuleWithMocks(controllerPath, {
+    [envPath]: { env: { APP_URL: "https://app.example.com" } },
+    [loggerPath]: { logger: { info: () => {}, error: () => {} } },
+    [auditPath]: { recordAudit: async () => undefined, requestAuditContext: () => ({}) },
+    [oauthPath]: {
+      buildExpiredOAuthLinkFlowCookie: (provider) => `link-cookie-${provider}=; Expires=expired`,
+      createOAuthLinkAuthorization: async (args) => {
+        linkAuthorizationCalls.push(args);
+        return {
+          authorizationUrl: "https://provider.example.com/discord",
+          flowCookie: "quest_session_oauth_link_discord=signed-link; HttpOnly",
+        };
+      },
+      getOAuthLinkFlowToken: () => "signed-link",
+      handleOAuthLinkCallback: async () => ({
+        providers: [{ provider: "discord", linked: true }],
+        redirectTo: "/profile?tab=invitations&member=member-7",
+      }),
+    },
+    [sessionPath]: {},
+    [authServicePath]: {},
+  });
+
+  try {
+    const user = { id: "authenticated-user" };
+
+    await invoke(
+      controller.startDiscordLink,
+      { user, params: {}, query: { redirect: "/profile?tab=invitations&member=member-7" } },
+      buildResponse()
+    );
+    assert.deepEqual(linkAuthorizationCalls, [{
+      provider: "discord",
+      userId: "authenticated-user",
+      redirectTo: "/profile?tab=invitations&member=member-7",
+    }]);
+
+    // Anywhere but this site is refused by the same normalization the login
+    // redirect uses, and falls back to the account tab rather than leaving.
+    linkAuthorizationCalls.length = 0;
+    await invoke(
+      controller.startDiscordLink,
+      { user, params: {}, query: { redirect: "https://evil.example.com/steal" } },
+      buildResponse()
+    );
+    assert.equal(linkAuthorizationCalls[0].redirectTo, "/profile?tab=account");
+
+    const callbackResponse = buildResponse();
+    await invoke(
+      controller.discordLinkCallback,
+      {
+        user,
+        headers: { cookie: "quest_session_oauth_link_discord=signed-link" },
+        params: {},
+        query: { code: "oauth-code", state: "oauth-state" },
+      },
+      callbackResponse
+    );
+    // The marker rides on whatever destination the flow carried, so it cannot
+    // assume there is already a query string to append to.
+    assert.equal(
+      callbackResponse.redirectUrl,
+      "https://app.example.com/profile?tab=invitations&member=member-7&oauth=linked"
     );
   } finally {
     restore();

@@ -7,6 +7,39 @@ roster and a standalone saved team are the same thing here: every team
 registration is mirrored into a `SavedTeam` by `syncSavedTeamFromRegistration`,
 so `SavedTeamMember` is the one surface an invitation lives on.
 
+## What lives here, and what does not
+
+A saved team is who is on it: role, name, email, and where each invitation
+stands. That is all `parseStandaloneMembers` and `parseManagedMembers` read, and
+all a new row is written with.
+
+Everything else about a player belongs to that player's account and arrives when
+they accept. A captain typing a teammate's Discord handle or game id was always
+a guess about somebody else's identity — it could say anything at all, nobody
+but the captain could correct it, and it outlived the event it was collected
+for. `attachRosterReadiness` resolves each member to their linked account, or to
+an address that account has proven it controls, and shows that account's own
+Discord handle instead.
+
+A game identifier is a tournament's question, not a team's. It is asked by the
+registration form under that tournament's configured rules, stored on the
+`RegistrationMember` row and in the registration's own snapshot, and
+`syncSavedTeamFromRegistration` deliberately does not carry it back: the same
+roster enters a VALORANT event and then a CS event, and a saved id would arrive
+as the second form's answer already filled in, from a different game, hoping
+somebody noticed. A wrong value you have to spot is worse than a blank field you
+have to fill.
+
+`phone`, `discord` and `riotId` remain readable on `SavedTeamMember` for teams
+that already carry them, and `updateSavedTeam` carries them across the
+delete-and-recreate so an edit does not silently erase them. Nothing new is ever
+written into them.
+
+Historical registration data is never rewritten from here. An approved,
+rejected or cancelled registration has had its roster settled; acceptance and
+later profile or saved-team edits touch only registrations still open to their
+roster.
+
 ## What an invitation is
 
 A row, not a message. `SavedTeamMember` (mirrored onto `RegistrationMember`)
@@ -75,6 +108,28 @@ who can chase it.
 No invitation email is sent. `EMAIL_TEMPLATE_TYPES.teamInvite` is retired and
 drains rather than retries — see `lib/mail/mail-budget.js` for what the send
 allowance is now reserved for.
+
+## The onboarding link
+
+`invite-paths.js` builds the link a captain copies when nothing reached
+somebody: `/team-invite?member=<id>`.
+
+The reference on it is a routing hint and nothing else. No endpoint accepts it
+as authority, it names neither the team nor the invitee, and it is not enough to
+read anything. Signed out it reaches a page of generic onboarding instructions;
+signed in it only decides which of the invitations that already belong to that
+account gets scrolled to. `listInvitationsForUser` resolves it with the same
+identity filter it lists by, and reports `mismatch` for one this account cannot
+reach — without saying whose it is, which team it is for, or what address it was
+sent to.
+
+That is what makes it safe to forward, which matters because forwarding is
+exactly what will happen to it: it is a link pasted into whatever chat the
+captain and the player already share.
+
+It starts at the onboarding page rather than the invitations tab because the
+person who needs it is usually the person with no Quest account yet, and the tab
+would only bounce them to a login screen they were given no explanation for.
 
 ## Propagation
 

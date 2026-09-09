@@ -1,12 +1,36 @@
-import { redirect } from "next/navigation";
+import { Suspense } from "react";
+import PageLayout from "@/components/PageLayout";
+import TeamInviteOnboarding from "@/components/auth/TeamInviteOnboarding";
+import { buildNoIndexMetadata, defaultPageDescriptions } from "@/lib/site";
 
-// Kept only to catch links that are already out there.
+export const metadata = buildNoIndexMetadata(
+  "Team Invitation",
+  defaultPageDescriptions.teamInvite,
+  "/team-invite"
+);
+
+// The link a captain sends when nothing else reached somebody.
 //
-// An invitation used to be answered by presenting the token in this URL. It is
-// answered by the invitee's identity now, so there is nothing for a token to
-// unlock and nothing to render here — but people still have these links in old
-// emails and forwarded chats, and a dead page is a worse answer than the page
-// their invitation is actually on. Anyone signing in from here finds it waiting.
+// It used to be an emailed token, and then, once invitations stopped being
+// answered by tokens, a bare redirect to the invitations tab — which sent
+// anyone who did not already have a Quest account to a login screen with no
+// explanation of what they were being asked to log in to.
+//
+// This page is that explanation, and it is all it is: generic onboarding text
+// and two buttons. It resolves nothing anonymously, names no team, no captain
+// and no address, and the member reference it carries through is a routing
+// hint, not a credential. Whoever ends up here still has to sign in as the
+// person the invitation was addressed to before there is anything to see.
 export default function TeamInvitePage() {
-  redirect("/profile?tab=invitations");
+  return (
+    <PageLayout
+      title="Team Invitation"
+      description={defaultPageDescriptions.teamInvite}
+      showEyebrow={false}
+    >
+      <Suspense fallback={null}>
+        <TeamInviteOnboarding />
+      </Suspense>
+    </PageLayout>
+  );
 }

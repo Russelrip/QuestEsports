@@ -16,6 +16,11 @@ export type SavedTeamMember = {
   memberOrder: number;
   name: string;
   email: string;
+  // Read, never written. Whatever a captain typed into an older version of the
+  // roster form, kept so an existing team does not appear to lose data. The
+  // backend replaces `discord` with the accepting account's own handle wherever
+  // there is one, because a guess about somebody else's Discord and their
+  // actual connected account are not interchangeable.
   phone?: string | null;
   discord?: string | null;
   riotId?: string | null;
@@ -40,6 +45,16 @@ export type SavedTeamRegistrationMemberDraft = {
   additionalData: Record<string, string | boolean>;
 };
 
+// A saved team is who is on it. What a tournament needs to know beyond that —
+// a game identifier, and whether it needs one at all — is that tournament's
+// question, asked by its own form under its own rules.
+//
+// Prefilling the identifier from a saved team used to look like a convenience
+// and was closer to a trap: the same roster enters a VALORANT event and then a
+// CS event, and the second form would arrive already filled in with the first
+// one's answer. A wrong id that somebody has to notice is worse than an empty
+// field they have to fill.
+
 export function mapSavedTeamToRegistrationDraft(
   team: Pick<SavedTeam, "members">,
   omittedMemberId?: string
@@ -56,15 +71,14 @@ export function mapSavedTeamToRegistrationDraft(
       .map((member) => ({
         name: member.name,
         email: member.email,
-        gameId: member.riotId || "",
+        gameId: "",
         role: member.role === "SUBSTITUTE" ? "SUBSTITUTE" : "PLAYER",
         additionalData: {},
       })),
     coach: savedCoach ? {
+      ...emptyCoachDraft,
       name: savedCoach.name,
       email: savedCoach.email,
-      phone: savedCoach.phone || "",
-      gameId: savedCoach.riotId || "",
     } : { ...emptyCoachDraft },
     coachSelected: Boolean(savedCoach),
   };
@@ -88,6 +102,22 @@ export type SavedTeam = {
   members: SavedTeamMember[];
 };
 
+// What the member reference in a captain's copied link turned out to mean.
+// It grants nothing — these invitations were found by identity and would be the
+// same without it — but the page has to be able to explain a link that led into
+// an account it was not addressed to.
+export type InvitationReferenceState =
+  | "none"
+  | "waiting"
+  | "answered"
+  | "expired"
+  | "mismatch";
+
+export type InvitationReference = {
+  state: InvitationReferenceState;
+  member: string | null;
+};
+
 export type TeamInvitation = {
   id: string;
   role: "CAPTAIN" | "PLAYER" | "SUBSTITUTE" | "COACH";
@@ -107,6 +137,10 @@ export type TeamInvitation = {
 export type InvitationReadiness = {
   hasQuestAccount: boolean;
   hasDiscord: boolean;
+  // An unverified account matches no invitation at all. Without this the page
+  // would report a perfectly good link as somebody else's when the real answer
+  // is that this address has not been proven yet.
+  emailVerified?: boolean;
 };
 
 // What a nudge actually reached. A captain deciding whether to go and message
@@ -139,13 +173,13 @@ export async function fetchProfileTeams() {
   return data.teams || [];
 }
 
+// Role, name and email. A captain fills this in about other people, and the
+// rest of who somebody is belongs to that person's own account: they bring it
+// with them when they accept.
 export type CreateTeamMemberInput = {
   role: "PLAYER" | "SUBSTITUTE" | "COACH";
   name: string;
   email: string;
-  phone?: string;
-  discord?: string;
-  riotId?: string;
 };
 
 export type ManageTeamMemberInput = CreateTeamMemberInput;
@@ -264,18 +298,23 @@ export async function nudgeTeamInvite(teamId: string, memberId: string) {
   };
 }
 
-export async function fetchMyInvitations() {
+export async function fetchMyInvitations(memberReference?: string | null) {
+  const query = memberReference
+    ? `?member=${encodeURIComponent(memberReference)}`
+    : "";
   const { response, data } = await apiFetchJson<{
     success?: boolean;
     message?: string;
     invitations?: TeamInvitation[];
     readiness?: InvitationReadiness;
-  }>("/api/me/invitations");
+    reference?: InvitationReference;
+  }>(`/api/me/invitations${query}`);
   const errorMessage = getApiErrorMessage(response, data, "Could not load your invitations.");
   if (errorMessage) throw new Error(errorMessage);
   return {
     invitations: data.invitations || [],
     readiness: data.readiness || { hasQuestAccount: true, hasDiscord: false },
+    reference: data.reference || { state: "none" as const, member: null },
   };
 }
 

@@ -61,7 +61,7 @@ const deleteProfileTeam = asyncHandler(async (req, res) => {
 // not a reassuring "invitation sent".
 const buildNudgeMessage = (delivery) => {
   if (!delivery?.hasQuestAccount) {
-    return "This player does not have a Quest account yet. Send them the invitation link so they can sign in and accept.";
+    return "This player does not have a Quest account yet. Copy their onboarding link and send it to them.";
   }
   if (delivery.inApp && delivery.discord) {
     return "Reminded in Quest and on Discord.";
@@ -90,12 +90,28 @@ const nudgeProfileTeamInvite = asyncHandler(async (req, res) => {
 
 // An invitation must be findable inside Quest, not only at the end of whatever
 // message happened to deliver it.
+//
+// `member` is the reference from a captain's copied link. It selects nothing:
+// the invitations here were found by identity and would be identical without
+// it. It is answered separately so the page can explain a link that led into
+// the wrong account rather than showing an empty list.
 const getMyInvitations = asyncHandler(async (req, res) => {
-  const [{ invitations }, readiness] = await Promise.all([
-    listInvitationsForUser({ user: req.user }),
+  const [{ invitations, reference }, readiness] = await Promise.all([
+    listInvitationsForUser({ user: req.user, memberReference: req.query.member }),
     getInvitationReadiness({ userId: req.user.id }),
   ]);
-  res.status(200).json({ success: true, invitations, readiness });
+  res.status(200).json({
+    success: true,
+    invitations,
+    reference,
+    readiness: {
+      ...readiness,
+      // An unverified account matches no invitation at all, so without this the
+      // page would report the link as somebody else's when the real answer is
+      // that this address has not been proven yet.
+      emailVerified: Boolean(req.user.emailVerified),
+    },
+  });
 });
 
 const respondToMyInvitation = asyncHandler(async (req, res) => {

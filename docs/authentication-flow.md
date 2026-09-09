@@ -145,6 +145,24 @@ Important notes:
 - The provider redirect URI must match the backend callback URL exactly.
 - If OAuth is not configured, leave the provider client ID and secret blank; placeholder strings are treated as invalid configuration.
 
+## Continuing Where You Left Off
+
+A redirect path travels with the flow so that an interrupted errand can be
+resumed. Login, signup, both OAuth logins, and account linking
+(`/api/v1/auth/oauth/:provider/link?redirect=...`) all accept one; account
+linking defaults to `/profile?tab=account` and the `oauth=linked` marker is
+appended to whatever destination the flow carried.
+
+Only a path on this site is accepted, by `normalizeSafeRedirectPath` in
+`backend/src/lib/validation.js` and its frontend twin in
+`frontend/lib/safe-redirect.ts`. External URLs, protocol-relative URLs, encoded
+path separators, and control characters are rejected rather than corrected.
+
+This matters most for team invitations: accepting one requires a connected
+Discord account, so a player is sent through the link flow mid-errand. Without a
+destination they come back to the account tab, one page away from the thing they
+were doing, having been redirected somewhere they never asked to go.
+
 ## Session Management
 
 Authenticated users can review and revoke sessions:

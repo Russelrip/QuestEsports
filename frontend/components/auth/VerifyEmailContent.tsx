@@ -8,10 +8,20 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import ResendVerificationButton from "@/components/auth/ResendVerificationButton";
 import { buttonClassName } from "@/components/ui/button";
 import { apiFetchJson, getApiErrorMessage } from "@/lib/auth";
+import { normalizeSafeRedirectPath } from "@/lib/safe-redirect";
 
 export default function VerifyEmailContent() {
   const searchParams = useSearchParams();
   const token = useMemo(() => searchParams.get("token") || "", [searchParams]);
+  // Where they were going when they were asked to prove they own this address.
+  // Signing in again is required either way; what this decides is whether that
+  // puts them back where they were or on the dashboard, hunting for a link they
+  // followed two redirects ago.
+  const nextPath = useMemo(
+    () => normalizeSafeRedirectPath(searchParams.get("redirect")),
+    [searchParams]
+  );
+  const loginHref = nextPath ? `/login?redirect=${encodeURIComponent(nextPath)}` : "/login";
   const { user, refreshSession } = useAuth();
   const [status, setStatus] = useState<"loading" | "success" | "error">("loading");
   const [message, setMessage] = useState("Verifying your email...");
@@ -64,17 +74,17 @@ export default function VerifyEmailContent() {
 
         {status === "success" ? (
           <div className="flex flex-wrap gap-3">
-            <Link href="/login" className={buttonClassName({})}>
-              Continue to Login
+            <Link href={loginHref} className={buttonClassName({})}>
+              {nextPath ? "Sign in and continue" : "Continue to Login"}
             </Link>
-            <Link href="/profile" className={buttonClassName({ variant: "secondary" })}>
-              Open Profile
+            <Link href={nextPath || "/profile"} className={buttonClassName({ variant: "secondary" })}>
+              {nextPath ? "Continue where you left off" : "Open Profile"}
             </Link>
           </div>
         ) : status === "error" ? (
           <div className="flex flex-wrap gap-3">
             {user?.email && !user.emailVerified ? <ResendVerificationButton email={user.email} /> : null}
-            <Link href="/login" className={buttonClassName({ variant: "secondary" })}>
+            <Link href={loginHref} className={buttonClassName({ variant: "secondary" })}>
               Go to Login
             </Link>
           </div>
