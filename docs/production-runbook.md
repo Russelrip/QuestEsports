@@ -818,6 +818,25 @@ Confirm the backup in the deployment log before the migration applies. A success
 
 ## Site Maintenance Mode
 
+> **This section predates the Compose cutover and must not be followed as
+> written.** Both halves of the procedure below address infrastructure that no
+> longer serves production: the frontend steps set environment variables in
+> Vercel and redeploy there, and the backend steps edit `.env` on the VPS and
+> restart under PM2. `ops/deploy/cutover.sh` replaced the PM2 units, and
+> [CI/CD](./ci-cd.md) states there is one production delivery path — the
+> immutable Compose release — with "PM2 backend deployment and Vercel frontend
+> promotion" retired. Vercel builds nothing at all now; `frontend/vercel.json`
+> sets `git.deploymentEnabled: false`.
+>
+> What maintenance mode *is* remains accurate — the three variables, their
+> validation rules, the response contract, and the verification commands, which
+> are plain HTTP checks and still work. What is wrong is where the variables are
+> set and how the services are restarted. Both are Compose concerns now.
+>
+> The replacement procedure has not been written down. Deriving it from the
+> deployment scripts and rewriting this section is worth doing before the next
+> maintenance window, rather than during one.
+
 Use maintenance mode when visitors should temporarily see a branded maintenance page and normal API traffic should be refused. The frontend responds with `503`, `Retry-After`, `Cache-Control: no-store`, and crawler `noindex` headers. The backend returns a structured `SITE_MAINTENANCE` `503` response. `/api/health/live` remains available, readiness returns the intentional `503`, and the exact `POST /api/payments/payhere/notify` callback remains available so a payment already started before the window can settle.
 
 The three values must match in the Vercel Production environment and `/var/www/QuestEsports/backend/.env`:
