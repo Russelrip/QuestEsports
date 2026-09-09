@@ -65,16 +65,51 @@ through the protected `production-compose` environment. The retired PM2 and
 Vercel workflows must not be restored as parallel production triggers. The
 deployment workflow uses the `production-release` concurrency group.
 
+### Operating the Compose stack
+
+The canonical values, read from `ops/deploy/release.sh` and
+`ops/docker/compose.production.yml` rather than remembered:
+
+| | |
+| --- | --- |
+| Compose project | `quest-prod` (VALORANT: `valorant-prod`) |
+| Active release | `/opt/quest-esports/current` — a symlink into `releases/` |
+| Compose file | `/opt/quest-esports/current/compose.production.yml` |
+| Compose env | `/opt/quest-esports/current/.env` (image manifest) |
+| Backend runtime env | `/etc/quest-esports/quest.production.env` |
+| VALORANT runtime env | `/etc/quest-esports/valorant.production.env` |
+
+Every read-only inspection below uses one invocation:
+
+```bash
+quest_compose() {
+  docker compose     --env-file /opt/quest-esports/current/.env     -f /opt/quest-esports/current/compose.production.yml     --project-name quest-prod "$@"
+}
+
+quest_compose ps                 # what is running, and its health
+quest_compose logs -f backend    # follow one service
+quest_compose exec backend env   # the environment a container actually has
+```
+
+A release is immutable and root-owned: `deploy-compose.yml` stages a new
+release directory and moves the symlink. Recreating a container by hand is for
+a runtime-environment change that must take effect before the next release —
+it does not change the release, and the next deployment replaces it either way.
+
 ## Required Ownership And Permissions
 
 ```bash
-chown -R deploy:deploy /var/www/QuestEsports /srv/quest-esports
-chmod 600 /var/www/QuestEsports/backend/.env
+chown -R deploy:deploy /srv/quest-esports
 chmod 750 /srv/quest-esports/uploads
 chmod 700 /srv/quest-esports/private
+chmod 600 /etc/quest-esports/quest.production.env
 ```
 
-The backend creates the required child directories. Never expose `PRIVATE_UPLOAD_ROOT` through Nginx or `/api/uploads`.
+The release directories under `/opt/quest-esports` are root-owned and written
+only by the deployment; `deploy` needs to read them, never to change them.
+Containers run as uid `1001`, which is why the upload volumes are group-owned
+rather than world-readable. The backend creates the required child
+directories. Never expose `PRIVATE_UPLOAD_ROOT` through Nginx or `/api/uploads`.
 
 ## Historical pre-cutover owner gates (already passed or skipped)
 
@@ -422,24 +457,26 @@ consistent across workers when changing the deployment defaults. Readiness is
 green only after the subscribe SSE stream provides the valid
 `data: subscribe,{channel},{count}` acknowledgement.
 
-### Verify PM2 worker count and transport configuration
+### Verify worker count and transport configuration
 
-Run these checks as `deploy` after every clustered deployment. The PM2 instance
-count, `API_PROCESS_COUNT`, and shared channel must agree; never infer this
-from the number of healthy HTTP responses alone. `pm2 env` verifies only the
-configured base ID, not the effective ID:
+> **Production does not currently run more than one API worker.**
+> `ops/docker/backend.production.Dockerfile` ends in `CMD ["node",
+> "src/server.js"]` — one process per container — and the `backend` service in
+> `ops/docker/compose.production.yml` declares no `replicas`. The clustering
+> this section describes was a PM2 capability that the Compose cutover did not
+> carry over.
+>
+> The configuration contract is still enforced by `backend/src/config/env.js`,
+> so setting `API_PROCESS_COUNT` above 1 today does not scale anything: it
+> obliges `CACHE_DRIVER=upstash` and a shared realtime transport for workers
+> that do not exist. Leave it at 1 until the Compose service actually runs
+> several, at which point the checks below become live again with
+> `quest_compose ps` in place of `pm2 list`.
 
-```bash
-sudo -u deploy -H pm2 list
-sudo -u deploy -H pm2 describe quest-backend | grep -E 'instances|exec mode|status'
-sudo -u deploy -H pm2 env 0 | grep -E '^(API_PROCESS_COUNT|CACHE_DRIVER|REALTIME_CHANNEL|REALTIME_WORKER_ID)='
-sudo -u deploy -H pm2 env 1 | grep -E '^(API_PROCESS_COUNT|CACHE_DRIVER|REALTIME_CHANNEL|REALTIME_WORKER_ID)='
-```
-
-For the two-worker target, expect two `online` instances, `API_PROCESS_COUNT=2`,
-`CACHE_DRIVER=upstash`, and the same channel and configured base on both
-instances. `pm2 env` verifies only the configured base ID. Verify the actual
-effective IDs exposed by each worker's live health endpoint instead:
+Whenever several workers do run, their count, `API_PROCESS_COUNT`, and shared
+channel must agree; never infer this from the number of healthy HTTP responses
+alone. Configuration reports only the configured base ID, not the effective ID
+— verify the actual effective IDs exposed by each worker's live health endpoint:
 
 ```bash
 WORKER_A_HEALTH_URL=https://api-a.example.com/api/health/live
@@ -462,17 +499,7 @@ printf 'worker B effective realtime.workerId=%s (prefix=%s)\n' "$B_ID" "${B_ID%:
 ```
 
 The health payload is the runtime source of truth for the complete effective
-`REALTIME_WORKER_ID:process.pid:randomUUID()` value. The PM2 launch equivalent
-is:
-
-```bash
-sudo -u deploy -H bash -lc '
-  cd /var/www/QuestEsports/backend
-  pm2 delete quest-backend || true
-  pm2 start src/server.js --name quest-backend -i 2 --time --update-env
-  pm2 save
-'
-```
+`REALTIME_WORKER_ID:process.pid:randomUUID()` value.
 
 ### Verify SSE heartbeat and proxy timeouts
 
@@ -514,8 +541,8 @@ the API workers. Clients receive the intentional `204` response and use their
 bounded polling fallback:
 
 ```bash
-sudo -u deploy -H sed -i 's/^REALTIME_SSE_ENABLED=.*/REALTIME_SSE_ENABLED=false/' /var/www/QuestEsports/backend/.env
-sudo -u deploy -H pm2 restart quest-backend --update-env
+sudoedit /etc/quest-esports/quest.production.env   # REALTIME_SSE_ENABLED=false
+quest_compose up -d --force-recreate backend
 ```
 
 If the cluster itself must be removed, scale to one worker and use the memory
@@ -529,13 +556,9 @@ count, Upstash routes, heartbeat, and smoke checks pass again.
 Older deployments accepted an arbitrary `AUTH_ENCRYPTION_KEY` and derived the AES key with SHA-256. Do not replace that value with a random key if encrypted recruitment NIC or queued-token data already exists. Convert the existing value to its SHA-256 hexadecimal representation; the derived encryption bytes remain identical:
 
 ```bash
-cd /var/www/QuestEsports/backend
-node -e '
-  const fs = require("fs");
+quest_compose exec backend node -e '
   const crypto = require("crypto");
-  const dotenv = require("dotenv");
-  const env = dotenv.parse(fs.readFileSync(".env"));
-  const current = env.AUTH_ENCRYPTION_KEY;
+  const current = process.env.AUTH_ENCRYPTION_KEY;
   if (!current) process.exit(2);
   process.stdout.write(
     /^[a-f0-9]{64}$/i.test(current)
@@ -722,7 +745,7 @@ protected environment or manifest credentials:
 ```bash
 sudo /usr/local/sbin/quest-esports-release \
   <full-40-character-commit-sha> /secure/releases/<full-sha>.manifest
-sudo /var/www/QuestEsports/ops/deploy/verify-release.sh
+sudo /usr/local/sbin/quest-esports-verify-release   # root-owned, alongside the release controller
 ```
 
 The script takes the canonical lock before disk, database, registry, backup,
@@ -810,7 +833,16 @@ The deployment refuses root SSH users, dirty tracked worktrees, insecure `.env` 
 
 ## Rollback Semantics
 
-If install, restart, or health validation fails, CD checks out the previous application commit, reinstalls its dependencies, regenerates Prisma, and restarts PM2. Database migrations are not reversed. Every production migration must therefore remain backward-compatible with the previous application release (expand first; contract later).
+If health validation fails, the release brings the staged project down and
+starts the previous release directory again from its own recorded image
+manifest — `release.sh` keeps `/opt/quest-esports/releases/` for exactly this.
+There is no checkout, dependency install or Prisma regeneration on the host: a
+rollback is a different set of already-built images, which is what makes it
+fast and repeatable.
+
+Database migrations are not reversed. Every production migration must therefore
+remain backward-compatible with the previous application release (expand first;
+contract later).
 
 Never rely on a Free-plan Supabase dashboard backup. Confirm that the encrypted database-and-upload archive exists off-site before approving a migration. Clear `BACKEND_DESTRUCTIVE_MIGRATION_APPROVAL_SHA` from the `Production` environment after the deployment; while it still equals a commit SHA, the destructive gate is disarmed for that commit. The ordinary migration approval needs no cleanup — the required reviewer applies to every run.
 
@@ -818,28 +850,9 @@ Confirm the backup in the deployment log before the migration applies. A success
 
 ## Site Maintenance Mode
 
-> **This section predates the Compose cutover and must not be followed as
-> written.** Both halves of the procedure below address infrastructure that no
-> longer serves production: the frontend steps set environment variables in
-> Vercel and redeploy there, and the backend steps edit `.env` on the VPS and
-> restart under PM2. `ops/deploy/cutover.sh` replaced the PM2 units, and
-> [CI/CD](./ci-cd.md) states there is one production delivery path — the
-> immutable Compose release — with "PM2 backend deployment and Vercel frontend
-> promotion" retired. Vercel builds nothing at all now; `frontend/vercel.json`
-> sets `git.deploymentEnabled: false`.
->
-> What maintenance mode *is* remains accurate — the three variables, their
-> validation rules, the response contract, and the verification commands, which
-> are plain HTTP checks and still work. What is wrong is where the variables are
-> set and how the services are restarted. Both are Compose concerns now.
->
-> The replacement procedure has not been written down. Deriving it from the
-> deployment scripts and rewriting this section is worth doing before the next
-> maintenance window, rather than during one.
-
 Use maintenance mode when visitors should temporarily see a branded maintenance page and normal API traffic should be refused. The frontend responds with `503`, `Retry-After`, `Cache-Control: no-store`, and crawler `noindex` headers. The backend returns a structured `SITE_MAINTENANCE` `503` response. `/api/health/live` remains available, readiness returns the intentional `503`, and the exact `POST /api/payments/payhere/notify` callback remains available so a payment already started before the window can settle.
 
-The three values must match in the Vercel Production environment and `/var/www/QuestEsports/backend/.env`:
+Three values control it:
 
 ```env
 SITE_MAINTENANCE_MODE=false
@@ -847,39 +860,70 @@ SITE_MAINTENANCE_MESSAGE=We’re carrying out scheduled maintenance. Please try 
 SITE_MAINTENANCE_RETRY_AFTER_SECONDS=900
 ```
 
-The message is limited to 240 characters. The retry window is an integer from 1 to 86400 seconds. Invalid values fail frontend builds or backend startup instead of silently choosing an unsafe state. `COMMERCE_MAINTENANCE_ENABLED` is unrelated: it controls scheduled commerce cleanup jobs, not visitor maintenance mode.
+The message is limited to 240 characters. The retry window is an integer from 1 to 86400 seconds. Invalid values are rejected at startup instead of silently choosing an unsafe state. `COMMERCE_MAINTENANCE_ENABLED` is unrelated: it controls scheduled commerce cleanup jobs, not visitor maintenance mode.
+
+> **The frontend half is not wired into the Compose stack.**
+> `readSiteMaintenanceConfig` reads `SITE_MAINTENANCE_MODE` from `process.env`
+> in `frontend/app/layout.tsx`, but the `frontend` service in
+> `ops/docker/compose.production.yml` declares no such variable, so there is
+> nowhere for an operator to set it. Enabling the branded page requires adding
+> the three variables to that service first. Until then only the API half of
+> this procedure takes effect, and the site keeps serving normally while the API
+> refuses — which is a worse experience than either state on its own.
+>
+> This was missed because the pre-cutover procedure set the frontend values in
+> Vercel, which no longer builds anything. Worth closing before the next
+> maintenance window rather than during one.
 
 ### Enable maintenance safely
 
 1. Announce the window. Confirm the latest scheduled backup succeeded; create a manual full backup first if the work can change data.
-2. In Vercel, set the three variables for the **Production** environment with `SITE_MAINTENANCE_MODE=true`, then redeploy the current approved `main` commit. Enable the frontend first so visitors see the maintenance page before API access is restricted.
-3. On the VPS, edit the backend environment without printing it:
+2. Set `SITE_MAINTENANCE_MODE=true` and the two companion values in the backend runtime environment, without printing it:
 
    ```bash
-   sudo -u deploy -H nano /var/www/QuestEsports/backend/.env
-   sudo -u deploy -H pm2 restart quest-backend --update-env
-   sudo -u deploy -H pm2 save
+   sudoedit /etc/quest-esports/quest.production.env
+   ```
+
+3. Recreate the backend so it reads them. This does not change the release; the
+   next deployment applies the same file either way:
+
+   ```bash
+   quest_compose up -d --force-recreate backend
+   quest_compose ps
    ```
 
 4. Verify the expected behavior:
 
    ```bash
-   curl --silent --show-error --output /dev/null --write-out '%{http_code}\n' https://questesports.lk/
+   curl --silent --show-error --output /dev/null --write-out '%{http_code}
+' https://questesports.lk/
    curl --fail --silent --show-error https://api.questesports.lk/api/health/live
    curl --silent --show-error --dump-header - https://api.questesports.lk/api/health/ready
    curl --silent --show-error --dump-header - https://api.questesports.lk/api/tournaments
    ```
 
-   Expected: frontend `503`; liveness `200` with `maintenance.enabled=true`; readiness and ordinary API requests `503` with `X-Maintenance-Mode: active` and `Retry-After`.
+   Expected: liveness `200` with `maintenance.enabled=true`; readiness and ordinary API requests `503` with `X-Maintenance-Mode: active` and `Retry-After`. The frontend still answers `200` until the gap above is closed.
 
-CD uses liveness to confirm that PM2 restarted and recognizes the explicit maintenance header on readiness, so an intentional maintenance window does not trigger a false rollback.
+CD uses liveness to confirm the container came back and recognizes the explicit maintenance header on readiness, so an intentional maintenance window does not trigger a false rollback.
 
 ### Disable maintenance safely
 
-1. Finish and verify the backend work while the page remains in maintenance.
-2. Set `SITE_MAINTENANCE_MODE=false` in the VPS backend `.env`, restart with `--update-env`, and confirm readiness is `200`.
-3. Set `SITE_MAINTENANCE_MODE=false` in Vercel Production and redeploy the same approved commit. Disable the frontend last so users cannot return before the API is ready.
-4. Run the normal production smoke checks and watch PM2 logs.
+1. Finish and verify the backend work while the window is still in force.
+2. Set `SITE_MAINTENANCE_MODE=false` in `/etc/quest-esports/quest.production.env`, recreate the backend the same way, and confirm readiness is `200`.
+3. Run the normal production smoke checks and watch `quest_compose logs -f backend`.
+
+### An immediate shutdown
+
+For an outage that cannot wait for a configuration change, stop the service:
+
+```bash
+quest_compose stop backend
+```
+
+The API becomes unreachable rather than returning the branded maintenance
+response, so prefer the configured window whenever there is a choice. Compose
+records no desired state of its own — the next release starts the service again
+regardless, which is a recovery path rather than something to rely on.
 
 ### Coordinated write-freeze validation mode
 
@@ -919,10 +963,13 @@ compromise, or any operation requiring the backend to be unavailable, follow
 the disaster-recovery procedure and stop the backend:
 
 ```bash
-sudo -u deploy -H pm2 stop quest-backend
+quest_compose stop backend
 ```
 
-Do not run `pm2 save` while it is stopped, or the stopped state can survive a reboot. For an emergency frontend-only notice, enable and redeploy the Vercel switch first. For an immediate API shutdown, stop PM2; the API will be unavailable rather than returning the branded maintenance response.
+The API becomes unreachable rather than returning the branded maintenance
+response, so prefer a configured window whenever there is a choice. Nothing has
+to be undone afterwards: Compose records no desired state of its own, and the
+next release starts the service again regardless.
 
 ## Verification
 
@@ -937,9 +984,8 @@ the maintenance `503`.
 Run Linux commands from the VPS, not Windows PowerShell:
 
 ```bash
-sudo -u deploy -H git -C /var/www/QuestEsports rev-parse --short HEAD
-systemctl is-active pm2-deploy
-sudo -u deploy -H pm2 list
+readlink -f /opt/quest-esports/current
+quest_compose ps
 curl --fail --silent --show-error http://127.0.0.1:5001/api/health/live
 curl --fail --silent --show-error http://127.0.0.1:5001/api/health
 curl --fail --silent --show-error https://api.questesports.lk/api/health
@@ -970,15 +1016,22 @@ A required Actions secret resolved to an empty value. Confirm the exact secret n
 
 ### Deployment refuses root
 
-Set `BACKEND_SSH_USER=deploy`. The checkout, `.env`, uploads, repository deploy key, and PM2 daemon must be accessible to that user.
+Set `BACKEND_SSH_USER=deploy`. The release directories under
+`/opt/quest-esports`, the runtime environment files under
+`/etc/quest-esports`, the upload volumes under `/srv/quest-esports`, and the
+Docker socket must be reachable by that user.
 
 ### New code repeatedly restarts
 
 ```bash
-sudo -u deploy -H pm2 logs quest-backend --err --lines 100 --nostream
+quest_compose logs --tail 100 backend
 ```
 
-Configuration validation errors appear before the server listens on port 5001. Fix the production `.env` without printing secret values, then rerun CD; do not hide the validation in code.
+Configuration validation errors appear before the server listens on port 5001,
+so a container that restarts in a loop with nothing after the validation banner
+is almost always a bad value rather than a bad build. Fix
+`/etc/quest-esports/quest.production.env` without printing secret values and
+recreate the service; do not hide the validation in code.
 
 ### `dubious ownership` from Git
 
@@ -1003,10 +1056,13 @@ apt upgrade
 If `/var/run/reboot-required` exists:
 
 ```bash
-sudo -u deploy -H pm2 save
-systemctl is-enabled pm2-deploy
+quest_compose ps      # note what is running before the reboot
 reboot
 ```
+
+Nothing needs saving first. The Compose services carry a restart policy and come
+back with the host; confirm with `quest_compose ps` afterwards rather than
+assuming.
 
 After reconnecting, repeat the verification commands. PM2/systemd should restore the backend automatically.
 

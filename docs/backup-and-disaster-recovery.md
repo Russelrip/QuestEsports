@@ -18,7 +18,7 @@ This is the source of truth for Quest Esports production backup, restore testing
 6. Treat `ops/restore-production-backup.sh` as destructive: it runs `pg_restore --clean --if-exists` and synchronizes both upload roots with `rsync --delete`.
 7. Stop application writes and preserve the current failed state before an intentional production restore whenever possible.
 
-Visitor maintenance mode alone is not a write freeze: background jobs and the PayHere notification callback intentionally continue. A restore or destructive recovery requires stopping the PM2 backend process as described below.
+Visitor maintenance mode alone is not a write freeze: background jobs and the PayHere notification callback intentionally continue. A restore or destructive recovery requires stopping the backend service — `quest_compose stop backend`, using the invocation recorded in [Operating the Compose stack](./production-runbook.md#operating-the-compose-stack).
 
 ## Repository-recorded production recovery status
 
@@ -477,7 +477,7 @@ This workflow validates an encrypted application-database snapshot in disposable
 | Upload tree corruption | Stop writes, restore both upload roots from one consistent archive, and verify database/file references |
 | Accidental application-table change | Restore the archive into disposable PostgreSQL first, inspect the required rows, then choose targeted SQL recovery or an approved full restore |
 | VPS PostgreSQL 17 database loss | Replace or recover the VPS PostgreSQL 17 target (`quest-postgres`, `127.0.0.1:5433`) from a verified complete archive, restore the application schemas recorded by the archive manifest (`public` and `valorant` when included), update protected secrets, run migrations/security checks, then switch the backend only after validation; never select stale Supabase |
-| VPS loss with database intact | Rebuild the VPS from Git and the secret store, restore public/private uploads, reinstall PM2/Nginx/systemd/rclone, then verify health |
+| VPS loss with database intact | Rebuild the VPS from Git and the secret store, restore public/private uploads, reinstall Docker/Nginx/systemd/rclone, redeploy the current release, then verify health |
 | Complete environment loss | Rebuild database and VPS, restore database/uploads, restore external configuration from its separate secret recovery process, then update DNS and verify every integration |
 | OAuth token revoked | Re-authorize the affected configured remote and run a manual plus systemd backup test; do not change archive encryption keys |
 | Private `age` identity lost | Existing archives cannot be decrypted; locate the second offline identity copy before taking any destructive action |
