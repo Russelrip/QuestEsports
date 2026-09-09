@@ -760,9 +760,14 @@ const normalizeRegistrationSubmission = ({ tournament, body, user }) => {
 //
 // The registration is not linked to the saved team yet at this point, so this
 // resolves it the same way the sync does: by captain and team name.
-const assertTeamLogoAvailable = async ({ tournament, user, teamName, uploaded, existingLogoName }) => {
+//
+// A retry is exempt outright, not merely when it already has a logo. A retry is
+// a captain coming back to pay for a registration Quest already accepted, and
+// applying a new rule at that moment strands them at the checkout for something
+// that was not asked of them when they entered. The rule belongs at the door.
+const assertTeamLogoAvailable = async ({ tournament, user, teamName, uploaded, isRetry }) => {
   if (tournament.entryType !== "team") return;
-  if (uploaded || existingLogoName) return;
+  if (uploaded || isRetry) return;
 
   const savedTeam = typeof prisma.savedTeam?.findUnique === "function"
     ? await prisma.savedTeam.findUnique({
@@ -1016,14 +1021,13 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
   } = submission;
   // Before anything is persisted or any capacity is counted: a refusal for a
   // missing logo should cost nothing and should not depend on how far into the
-  // flow the caller got. A retry of a registration that already carries one is
-  // not a second chance to supply it.
+  // flow the caller got.
   await assertTeamLogoAvailable({
     tournament,
     user,
     teamName: displayName,
     uploaded: file,
-    existingLogoName: existing?.teamLogoName || null,
+    isRetry: Boolean(existing),
   });
   const persistedMembers = buildPersistedRegistrationMembers({ members, coach });
   // The roster's Discord requirement is not checked here any more. It used to

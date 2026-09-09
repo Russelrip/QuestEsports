@@ -168,7 +168,7 @@ test("a saved team that already has a logo satisfies the requirement", async () 
   }
 });
 
-test("a retry of a registration that already has a logo is not asked for another", async () => {
+test("a retry is never asked for a logo, including one that has none", async () => {
   const { module: service, restore } = loadModuleWithMocks(
     servicePath,
     logoHarness({
@@ -176,7 +176,8 @@ test("a retry of a registration that already has a logo is not asked for another
         id: "registration-1",
         paymentStatus: "unpaid",
         entryType: "team",
-        teamLogoName: "already-uploaded.webp",
+        // Registered before the rule existed, so it carries no logo at all.
+        teamLogoName: null,
       },
     })
   );
@@ -194,8 +195,9 @@ test("a retry of a registration that already has a logo is not asked for another
     restore();
   }
 
-  // The registration already carries one. A retry is not a second chance to
-  // supply something that is already there.
+  // A retry is a captain coming back to pay for a registration Quest already
+  // accepted. Applying a new rule at the checkout would strand them for
+  // something that was not asked when they entered.
   if (failure) {
     assert.doesNotMatch(failure.message || "", /team logo is required/i);
   }
