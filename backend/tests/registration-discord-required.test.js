@@ -78,6 +78,7 @@ const load = ({ linkedEmails = [], discordRequired = true } = {}) => {
   return loadModuleWithMocks(servicePath, {
     [prismaModulePath]: {
       prisma: {
+        savedTeam: { findUnique: async () => ({ logoName: "saved-team.webp" }) },
         tournament: {
           findFirst: async () => ({ ...tournament, discordRequired, series: null }),
         },
@@ -140,6 +141,7 @@ test("a captain without a connected Discord cannot register at all", async () =>
   const { module: service, restore } = loadModuleWithMocks(servicePath, {
     [prismaModulePath]: {
       prisma: {
+        savedTeam: { findUnique: async () => ({ logoName: "saved-team.webp" }) },
         tournament: { findFirst: async () => ({ ...tournament, discordRequired: false, series: null }) },
         teamRegistration: { findFirst: async () => null },
         // No linked account for the captain.

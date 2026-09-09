@@ -749,6 +749,40 @@ const normalizeRegistrationSubmission = ({ tournament, body, user }) => {
   };
 };
 
+// A team registration must end up with a logo, which is not the same as
+// requiring an upload.
+//
+// The saved team a registration links to may already have one — reusing a team
+// is the common path, and `syncSavedTeamFromRegistration` adopts that logo onto
+// the registration afterwards. Demanding a fresh file there would make captains
+// re-upload something Quest already holds, and the ones who no longer have the
+// file would be stuck.
+//
+// The registration is not linked to the saved team yet at this point, so this
+// resolves it the same way the sync does: by captain and team name.
+//
+// A retry is exempt outright, not merely when it already has a logo. A retry is
+// a captain coming back to pay for a registration Quest already accepted, and
+// applying a new rule at that moment strands them at the checkout for something
+// that was not asked of them when they entered. The rule belongs at the door.
+const assertTeamLogoAvailable = async ({ tournament, user, teamName, uploaded, isRetry }) => {
+  if (tournament.entryType !== "team") return;
+  if (uploaded || isRetry) return;
+
+  const savedTeam = typeof prisma.savedTeam?.findUnique === "function"
+    ? await prisma.savedTeam.findUnique({
+        where: { captainUserId_name: { captainUserId: user.id, name: teamName } },
+        select: { logoName: true },
+      })
+    : null;
+  if (savedTeam?.logoName) return;
+
+  throw new HttpError(
+    400,
+    "A team logo is required. Upload one, or reuse a saved team that already has a logo."
+  );
+};
+
 const createConfiguredRegistration = async ({ slug, body, file, user }) => {
   const submittedSlug = normalizeText(body.tournamentSlug || body.tournament);
   if (submittedSlug && submittedSlug !== slug) {
@@ -985,6 +1019,16 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
     members,
     coach,
   } = submission;
+  // Before anything is persisted or any capacity is counted: a refusal for a
+  // missing logo should cost nothing and should not depend on how far into the
+  // flow the caller got.
+  await assertTeamLogoAvailable({
+    tournament,
+    user,
+    teamName: displayName,
+    uploaded: file,
+    isRetry: Boolean(existing),
+  });
   const persistedMembers = buildPersistedRegistrationMembers({ members, coach });
   // The roster's Discord requirement is not checked here any more. It used to
   // refuse the captain for a gap only the invitee could close — a captain
