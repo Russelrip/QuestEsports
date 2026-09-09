@@ -510,6 +510,43 @@ test("a reference is resolved by identity, never taken on trust", async () => {
   }
 });
 
+test("accepting leaves the registration's own record of what was submitted alone", async () => {
+  const { module: service, restore, state } = loadService({
+    members: [invite()],
+    openRegistrations: [{ id: "registration-1" }],
+  });
+  try {
+    await service.respondToInvitation({
+      invitationId: "member-1",
+      decision: "accept",
+      user: VERIFIED,
+    });
+
+    const [{ data, where }] = state.registrationMemberUpdates;
+    // A registration member carries the game identifier that tournament's
+    // rules asked for, and it is evidence of what was submitted for that
+    // event. Accepting an invitation answers the invitation; it does not get
+    // to revise the record.
+    assert.deepEqual(Object.keys(data).sort(), [
+      "inviteExpiresAt",
+      "inviteRespondedAt",
+      "inviteStatus",
+      "inviteTokenHash",
+      "userId",
+    ]);
+    // And only rows still waiting on an answer, inside registrations still
+    // open to their roster. An approved or cancelled registration has had its
+    // roster settled and is not listening any more.
+    assert.deepEqual(where.inviteStatus, { in: ["pending"] });
+    assert.deepEqual(where.registrationId, { in: ["registration-1"] });
+
+    const [{ args }] = state.queries.filter((query) => query.model === "teamRegistration");
+    assert.deepEqual(args.where.status, { in: ["pending", "waitlisted"] });
+  } finally {
+    restore();
+  }
+});
+
 test("accepting takes no captain-entered identity with it", async () => {
   const { module: service, restore, state } = loadService({ members: [invite()] });
   try {

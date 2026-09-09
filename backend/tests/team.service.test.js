@@ -2367,6 +2367,26 @@ test("roster readiness follows the linked account, not the address the captain t
 });
 
 
+// A roster spot is filled by a person saying yes. Nothing here goes looking a
+// player up — not on Riot, not on the leaderboard, not on Discord beyond the
+// account they connected themselves — because a lookup would put a guess about
+// somebody's identity back on the roster by a different route, and this whole
+// module exists to stop that. The game identifier a tournament needs is asked
+// for by that tournament's own form.
+test("nothing in the invitation path looks a player up anywhere", async () => {
+  const fs = require("node:fs");
+  const moduleDirectory = path.join(__dirname, "../src/modules/teams");
+
+  for (const entry of fs.readdirSync(moduleDirectory).filter((name) => name.endsWith(".js"))) {
+    const source = fs.readFileSync(path.join(moduleDirectory, entry), "utf8");
+    assert.doesNotMatch(
+      source,
+      /require\([^)]*(valorant|riot|leaderboard|game-accounts?)[^)]*\)/i,
+      `${entry} must not reach for an identity lookup`
+    );
+  }
+});
+
 // The invitation is a row, and every notice is best effort on top of it. That
 // only stays true if nothing in this module quietly acquires a mail dependency
 // again: the moment a roster spot depends on a delivery, an email that never
