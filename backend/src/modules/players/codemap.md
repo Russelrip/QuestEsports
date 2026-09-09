@@ -14,7 +14,7 @@ Player identity as competitive infrastructure, and the public face of it.
 
 `player-profile.service.js` is a **projection, never a model dump**. The
 adjacent data is unusually sensitive for a public page: `registration_members`
-carries the email, phone and invite tokens a captain typed in, `players` joins
+carries the contact details submitted with a registration, `players` joins
 to a `User`, and `game_accounts.external_id` is a PUUID — a stable
 cross-service key the audit policy already treats as sensitive.
 

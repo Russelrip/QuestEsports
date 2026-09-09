@@ -3,7 +3,7 @@ const { prisma } = require("../../lib/prisma");
 // The public player profile.
 //
 // Everything here is a PROJECTION, never a model dump. `registration_members`
-// carries the email, phone and invite tokens a captain typed in, and `players`
+// carries the contact details submitted with a registration, and `players`
 // joins to a `User`; none of that is competitive information and none of it
 // belongs on a public page. The rule this file follows is that a field is
 // included only if it is already public elsewhere — a Riot ID appears on the
