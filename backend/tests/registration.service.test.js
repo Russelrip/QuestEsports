@@ -79,11 +79,134 @@ test("bank-transfer references are short and banking-app friendly", () => {
   }
 });
 
+// A team registration must end up with a logo, which is not the same as
+// demanding an upload. Reusing a saved team is the common path and that team
+// usually already has one — asking for the file again would strand the captains
+// who no longer have it.
+
+const logoTournament = { ...tournament, minRosterSize: 5, maxRosterSize: 5 };
+
+const logoHarness = ({ savedTeamLogo = null, existingRegistration = null } = {}) => ({
+  [prismaModulePath]: {
+    prisma: {
+      savedTeam: {
+        findUnique: async () => (savedTeamLogo ? { logoName: savedTeamLogo } : null),
+      },
+      tournament: { findFirst: async () => logoTournament },
+      teamRegistration: { findFirst: async () => existingRegistration },
+      user: { findUnique: async () => user, findFirst: async () => user, findMany: async () => [user] },
+      oAuthAccount: { findFirst: async () => ({ providerUserId: "discord-1" }), findMany: async () => [] },
+      registrationMember: { findFirst: async () => null, findMany: async () => [] },
+      savedTeamMember: { findFirst: async () => null, findMany: async () => [] },
+      player: { findUnique: async () => null },
+      gameAccount: { findMany: async () => [] },
+    },
+  },
+  [uploadModulePath]: { persistTeamLogoUpload: async () => null, teamLogoDirectory: "uploads/team-logos" },
+  [teamServicePath]: {},
+  [paymentServicePath]: { assertPayHereConfigured: () => undefined },
+  [bankTransferServicePath]: {},
+});
+
+const fiveValidMembers = JSON.stringify(
+  Array.from({ length: 4 }, (unused, index) => ({
+    name: `Player ${index + 1}`,
+    email: `player-${index + 1}@example.com`,
+    gameId: `Player${index + 1}#001`,
+    role: "PLAYER",
+  }))
+);
+
+test("a team registration with no logo anywhere is refused", async () => {
+  const { module: service, restore } = loadModuleWithMocks(servicePath, logoHarness());
+
+  try {
+    await assert.rejects(
+      () => service.createConfiguredRegistration({
+        slug: logoTournament.slug,
+        body: { ...body, members: fiveValidMembers },
+        user,
+      }),
+      (error) => {
+        assert.equal(error.statusCode, 400);
+        // Names both ways out, because a captain with no file to hand may still
+        // have a saved team that already carries one.
+        assert.match(error.message, /team logo is required/i);
+        assert.match(error.message, /saved team/i);
+        return true;
+      }
+    );
+  } finally {
+    restore();
+  }
+});
+
+test("a saved team that already has a logo satisfies the requirement", async () => {
+  const { module: service, restore } = loadModuleWithMocks(
+    servicePath,
+    logoHarness({ savedTeamLogo: "quest-five.webp" })
+  );
+
+  let failure = null;
+  try {
+    await service.createConfiguredRegistration({
+      slug: logoTournament.slug,
+      body: { ...body, members: fiveValidMembers },
+      user,
+    });
+  } catch (error) {
+    failure = error;
+  } finally {
+    restore();
+  }
+
+  // Getting past the logo check is the assertion. Whatever this registration
+  // goes on to do under a deliberately thin harness, it was not stopped for a
+  // file Quest already holds.
+  if (failure) {
+    assert.doesNotMatch(failure.message || "", /team logo is required/i);
+  }
+});
+
+test("a retry of a registration that already has a logo is not asked for another", async () => {
+  const { module: service, restore } = loadModuleWithMocks(
+    servicePath,
+    logoHarness({
+      existingRegistration: {
+        id: "registration-1",
+        paymentStatus: "unpaid",
+        entryType: "team",
+        teamLogoName: "already-uploaded.webp",
+      },
+    })
+  );
+
+  let failure = null;
+  try {
+    await service.createConfiguredRegistration({
+      slug: logoTournament.slug,
+      body: { ...body, members: fiveValidMembers },
+      user,
+    });
+  } catch (error) {
+    failure = error;
+  } finally {
+    restore();
+  }
+
+  // The registration already carries one. A retry is not a second chance to
+  // supply something that is already there.
+  if (failure) {
+    assert.doesNotMatch(failure.message || "", /team logo is required/i);
+  }
+});
+
 test("captains can cancel their own unpaid tournament registration", async () => {
   let deletedId = null;
   const { module: service, restore } = loadModuleWithMocks(servicePath, {
     [prismaModulePath]: {
       prisma: {
+        savedTeam: { findUnique: async () => ({ logoName: "saved-team.webp" }) },
         teamRegistration: {
           findFirst: async () => ({
             id: "registration-1",
@@ -114,6 +237,7 @@ test("captains cannot cancel after a payment reservation has started", async () 
   const { module: service, restore } = loadModuleWithMocks(servicePath, {
     [prismaModulePath]: {
       prisma: {
+        savedTeam: { findUnique: async () => ({ logoName: "saved-team.webp" }) },
         teamRegistration: {
           findFirst: async () => ({
             id: "registration-1",
@@ -143,6 +267,7 @@ test("captains must contact an administrator after their payment window expires"
   const { module: service, restore } = loadModuleWithMocks(servicePath, {
     [prismaModulePath]: {
       prisma: {
+        savedTeam: { findUnique: async () => ({ logoName: "saved-team.webp" }) },
         teamRegistration: {
           findFirst: async () => ({
             id: "registration-1",
@@ -190,6 +315,7 @@ test("roster validation explains that the captain counts as an active player", a
   const { module: service, restore } = loadModuleWithMocks(servicePath, {
     [prismaModulePath]: {
       prisma: {
+        savedTeam: { findUnique: async () => ({ logoName: "saved-team.webp" }) },
         tournament: { findFirst: async () => fivePlayerTournament },
         teamRegistration: { findFirst: async () => null },
       },
@@ -257,6 +383,7 @@ test("paid direct team registration saves the team and dispatches player invites
     },
   };
   const prisma = {
+    savedTeam: { findUnique: async () => ({ logoName: "saved-team.webp" }) },
     // Registration resolves every roster Discord handle from connected
     // accounts now, so the captain's link has to exist for the flow to run.
     oAuthAccount: {
@@ -422,6 +549,7 @@ test("a free open-entry registration is approved on submission when the tourname
     auditLog: { create: async ({ data }) => { audits.push(data); return data; } },
   };
   const prisma = {
+    savedTeam: { findUnique: async () => ({ logoName: "saved-team.webp" }) },
     oAuthAccount: {
       findFirst: async () => ({
         providerUserId: "900000000000000001",
@@ -521,6 +649,7 @@ test("a free team event reports its outstanding invitations to the captain", asy
     auditLog: { create: async ({ data }) => data },
   };
   const prisma = {
+    savedTeam: { findUnique: async () => ({ logoName: "saved-team.webp" }) },
     oAuthAccount: {
       findFirst: async () => ({
         providerUserId: "900000000000000001",
@@ -615,6 +744,7 @@ test("a free team captain can return to a roster that has not finished accepting
     maxTeams: null,
   };
   const prisma = {
+    savedTeam: { findUnique: async () => ({ logoName: "saved-team.webp" }) },
     oAuthAccount: {
       findFirst: async () => ({
         providerUserId: "900000000000000001",
@@ -686,6 +816,7 @@ test("a free team registration everyone has accepted is still answered as alread
     maxTeams: null,
   };
   const prisma = {
+    savedTeam: { findUnique: async () => ({ logoName: "saved-team.webp" }) },
     oAuthAccount: {
       findFirst: async () => ({
         providerUserId: "900000000000000001",
@@ -767,6 +898,7 @@ test("a reviewed tournament still submits its registration for approval", async 
     auditLog: { create: async ({ data }) => data },
   };
   const prisma = {
+    savedTeam: { findUnique: async () => ({ logoName: "saved-team.webp" }) },
     oAuthAccount: {
       findFirst: async () => ({
         providerUserId: "900000000000000001",
@@ -822,6 +954,7 @@ test("registration service enforces parent event windows on the initial lookup",
     const { module: registrationService, restore } = loadModuleWithMocks(servicePath, {
       [prismaModulePath]: {
         prisma: {
+          savedTeam: { findUnique: async () => ({ logoName: "saved-team.webp" }) },
           tournament: {
             findFirst: async (args) => {
               lookupArgs = args;
@@ -887,6 +1020,7 @@ test("registration service enforces a parent close observed by the transaction r
   const { module: registrationService, restore } = loadModuleWithMocks(servicePath, {
     [prismaModulePath]: {
       prisma: {
+        savedTeam: { findUnique: async () => ({ logoName: "saved-team.webp" }) },
         tournament: { findFirst: async () => ({ ...tournament, series: initialSeries }) },
         teamRegistration: { findFirst: async () => existing },
         oAuthAccount: {
@@ -950,6 +1084,7 @@ test("a pending coach blocks team verification and payment", async () => {
     },
   };
   const prisma = {
+    savedTeam: { findUnique: async () => ({ logoName: "saved-team.webp" }) },
     // Registration resolves every roster Discord handle from connected
     // accounts now, so the captain's link has to exist for the flow to run.
     oAuthAccount: {
@@ -1040,6 +1175,7 @@ test("captain-only direct registration repairs stale verification and starts pay
     },
   };
   const prisma = {
+    savedTeam: { findUnique: async () => ({ logoName: "saved-team.webp" }) },
     // Registration resolves every roster Discord handle from connected
     // accounts now, so the captain's link has to exist for the flow to run.
     oAuthAccount: {
@@ -1226,6 +1362,7 @@ test("createConfiguredRegistration removes a newly persisted retry logo when the
     payments: [{ provider: "payhere", status: "failed", providerOrderId: "old-order" }],
   };
   const prisma = {
+    savedTeam: { findUnique: async () => ({ logoName: "saved-team.webp" }) },
     // Registration resolves every roster Discord handle from connected
     // accounts now, so the captain's link has to exist for the flow to run.
     oAuthAccount: {
@@ -1324,6 +1461,7 @@ test("public waitlist retry releases a stale admin hold before clearing the slot
     },
   };
   const prisma = {
+    savedTeam: { findUnique: async () => ({ logoName: "saved-team.webp" }) },
     // Registration resolves every roster Discord handle from connected
     // accounts now, so the captain's link has to exist for the flow to run.
     oAuthAccount: {
@@ -1496,6 +1634,7 @@ test("active same-tournament registrations enforce coach/player identity separat
       registrationMember: { createMany: async () => ({ count: 1 }) },
     };
     const prisma = {
+      savedTeam: { findUnique: async () => ({ logoName: "saved-team.webp" }) },
     // Registration resolves every roster Discord handle from connected
     // accounts now, so the captain's link has to exist for the flow to run.
     oAuthAccount: {
@@ -1591,6 +1730,7 @@ test("rejected and different-tournament registrations do not block coach/player 
       registrationMember: { createMany: async () => ({ count: 1 }) },
     };
     const prisma = {
+      savedTeam: { findUnique: async () => ({ logoName: "saved-team.webp" }) },
     // Registration resolves every roster Discord handle from connected
     // accounts now, so the captain's link has to exist for the flow to run.
     oAuthAccount: {
@@ -1735,6 +1875,7 @@ test("retry and payment continuation recheck same-tournament role conflicts", as
       },
     };
     const prisma = {
+      savedTeam: { findUnique: async () => ({ logoName: "saved-team.webp" }) },
     // Registration resolves every roster Discord handle from connected
     // accounts now, so the captain's link has to exist for the flow to run.
     oAuthAccount: {
@@ -1820,6 +1961,7 @@ test("active bank-transfer continuation checks role conflicts before returning i
     },
   };
   const prisma = {
+    savedTeam: { findUnique: async () => ({ logoName: "saved-team.webp" }) },
     // Registration resolves every roster Discord handle from connected
     // accounts now, so the captain's link has to exist for the flow to run.
     oAuthAccount: {
@@ -1903,6 +2045,7 @@ test("active explicit payment resume checks role conflicts before reusing the pa
     },
   };
   const prisma = {
+    savedTeam: { findUnique: async () => ({ logoName: "saved-team.webp" }) },
     // Registration resolves every roster Discord handle from connected
     // accounts now, so the captain's link has to exist for the flow to run.
     oAuthAccount: {

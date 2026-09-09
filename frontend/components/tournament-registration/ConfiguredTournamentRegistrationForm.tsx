@@ -124,6 +124,13 @@ export default function ConfiguredTournamentRegistrationForm({ tournament }: { t
   // Filled in for them rather than asked for again: they already proved this
   // once, and a field they retype from memory is a field they can get wrong.
   const [connectedGameId, setConnectedGameId] = useState<string | null>(null);
+  // A team needs a logo, which is not the same as needing an upload: a saved
+  // team that already has one satisfies it, and the backend resolves that the
+  // same way. Asking a captain to find the file again would strand the ones who
+  // no longer have it.
+  const savedTeamLogoUrl =
+    (savedTeams ?? []).find((team) => team.id === selectedSavedTeamId)?.logoUrl ?? null;
+  const logoRequired = tournament.entryType === "team" && !savedTeamLogoUrl;
 
   const entryFields = useMemo(() => (tournament.registrationFields || []).filter((field) => field.scope === "entry"), [tournament.registrationFields]);
   const memberFields = useMemo(() => (tournament.registrationFields || []).filter((field) => field.scope === "member"), [tournament.registrationFields]);
@@ -542,7 +549,22 @@ export default function ConfiguredTournamentRegistrationForm({ tournament }: { t
             <FormField label="Team name" required><Input required value={form.teamName} onChange={(event) => setForm((current) => ({ ...current, teamName: event.target.value }))} /></FormField>
             <FormField label="Team tag" required><Input required maxLength={12} value={form.teamTag} onChange={(event) => setForm((current) => ({ ...current, teamTag: event.target.value }))} /></FormField>
             <FormField label="Country" required><Input required value={form.country} onChange={(event) => setForm((current) => ({ ...current, country: event.target.value }))} /></FormField>
-            <FormField label="Team logo"><Input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => setTeamLogo(event.target.files?.[0] || null)} /></FormField>
+            <FormField
+              label="Team logo"
+              required={logoRequired}
+              hint={
+                savedTeamLogoUrl
+                  ? "Your saved team's logo will be used. Upload only to replace it."
+                  : "PNG, JPG, or WebP"
+              }
+            >
+              <Input
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                required={logoRequired && !teamLogo}
+                onChange={(event) => setTeamLogo(event.target.files?.[0] || null)}
+              />
+            </FormField>
           </fieldset>
         ) : null}
 

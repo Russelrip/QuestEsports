@@ -109,6 +109,10 @@ const tournament = {
 const savedTeam = {
   id: "team-1",
   name: "Saved Squad",
+  // A saved team that already has a logo. That is what satisfies the team-logo
+  // requirement, rather than asking the captain to find the file again.
+  logoName: "saved-squad.webp",
+  logoUrl: "/api/uploads/team-logos/saved-squad.webp",
   country: "Sri Lanka",
   teamTag: "SQUAD",
   organizationName: "",
