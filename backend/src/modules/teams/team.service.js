@@ -977,6 +977,14 @@ const syncSavedTeamFromRegistration = async ({
           name: member.name,
           email,
           emailNormalized: email,
+          // Carried, not re-collected. These rows are deleted and recreated on
+          // every sync, so dropping the columns here erases whatever an older
+          // team already holds. The value carried is the saved team's own, never
+          // the registration's — a tournament's game identifier stays with the
+          // tournament that asked for it.
+          phone: existingMember?.phone ?? null,
+          discord: existingMember?.discord ?? null,
+          riotId: existingMember?.riotId ?? null,
           inviteStatus: "accepted",
           inviteTokenHash: null,
           inviteSentAt: acceptedMember?.inviteSentAt || null,
@@ -1009,6 +1017,14 @@ const syncSavedTeamFromRegistration = async ({
           name: member.name,
           email,
           emailNormalized: email,
+          // Carried, not re-collected. These rows are deleted and recreated on
+          // every sync, so dropping the columns here erases whatever an older
+          // team already holds. The value carried is the saved team's own, never
+          // the registration's — a tournament's game identifier stays with the
+          // tournament that asked for it.
+          phone: existingMember?.phone ?? null,
+          discord: existingMember?.discord ?? null,
+          riotId: existingMember?.riotId ?? null,
           inviteStatus: "declined",
           inviteTokenHash: null,
           inviteSentAt: member.inviteSentAt || null,
@@ -1039,6 +1055,14 @@ const syncSavedTeamFromRegistration = async ({
           name: member.name,
           email,
           emailNormalized: email,
+          // Carried, not re-collected. These rows are deleted and recreated on
+          // every sync, so dropping the columns here erases whatever an older
+          // team already holds. The value carried is the saved team's own, never
+          // the registration's — a tournament's game identifier stays with the
+          // tournament that asked for it.
+          phone: existingMember?.phone ?? null,
+          discord: existingMember?.discord ?? null,
+          riotId: existingMember?.riotId ?? null,
           inviteStatus: "pending",
           inviteTokenHash: null,
           inviteSentAt: activePendingMember.inviteSentAt,
@@ -1076,6 +1100,14 @@ const syncSavedTeamFromRegistration = async ({
         name: member.name,
         email,
         emailNormalized: email,
+        // Carried, not re-collected. These rows are deleted and recreated on
+        // every sync, so dropping the columns here erases whatever an older
+        // team already holds. The value carried is the saved team's own, never
+        // the registration's — a tournament's game identifier stays with the
+        // tournament that asked for it.
+        phone: existingMember?.phone ?? null,
+        discord: existingMember?.discord ?? null,
+        riotId: existingMember?.riotId ?? null,
         inviteStatus: "pending",
         inviteTokenHash: null,
         inviteSentAt,

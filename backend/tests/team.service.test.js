@@ -849,9 +849,13 @@ test("registration coach sync persists a pending invite and dispatches the norma
     // They stay on the registration and in its snapshot; carrying them here
     // would turn one event's answer into a property of the team, reused unasked
     // the next time the same roster enters something for a different game.
-    assert.equal(coach.phone, undefined);
-    assert.equal(coach.discord, undefined);
-    assert.equal(coach.riotId, undefined);
+    //
+    // Null rather than absent: this is a new roster row with no earlier value of
+    // its own to carry. A row that does have one keeps it — see the sync test
+    // that rebuilds an existing member.
+    assert.equal(coach.phone, null);
+    assert.equal(coach.discord, null);
+    assert.equal(coach.riotId, null);
     assert.equal(coach.inviteStatus, "pending");
     assert.equal(coach.inviteTokenHash, null);
     // The deadline outlives the token. An invitation still runs out; what
@@ -1403,8 +1407,8 @@ test("syncSavedTeamFromRegistration links the registration and creates account-b
 
     const [captainRecord, playerRecord, coachRecord] = savedMemberCreateCalls[0].data;
     assert.equal(captainRecord.userId, "user-1");
-    assert.equal(captainRecord.phone, undefined);
-    assert.equal(captainRecord.riotId, undefined);
+    assert.equal(captainRecord.phone, null);
+    assert.equal(captainRecord.riotId, null);
     assert.equal(captainRecord.inviteStatus, "accepted");
     assert.equal(playerRecord.userId, undefined);
     assert.equal(playerRecord.inviteStatus, "pending");
@@ -1414,7 +1418,7 @@ test("syncSavedTeamFromRegistration links the registration and creates account-b
     assert.ok(playerRecord.inviteExpiresAt instanceof Date);
     assert.equal(coachRecord.role, "COACH");
     assert.equal(coachRecord.memberOrder, 1);
-    assert.equal(coachRecord.phone, undefined);
+    assert.equal(coachRecord.phone, null);
     assert.equal(coachRecord.inviteStatus, "pending");
     assert.equal(coachRecord.inviteTokenHash, null);
     assert.equal(inviteDispatches[1].invitationId, coachRecord.id);
@@ -1446,6 +1450,95 @@ test("syncSavedTeamFromRegistration links the registration and creates account-b
     assert.deepEqual(teamRegistrationUpdateCalls.at(-1).data, {
       verificationStatus: "pending",
     });
+  } finally {
+    restore();
+  }
+});
+
+// A sync rebuilds every roster row from scratch, so anything the team already
+// held has to be carried or it is gone. This is where the boundary nearly cost
+// real data: the registration's identity must not cross into the saved team,
+// but the saved team's own stored values are not the registration's to delete.
+//
+// It matters beyond tidiness. `GET /api/admin/teams/:id` exposes
+// `SavedTeamMember.riotId` as `gameId`, and the VALORANT series form filters a
+// roster to "members with a Riot ID" to pick a series anchor. A sync that
+// blanked the column would quietly take a working team out of that list.
+test("a sync carries the team's own stored identity across the rebuild", async () => {
+  const savedRows = [];
+  const existingTeam = {
+    id: "saved-team-1",
+    captainUserId: "user-1",
+    name: "Quest Five",
+    logoName: null,
+    logoClearedAt: null,
+    members: [
+      {
+        id: "player-member",
+        role: "PLAYER",
+        memberOrder: 1,
+        emailNormalized: "player@example.com",
+        phone: "0110000000",
+        discord: "legacy-discord",
+        riotId: "LegacyName#000",
+        inviteStatus: "pending",
+        inviteSentAt: new Date("2026-01-01"),
+        inviteExpiresAt: new Date("2099-01-01"),
+      },
+    ],
+  };
+  const tx = {
+    savedTeam: {
+      findUnique: async () => existingTeam,
+      create: async () => existingTeam,
+      update: async () => existingTeam,
+    },
+    savedTeamMember: {
+      deleteMany: async () => ({ count: 1 }),
+      createMany: async ({ data }) => { savedRows.push(...data); return { count: data.length }; },
+    },
+    teamRegistration: { update: async () => undefined, findUnique: async () => ({ id: "registration-1" }) },
+    registrationMember: {
+      update: async () => undefined,
+      findMany: async () => [],
+    },
+  };
+  const { module: teamService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: { prisma: {} },
+    [noticeModulePath]: noticeMock(),
+    [uploadCleanupModulePath]: { scheduleTeamLogoCleanup: async () => undefined },
+  });
+
+  try {
+    await teamService.syncSavedTeamFromRegistration({
+      tx,
+      registrationId: "registration-1",
+      user: { id: "user-1", firstName: "Quest", lastName: "Captain", username: "captain" },
+      teamName: "Quest Five",
+      country: "Sri Lanka",
+      teamTag: "QF",
+      organizationRequested: false,
+      logoName: null,
+      tournamentTitle: "Quest Cup",
+      members: [
+        {
+          role: "PLAYER",
+          order: 1,
+          name: "Player One",
+          email: "player@example.com",
+          // What this tournament asked for. It stays on the registration.
+          riotId: "ThisEvent#999",
+          discord: "this-event-discord",
+          phone: "0779999999",
+          inviteStatus: "pending",
+        },
+      ],
+    });
+
+    const [row] = savedRows;
+    assert.equal(row.riotId, "LegacyName#000");
+    assert.equal(row.discord, "legacy-discord");
+    assert.equal(row.phone, "0110000000");
   } finally {
     restore();
   }
@@ -1663,8 +1756,8 @@ test("syncSavedTeamFromRegistration leaves a live invitation alone instead of an
     });
 
     assert.deepEqual(dispatches, []);
-    assert.equal(savedRows[0].phone, undefined);
-    assert.equal(savedRows[0].riotId, undefined);
+    assert.equal(savedRows[0].phone, null);
+    assert.equal(savedRows[0].riotId, null);
     // Outstanding because nobody answered it and it has not run out — the
     // deadline is what says so, not a token. Any hash left on the old row is
     // dropped, because it can no longer authorize anything.
