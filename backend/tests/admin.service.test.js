@@ -1363,8 +1363,27 @@ test("getAdminSavedTeamById loads the roster only for the selected team", async 
         captainUser: { firstName: "Team", lastName: "Captain", username: "captain" },
         _count: { members: 2 },
         members: [
-          { id: "member-1", role: "PLAYER", name: "Player One", email: "player@example.com", phone: "0770000000", discord: "player", riotId: "Player#001", inviteStatus: "accepted" },
-          { id: "member-2", role: "COACH", name: "Team Coach", email: "coach@example.com", phone: null, discord: null, riotId: null, inviteStatus: "pending" },
+          // A roster row that predates game accounts: a typed string and nothing
+          // connected behind it.
+          { id: "member-1", role: "PLAYER", name: "Player One", email: "player@example.com", phone: "0770000000", discord: "player", riotId: "Player#001", inviteStatus: "accepted", player: null },
+          { id: "member-2", role: "COACH", name: "Team Coach", email: "coach@example.com", phone: null, discord: null, riotId: null, inviteStatus: "pending", player: null },
+          // And one who connected their account. What they connected wins over
+          // the stale string still sitting on the row.
+          {
+            id: "member-3",
+            role: "SUBSTITUTE",
+            name: "Connected Player",
+            email: "sub@example.com",
+            phone: null,
+            discord: null,
+            riotId: "TypedLongAgo#000",
+            inviteStatus: "accepted",
+            player: {
+              gameAccounts: [
+                { game: "valorant", username: "Connected", tagline: "9999", verificationStatus: "discord_corroborated" },
+              ],
+            },
+          },
         ],
       }),
     },
@@ -1374,8 +1393,12 @@ test("getAdminSavedTeamById loads the roster only for the selected team", async 
     const team = await adminService.getAdminSavedTeamById("saved-team-1");
     assert.equal(team.captainName, "Team Captain");
     assert.deepEqual(team.members, [
-      { id: "member-1", role: "PLAYER", name: "Player One", email: "player@example.com", phone: "0770000000", discord: "player", gameId: "Player#001", inviteStatus: "accepted" },
-      { id: "member-2", role: "COACH", name: "Team Coach", email: "coach@example.com", phone: null, discord: null, gameId: null, inviteStatus: "pending" },
+      { id: "member-1", role: "PLAYER", name: "Player One", email: "player@example.com", phone: "0770000000", discord: "player", gameId: "Player#001", gameAccountConnected: false, legacyGameId: "Player#001", inviteStatus: "accepted" },
+      { id: "member-2", role: "COACH", name: "Team Coach", email: "coach@example.com", phone: null, discord: null, gameId: null, gameAccountConnected: false, legacyGameId: null, inviteStatus: "pending" },
+      // The connected account is the answer, and the stale typed string is
+      // still reported beside it so a surface can tell them apart rather than
+      // having to treat a verified identity and an inherited guess alike.
+      { id: "member-3", role: "SUBSTITUTE", name: "Connected Player", email: "sub@example.com", phone: null, discord: null, gameId: "Connected#9999", gameAccountConnected: true, legacyGameId: "TypedLongAgo#000", inviteStatus: "accepted" },
     ]);
   } finally {
     restore();

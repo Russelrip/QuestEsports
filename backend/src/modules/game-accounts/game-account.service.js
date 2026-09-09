@@ -212,6 +212,63 @@ const corroborateWithDiscord = async ({ userId, externalId }) => {
   }
 };
 
+// Adopt the VALORANT account this user already registered on the leaderboard.
+//
+// Both journeys prove the same thing to the same degree, and they ask for it
+// twice. The leaderboard requires a connected Discord and a PUUID the player
+// fetched from their own Riot account page; linking a game account requires a
+// connected Discord and a Riot ID. Someone who has done the first has already
+// told Quest who they are, and making them do the second by hand — from a
+// display name they now have to remember — is a step that teaches them nothing
+// and loses some of them.
+//
+// It deliberately goes through `linkValorantAccount` rather than writing a row
+// directly. The upstream answer is a hint about which account to link, never
+// the identifier itself: the Riot ID is re-resolved server-side, the
+// already-linked-elsewhere conflict is the same 409, and corroboration then
+// lands the account at `discord_corroborated` on its own, because the PUUID it
+// compares against is the one this Discord id is registered with.
+const importValorantAccountFromLeaderboard = async ({ userId, displayName, audit }) => {
+  const discord = await prisma.oAuthAccount.findFirst({
+    where: { userId, provider: "discord" },
+    select: { providerUserId: true },
+  });
+  if (!discord?.providerUserId) {
+    throw new HttpError(
+      400,
+      "Connect your Discord account first. Quest finds your leaderboard registration by it.",
+    );
+  }
+
+  let registration;
+  try {
+    registration = await checkDiscord(discord.providerUserId);
+  } catch (error) {
+    logger.warn("Leaderboard lookup unavailable during account import.", {
+      code: error?.code || null,
+      status: error?.status || null,
+    });
+    throw new HttpError(503, UNAVAILABLE_MESSAGE);
+  }
+
+  const player = registration?.user || null;
+  const name = player?.name || null;
+  const tag = player?.tag || null;
+  if (!registration?.exists || !name || !tag) {
+    throw new HttpError(
+      404,
+      "No VALORANT leaderboard registration is linked to your Discord account. Connect your account with your Riot ID instead.",
+    );
+  }
+
+  return linkValorantAccount({
+    riotId: `${name}#${tag}`,
+    userId,
+    displayName,
+    audit,
+  });
+};
+
 // Link a resolved VALORANT account to the signed-in user.
 //
 // The client sends only the Riot ID: the PUUID is re-resolved server-side so a
@@ -323,6 +380,7 @@ const splitRiotId = (value) => {
 module.exports = {
   resolveValorantAccount,
   linkValorantAccount,
+  importValorantAccountFromLeaderboard,
   listGameAccountsForUser,
   corroborateWithDiscord,
   ensurePlayerForUser,

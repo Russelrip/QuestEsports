@@ -3,6 +3,7 @@ const { requestAuditContext } = require("../../lib/audit");
 const {
   resolveValorantAccount,
   linkValorantAccount,
+  importValorantAccountFromLeaderboard,
   listGameAccountsForUser,
 } = require("./game-account.service");
 const { getRegistrationReadiness } = require("./registration-readiness.service");
@@ -35,6 +36,17 @@ const linkValorant = asyncHandler(async (req, res) => {
     riotId: req.body?.riotId,
     name: req.body?.name,
     tag: req.body?.tag,
+    userId: req.user.id,
+    displayName: req.user.username || req.user.firstName || "Player",
+    audit: requestAuditContext(req),
+  });
+  respond(res, result.account, result.alreadyLinked ? 200 : 201);
+});
+
+// Adopts the account this user already registered on the leaderboard, which
+// asked for the same proof through a longer door.
+const importValorantFromLeaderboard = asyncHandler(async (req, res) => {
+  const result = await importValorantAccountFromLeaderboard({
     userId: req.user.id,
     displayName: req.user.username || req.user.firstName || "Player",
     audit: requestAuditContext(req),
@@ -96,6 +108,7 @@ module.exports = {
   listAdminChangeRequests,
   reviewAdminChangeRequest,
   linkValorant,
+  importValorantFromLeaderboard,
   listMyGameAccounts,
   getTeamRegistrationReadiness,
 };

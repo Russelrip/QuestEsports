@@ -12,6 +12,7 @@ import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { useTeams } from "@/hooks/api/useTeams";
+import { findGameAccount, gameAccountRiotId, getMyGameAccounts } from "@/lib/game-accounts";
 import RosterReadinessPanel from "@/components/tournament-registration/RosterReadinessPanel";
 import { apiFetch } from "@/lib/auth";
 import { ApiRequestError, readApiResponse } from "@/lib/api";
@@ -119,6 +120,10 @@ export default function ConfiguredTournamentRegistrationForm({ tournament }: { t
   const [checkingRegistration, setCheckingRegistration] = useState(true);
   const [selectedSavedTeamId, setSelectedSavedTeamId] = useState("");
   const [pendingSavedTeam, setPendingSavedTeam] = useState<SavedTeam | null>(null);
+  // The captain's own connected account for this game, when they have one.
+  // Filled in for them rather than asked for again: they already proved this
+  // once, and a field they retype from memory is a field they can get wrong.
+  const [connectedGameId, setConnectedGameId] = useState<string | null>(null);
 
   const entryFields = useMemo(() => (tournament.registrationFields || []).filter((field) => field.scope === "entry"), [tournament.registrationFields]);
   const memberFields = useMemo(() => (tournament.registrationFields || []).filter((field) => field.scope === "member"), [tournament.registrationFields]);
@@ -162,6 +167,26 @@ export default function ConfiguredTournamentRegistrationForm({ tournament }: { t
       }));
     }
   }, [isLoading, router, tournament.slug, user]);
+
+  // Prefill the captain's game identifier from the account they connected.
+  //
+  // Never overwrites something already typed, and a failure here is silent: the
+  // field stays editable and the registration proceeds exactly as before. A
+  // convenience that can block a registration is not a convenience.
+  useEffect(() => {
+    if (!user || !tournament.game) return;
+    let active = true;
+    void getMyGameAccounts()
+      .then(({ accounts }) => {
+        if (!active) return;
+        const riotId = gameAccountRiotId(findGameAccount(accounts, tournament.game));
+        if (!riotId) return;
+        setConnectedGameId(riotId);
+        setForm((current) => (current.gameId ? current : { ...current, gameId: riotId }));
+      })
+      .catch(() => {});
+    return () => { active = false; };
+  }, [tournament.game, user]);
 
   const loadRegistrationStatus = useCallback(async () => {
     if (!user) return;
@@ -527,7 +552,15 @@ export default function ConfiguredTournamentRegistrationForm({ tournament }: { t
           <FormField label="Email"><Input disabled value={form.contactEmail} /></FormField>
           <FormField label="WhatsApp number" required><Input required value={form.phone} onChange={(event) => setForm((current) => ({ ...current, phone: event.target.value }))} /></FormField>
           <FormField label="Discord" hint={user?.discordId ? "From your connected account" : "Not connected"}><Input disabled value={user?.discordTag || (user?.discordId ? "Connected" : "Not connected")} /></FormField>
-          <FormField label={gameIdentity.label} required hint={gameIdentity.hint}><Input required value={form.gameId} placeholder={gameIdentity.placeholder} pattern={gameIdentity.pattern} title={gameIdentity.title} autoCapitalize="none" spellCheck={false} onChange={(event) => setForm((current) => ({ ...current, gameId: event.target.value }))} /></FormField>
+          <FormField
+            label={gameIdentity.label}
+            required
+            hint={
+              connectedGameId && form.gameId === connectedGameId
+                ? "From your connected account"
+                : gameIdentity.hint
+            }
+          ><Input required value={form.gameId} placeholder={gameIdentity.placeholder} pattern={gameIdentity.pattern} title={gameIdentity.title} autoCapitalize="none" spellCheck={false} onChange={(event) => setForm((current) => ({ ...current, gameId: event.target.value }))} /></FormField>
           {visibleMemberFields.map((field) => <ConfiguredField key={field.key} field={field} value={captainAdditionalData[field.key] || ""} onChange={(value) => setCaptainAdditionalData((current) => ({ ...current, [field.key]: value }))} />)}
         </fieldset>
 

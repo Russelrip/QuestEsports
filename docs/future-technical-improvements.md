@@ -94,3 +94,129 @@ Review this candidate when all of the following are true:
 - The gallery-versus-tournament poster scope has an owner-approved decision.
 - Remote storage provides a concrete capacity, reliability, cost, or operational benefit over the current durable filesystem.
 - There is time to implement migration-safe metadata, provider-aware cleanup, automated tests, a staged rollout, and rollback validation.
+
+## Riot Sign On (RSO) Account Ownership Verification
+
+**Status:** Deferred — blocked on Riot production approval and an RSO client
+
+### Potential Value
+
+Riot Sign On could prove that the signed-in Quest user controlled the Riot
+account whose PUUID is linked to their player profile. This would support an
+honest `riot_verified` state for tournament eligibility and player-data opt-in,
+instead of treating knowledge of a Riot ID as proof of ownership.
+
+This candidate is account linking for an already authenticated Quest user. It
+does not require replacing Quest password, Google, or Discord login with Riot
+login.
+
+### Current State
+
+The profile's Game Accounts panel accepts a Riot ID in `Name#Tag` form. Quest
+asks the internal VALORANT service to resolve that display identity through the
+current upstream provider, receives the stable PUUID, shows the result to the
+user, and resolves it again server-side before creating `GameAccount`.
+
+That process proves only that the account exists. A link is currently recorded
+as `user_confirmed`, or `discord_corroborated` when the Quest user's linked
+Discord identity is already paired with the same PUUID upstream. Neither state
+is Riot account ownership proof. The database's `(game, externalId)` uniqueness
+constraint prevents one PUUID from being claimed by multiple Quest players but
+does not strengthen the proof behind the first claim.
+
+### Prerequisites
+
+- Register the player-facing product in the Riot Developer Portal and obtain an
+  approved VALORANT production application. VALORANT personal keys are not an
+  available substitute.
+- Verify the production website and provide Riot a working site, prototype, or
+  mockup that makes the account-linking, consent, tournament, and public-data
+  flows clear.
+- Obtain an RSO client and Riot's current client authentication, token,
+  callback, scope, rotation, and revocation contracts. Do not infer these from
+  the existing Google or Discord configuration.
+- Update the privacy policy and link UI to explain the Riot identifiers and
+  gameplay data collected, their purpose, retention, public visibility, and the
+  effect of unlinking. Display Riot's required non-affiliation and player opt-in
+  notices where applicable.
+- Review public VALORANT projections against Riot's current opt-in rules. The
+  existing public match scoreboard can include identifiable stats for players
+  who have never used Quest; RSO implementation must not silently declare those
+  players opted in.
+- Decide how an unlink request interacts with locked tournament roster
+  snapshots, historical results, public profiles, and any data that must be
+  retained for dispute or event records.
+
+Authoritative starting references are Riot's
+[VALORANT developer documentation](https://developer.riotgames.com/docs/valorant)
+and [Developer Portal FAQ](https://developer.riotgames.com/docs/faqs). Provider
+instructions issued with the approved RSO client remain authoritative if they
+differ from this evaluation entry.
+
+### Likely Safe Approach
+
+- Add a profile action such as **Verify with Riot** and keep manual Riot-ID
+  resolution available only under an explicitly weaker label until the product
+  owner decides whether it should remain after rollout.
+- Start RSO from an authenticated, link-only backend route. Bind short-lived
+  OAuth state and nonce to the current Quest session and use PKCE when Riot's
+  issued client contract supports or requires it.
+- Register one exact HTTPS callback, provisionally
+  `https://api.questesports.lk/api/v1/game-accounts/valorant/rso/callback`, and
+  return the user to `/profile?tab=account` with a safe relative redirect.
+- Exchange the authorization code server-side, then call Riot's authenticated
+  `/riot/account/v1/accounts/me` endpoint. Use the returned PUUID as
+  `GameAccount.externalId`; never accept a browser-supplied PUUID as proof.
+- Add a migration-safe `riot_verified` verification state plus consent and
+  verification timestamps. Preserve the existing unique PUUID boundary and
+  account-change review workflow.
+- Avoid retaining Riot access or refresh tokens when a one-time identity check
+  satisfies the approved use case. If ongoing access is required, encrypt
+  tokens at rest, redact them from logs/audits, restrict backend access, rotate
+  client credentials, and implement revocation and expiry handling.
+- Make activation feature-gated so mock and contract tests can ship before
+  credentials exist, while production continues to describe the current flow
+  accurately.
+- Cover state mismatch/replay, callback denial, expired grants, session changes,
+  duplicate PUUIDs, provider outages, rename handling, unlinking, consent
+  withdrawal, and secret redaction in automated tests.
+
+The following names are provisional examples only and are **not currently read
+or supported by the application**:
+
+```env
+RIOT_RSO_ENABLED=false
+RIOT_RSO_CLIENT_ID=
+RIOT_RSO_CLIENT_SECRET=
+RIOT_RSO_REDIRECT_URI=https://api.questesports.lk/api/v1/game-accounts/valorant/rso/callback
+```
+
+Do not add real credentials to the repository, frontend environment variables,
+browser code, logs, fixtures, or documentation.
+
+### Risks and Compatibility Constraints
+
+- Riot approval and RSO access are external dependencies; a complete-looking
+  local OAuth imitation must never be presented as Riot verification.
+- Publishing player-specific stats without the required opt-in could block
+  approval or require changes to public leaderboard and match projections.
+- Linking RSO directly as a Quest login provider could merge or create users in
+  ways the existing link-only requirement avoids.
+- Callback account injection, login CSRF, replay, and duplicate PUUID races must
+  remain server-enforced security boundaries rather than frontend checks.
+- Removing or replacing an account already frozen into a tournament roster must
+  not rewrite historical identity evidence.
+- Token retention expands breach impact and operational responsibility, so it
+  must be justified by an approved ongoing-access requirement.
+
+### Reconsider When
+
+Review this candidate when all of the following are true:
+
+- Quest has time to prepare an approval-quality RSO prototype and player-data
+  opt-in experience.
+- The public scoreboard and leaderboard policy decision has an owner-approved
+  answer consistent with Riot's current rules.
+- Privacy, consent, unlinking, and historical-retention behavior are defined.
+- A Riot production application and RSO client can be requested and maintained
+  by the product owner.

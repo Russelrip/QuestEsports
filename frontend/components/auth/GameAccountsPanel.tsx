@@ -6,6 +6,7 @@ import { LoadingState } from "@/components/ui/loading-state";
 import { buildValorantTrackerProfileUrl } from "@/lib/valorant";
 import {
   getMyGameAccounts,
+  importValorantFromLeaderboard,
   linkValorantAccount,
   requestValorantChange,
   resolveValorantAccount,
@@ -47,6 +48,7 @@ export default function GameAccountsPanel({ className = "" }: GameAccountsPanelP
   const [looking, setLooking] = useState(false);
   const [lookupError, setLookupError] = useState("");
   const [linking, setLinking] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
 
@@ -136,6 +138,30 @@ export default function GameAccountsPanel({ className = "" }: GameAccountsPanelP
     }
   };
 
+  // For a player already on the VALORANT leaderboard.
+  //
+  // That registration asked for the same proof through a longer door — a
+  // connected Discord and a PUUID copied from their own Riot account page — so
+  // asking them to type a Riot ID again is a step that teaches nobody anything.
+  // The server still re-resolves it, so this is a shortcut through the same
+  // door rather than a second one.
+  const importFromLeaderboard = async () => {
+    setImporting(true);
+    setError("");
+    setNotice("");
+    try {
+      await importValorantFromLeaderboard();
+      setNotice("Connected the VALORANT account from your leaderboard registration.");
+      await refresh();
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : "Could not import your leaderboard account."
+      );
+    } finally {
+      setImporting(false);
+    }
+  };
+
   const submitChange = async () => {
     const riotId = changeRiotId.trim();
     const reason = changeReason.trim();
@@ -189,6 +215,17 @@ export default function GameAccountsPanel({ className = "" }: GameAccountsPanelP
         <p className="max-w-sm text-sm leading-6 text-slate-400">
           Connect the account you compete on. Your captain will not need to type it when registering a team.
         </p>
+      </div>
+
+      <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border border-cyan-300/20 bg-cyan-400/[0.06] p-4">
+        <p className="max-w-lg text-sm leading-6 text-slate-300">
+          <span className="font-semibold text-white">Already on the VALORANT leaderboard?</span>{" "}
+          You registered there with the same Discord account, so Quest can connect that account
+          for you — there is nothing to look up or retype.
+        </p>
+        <Button type="button" variant="secondary" disabled={importing} onClick={() => void importFromLeaderboard()}>
+          {importing ? "Importing…" : "Import from leaderboard"}
+        </Button>
       </div>
 
       {notice ? <p className="mt-5 border border-emerald-300/20 bg-emerald-400/8 p-3 text-sm text-emerald-100" role="status">{notice}</p> : null}

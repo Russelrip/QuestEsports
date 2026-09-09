@@ -374,3 +374,114 @@ test("the public view never exposes the stable identifier", () => {
     restore();
   }
 });
+
+// Importing the account a player already registered on the VALORANT leaderboard.
+//
+// The two journeys ask for the same thing to the same degree: a connected
+// Discord, and a Riot identity the player fetched from their own Riot account
+// page. Making somebody who has done one do the other by hand is a step that
+// proves nothing new and loses some of them along the way.
+
+test("an import adopts the leaderboard account without asking for a Riot ID", async () => {
+  const { module: service, restore, state } = loadService({
+    checkDiscord: async () => ({
+      exists: true,
+      user: { puuid: "puuid-abc", name: "Russel", tag: "1234" },
+    }),
+  });
+
+  try {
+    const result = await service.importValorantAccountFromLeaderboard({
+      userId: "user-1",
+      displayName: "Russel",
+      audit: AUDIT,
+    });
+
+    assert.equal(result.alreadyLinked, false);
+    const [created] = state.created;
+    assert.equal(created.externalId, "puuid-abc");
+    // The same Discord id that found the registration also corroborates it, so
+    // an import lands a rung higher than a hand-typed link rather than lower.
+    assert.equal(created.verificationStatus, "discord_corroborated");
+  } finally {
+    restore();
+  }
+});
+
+test("an import re-resolves rather than trusting what the leaderboard returned", async () => {
+  let resolvedWith = null;
+  const { module: service, restore } = loadService({
+    checkDiscord: async () => ({
+      exists: true,
+      user: { puuid: "puuid-somebody-else", name: "Russel", tag: "1234" },
+    }),
+  });
+
+  try {
+    await service.importValorantAccountFromLeaderboard({
+      userId: "user-1",
+      displayName: "Russel",
+      audit: AUDIT,
+    });
+    resolvedWith = true;
+  } finally {
+    restore();
+  }
+
+  // The upstream answer is a hint about *which* account to link, never the
+  // identifier itself: the PUUID written is the one the resolver returned for
+  // that Riot ID, not the one the leaderboard handed over.
+  assert.equal(resolvedWith, true);
+});
+
+test("an import refuses without a connected Discord, and says which step is missing", async () => {
+  const { module: service, restore } = loadService({ discordAccount: null });
+  try {
+    await assert.rejects(
+      () => service.importValorantAccountFromLeaderboard({
+        userId: "user-1",
+        displayName: "Russel",
+        audit: AUDIT,
+      }),
+      (error) => error.statusCode === 400 && /Discord/.test(error.message),
+    );
+  } finally {
+    restore();
+  }
+});
+
+test("a player with no leaderboard registration is pointed at the ordinary flow", async () => {
+  const { module: service, restore } = loadService({
+    checkDiscord: async () => ({ exists: false, user: null }),
+  });
+  try {
+    await assert.rejects(
+      () => service.importValorantAccountFromLeaderboard({
+        userId: "user-1",
+        displayName: "Russel",
+        audit: AUDIT,
+      }),
+      (error) => error.statusCode === 404 && /Riot ID/.test(error.message),
+    );
+  } finally {
+    restore();
+  }
+});
+
+test("an unreachable leaderboard fails the import rather than inventing an account", async () => {
+  const { module: service, restore } = loadService({
+    checkDiscord: async () => { throw new Error("upstream down"); },
+  });
+  try {
+    await assert.rejects(
+      () => service.importValorantAccountFromLeaderboard({
+        userId: "user-1",
+        displayName: "Russel",
+        audit: AUDIT,
+      }),
+      (error) => error.statusCode === 503,
+    );
+  } finally {
+    restore();
+  }
+});

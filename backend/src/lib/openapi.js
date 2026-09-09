@@ -1387,6 +1387,13 @@ const additionalPaths = {
       { authenticated: true },
     ),
   },
+  "/api/v1/game-accounts/valorant/import-from-leaderboard": {
+    post: createOperation(
+      "Game accounts",
+      "Adopt the VALORANT account already registered on the leaderboard by the signed-in user's connected Discord",
+      { authenticated: true },
+    ),
+  },
   "/api/v1/users/me/game-accounts": {
     get: createOperation("Game accounts", "List the signed-in user's linked game accounts", {
       authenticated: true,
