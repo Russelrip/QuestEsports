@@ -51,19 +51,48 @@ const formatDeadline = (expiresAt: string | null) => {
 // is about the link, never about the invitation behind it: `mismatch` in
 // particular says only that this account cannot reach it — not whose it is, not
 // which team, not the address it was sent to.
-const REFERENCE_NOTICES: Record<string, { title: string; body: string }> = {
-  mismatch: {
-    title: "This invitation is not for this account",
-    body: "Invitations are attached to the email address they were sent to. Sign out and sign in with the exact address your captain invited, or ask them which one they used.",
-  },
-  answered: {
-    title: "You have already answered this invitation",
-    body: "Nothing further is needed. If you meant to change your answer, ask your captain to invite you again.",
-  },
-  expired: {
-    title: "This invitation ran out",
-    body: "Invitations are open for 72 hours. Ask your captain to send it again and it will reopen for another 72.",
-  },
+type ReferenceNotice = { title: string; body: string };
+
+// What to say about the reference a captain's link carried.
+//
+// `mismatch` means only that the reference could not be matched to this
+// account. That is usually the wrong address — but not always: a reference goes
+// stale whenever the row it names is replaced, which is what happens when a
+// captain corrects a member's email or removes and re-adds them. The person
+// following that link may be signed in as exactly the right account and have a
+// perfectly good invitation waiting.
+//
+// So the answer depends on what else is on the page. Telling somebody to go and
+// sign in as somebody else, directly above the invitation they came here to
+// accept, sends them away from the thing that was working.
+const referenceNoticeFor = (
+  state: string,
+  hasInvitations: boolean
+): ReferenceNotice | undefined => {
+  if (state === "mismatch") {
+    return hasInvitations
+      ? {
+          title: "That link is out of date",
+          body: "It points at an invitation that has since been replaced — usually because your captain corrected the email or re-added you. Your current invitations are below.",
+        }
+      : {
+          title: "This invitation is not for this account",
+          body: "Invitations are attached to the email address they were sent to. Sign out and sign in with the exact address your captain invited, or ask them which one they used.",
+        };
+  }
+  if (state === "answered") {
+    return {
+      title: "You have already answered this invitation",
+      body: "Nothing further is needed. If you meant to change your answer, ask your captain to invite you again.",
+    };
+  }
+  if (state === "expired") {
+    return {
+      title: "This invitation ran out",
+      body: "Invitations are open for 72 hours. Ask your captain to send it again and it will reopen for another 72.",
+    };
+  }
+  return undefined;
 };
 
 export function InvitationsPanel({ memberReference = null }: { memberReference?: string | null }) {
@@ -130,7 +159,9 @@ export function InvitationsPanel({ memberReference = null }: { memberReference?:
   // their captain to resend something that was never the problem.
   const needsVerification = readiness ? readiness.emailVerified === false : false;
   const referenceNotice =
-    !needsVerification && reference ? REFERENCE_NOTICES[reference.state] : undefined;
+    !needsVerification && reference
+      ? referenceNoticeFor(reference.state, invitations.length > 0)
+      : undefined;
   // Linking is a detour, so it has to come back. Without this the connect
   // button lands on the account tab and the invitation is a tab away again.
   const discordLinkUrl = getProviderLinkUrl("discord", invitationsPath(memberReference));
