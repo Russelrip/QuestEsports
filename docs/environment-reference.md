@@ -111,9 +111,16 @@ The interim and restored backup services use `BACKUP_CLIENT_CERT_FILE` and
 
 ### Clustered realtime requirements
 
+> Production currently runs a single API worker: the backend image ends in
+> `CMD ["node", "src/server.js"]` and the Compose service declares no
+> `replicas`. Raising `API_PROCESS_COUNT` above 1 therefore does not scale
+> anything — it only obliges Upstash and a shared transport for workers that do
+> not exist. This section describes what to set when the service does run
+> several.
+
 For two or more API workers, set `CACHE_DRIVER=upstash` and provide both
 `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`. `API_PROCESS_COUNT`
-must match the PM2/API worker count. Every worker uses the same
+must match the running worker count. Every worker uses the same
 explicit `REALTIME_CHANNEL` within its environment, but staging and production
 must use different channels when they share an Upstash database. Clustered or
 shared Upstash mode fails startup when `REALTIME_CHANNEL` is omitted; only a
@@ -122,13 +129,13 @@ default.
 If `REALTIME_WORKER_ID` is configured,
 use the same base on every worker; otherwise the configuration supplies a
 process-derived fallback. The implementation creates the effective identity as
-`${REALTIME_WORKER_ID}:${process.pid}:${randomUUID()}`; therefore a shared PM2
+`${REALTIME_WORKER_ID}:${process.pid}:${randomUUID()}`; therefore a shared
 base is safe because process PID and startup UUID distinguish workers. Do not
 run a multi-worker deployment with the memory cache or with a missing shared
 transport credential.
 
 `GET /api/health/live` returns the non-secret effective value at
-`realtime.workerId`. `pm2 env` verifies only the configured base; deployment
+`realtime.workerId`. Configuration shows only the configured base; deployment
 verification must compare the live health values from both workers.
 
 The shared transport uses these exact Upstash REST requests:
