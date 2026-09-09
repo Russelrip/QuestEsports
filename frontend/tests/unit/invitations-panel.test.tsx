@@ -149,6 +149,22 @@ describe("InvitationsPanel", () => {
     expect(screen.queryByText(/Quest Captain/)).not.toBeInTheDocument();
   });
 
+  it("does not send somebody away when the link is stale but they have invitations", async () => {
+    // A reference goes stale whenever the row it names is replaced — a captain
+    // correcting an email, or removing and re-adding a member. The person
+    // following it can be signed in as exactly the right account.
+    mocks.reference = { state: "mismatch", member: null };
+    render(<InvitationsPanel memberReference="invite-old" />);
+
+    expect(await screen.findByText("That link is out of date")).toBeInTheDocument();
+    // Telling them to sign in as somebody else, directly above the invitation
+    // they came to accept, sends them away from the thing that was working.
+    expect(
+      screen.queryByText("This invitation is not for this account"),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("Quest Five")).toBeInTheDocument();
+  });
+
   it("reports an unverified address as itself rather than as somebody else's link", async () => {
     mocks.invitations = [];
     mocks.readiness = { hasQuestAccount: true, hasDiscord: true, emailVerified: false };
