@@ -5,6 +5,7 @@ const {
   checkDiscord: fetchCheckDiscord,
   previewRegistration: fetchPreviewRegistration,
   submitRegistration: fetchSubmitRegistration,
+  repointRegistration: fetchRepointRegistration,
 } = require("./client");
 const { requireLinkedDiscord } = require("../auth/discord-link.service");
 
@@ -189,7 +190,23 @@ const submitRegistration = async ({ userId, puuid }) => {
   });
 };
 
+// Point an existing registration at a different account.
+//
+// The Discord identity comes from the linked account rather than the caller, so
+// a request can only ever move the registration belonging to the user it is
+// made for. Whether the move is allowed was decided before this: Quest reviews
+// it as a game-account change request.
+const repointRegistration = async ({ userId, puuid }) => {
+  const { discordId, discordUsername } = await resolveLinkedDiscordIdentity(userId);
+  return fetchRepointRegistration({
+    puuid,
+    discord_id: discordId,
+    discord_username: discordUsername,
+  });
+};
+
 module.exports = {
+  repointRegistration,
   listLeaderboard,
   searchLeaderboardPlayer,
   searchLeaderboardPlayers,

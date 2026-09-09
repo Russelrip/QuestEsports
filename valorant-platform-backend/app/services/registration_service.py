@@ -90,12 +90,37 @@ class RegistrationService:
         discord_username: str,
         puuid: str,
     ) -> RegistrationSubmitResponse:
-        """Register the player (upsert + commit) and return the success envelope."""
-        settings = get_settings()
+        """Register the player for the first time and return the success envelope."""
         if await self._repo.get_by_discord_id(discord_id) is not None:
             raise AppError("DISCORD_ALREADY_REGISTERED", 409, "discord already registered")
         if await self._repo.get_by_puuid(puuid) is not None:
             raise AppError("PUUID_ALREADY_REGISTERED", 409, "puuid already registered")
+        return await self._register(
+            discord_id=discord_id,
+            discord_username=discord_username,
+            puuid=puuid,
+        )
+
+    async def _register(
+        self,
+        *,
+        discord_id: str,
+        discord_username: str,
+        puuid: str,
+        release_puuid: str | None = None,
+    ) -> RegistrationSubmitResponse:
+        """Fetch the current identity and rank, then write the row.
+
+        Shared by ``submit`` and ``repoint`` so each keeps the guards it owns:
+        registering for the first time and moving an existing registration
+        disagree about what counts as a conflict, and only about that.
+
+        ``release_puuid`` detaches the row being moved away from. It runs after
+        every call that can fail and commits together with the new row, so a
+        Henrik outage cannot leave a player detached from one account without
+        being attached to the other.
+        """
+        settings = get_settings()
         try:
             mmr = await self._henrik.get_player_mmr(
                 puuid,
@@ -114,6 +139,8 @@ class RegistrationService:
             )
         except HenrikError as exc:
             raise _translate_henrik_error(exc) from exc
+        if release_puuid:
+            await self._repo.release_discord(release_puuid)
         player = await self._repo.upsert(
             puuid=puuid,
             name=mmr["name"],
@@ -142,6 +169,63 @@ class RegistrationService:
             ),
         )
 
+    async def repoint(
+        self,
+        *,
+        discord_id: str,
+        discord_username: str,
+        puuid: str,
+    ) -> RegistrationSubmitResponse:
+        """Move an existing registration to a different PUUID.
+
+        ``submit`` registers once and then refuses, which is right for a
+        stranger and wrong for the one case it cannot tell apart: a player who
+        changed Riot accounts. Their entry keeps pointing at an account they no
+        longer play, and a stale entry is worse than an absent one because it
+        looks current.
+
+        Deliberately not a self-service door. Quest reviews the move first —
+        ``game_account_change_requests`` carries an admin decision — and calls
+        this only once that decision is recorded, so the check that stops
+        somebody hopping between accounts to shed a ranking lives there rather
+        than being reimplemented here.
+
+        What is left are the guards this service is the authority for: a
+        registration must exist to be moved, and the destination must not
+        already belong to somebody else.
+        """
+        current = await self._repo.get_by_discord_id(discord_id)
+        if current is None:
+            raise AppError("DISCORD_NOT_REGISTERED", 404, "discord is not registered")
+        if current.puuid == puuid:
+            # Already where it is being asked to go. Idempotent, so a retried
+            # approval is harmless.
+            return RegistrationSubmitResponse(
+                success=True,
+                message="Registration already points at this account",
+                player=RegistrationPlayer(
+                    puuid=current.puuid,
+                    name=current.name,
+                    tag=current.tag,
+                    current_rank=current.currenttierpatched,
+                    elo=current.elo,
+                ),
+            )
+
+        existing = await self._repo.get_by_puuid(puuid)
+        if existing is not None and (existing.discord_id or "") not in ("", discord_id):
+            raise AppError("PUUID_ALREADY_REGISTERED", 409, "puuid already registered")
+
+        # `_register` rather than `submit`: submit's PUUID guard is about a
+        # stranger claiming a taken account, and here the destination row may
+        # legitimately already exist — the updater writes rows for players who
+        # never registered. The guard just above is the one that applies.
+        return await self._register(
+            discord_id=discord_id,
+            discord_username=discord_username,
+            puuid=puuid,
+            release_puuid=current.puuid,
+        )
 
 def _parse_last_played(last_played: str | None) -> datetime | None:
     """ISO string -> ``datetime`` for the ``last_played_match`` column;

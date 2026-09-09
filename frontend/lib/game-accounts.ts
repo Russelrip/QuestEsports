@@ -30,6 +30,8 @@ export type GameAccount = {
   linkedAt: string | null;
   verifiedAt: string | null;
   lastSyncedAt: string | null;
+  /** Set when this account was just connected; absent when merely listed. */
+  leaderboard?: LeaderboardRegistrationResult | null;
 };
 
 export type ResolvedGameAccount = {
@@ -125,6 +127,47 @@ export async function resolveValorantAccount(riotId: string): Promise<ResolvedGa
   return resolved;
 }
 
+/**
+ * What happened on the VALORANT leaderboard when an account was connected.
+ *
+ * `diverged` is the one worth showing: their leaderboard entry points at a
+ * different account, and the leaderboard has no way to be re-pointed. A stale
+ * entry is worse than an absent one — it looks current and is wrong — so the
+ * player is told rather than left to discover it in a ranking.
+ */
+export type LeaderboardRegistrationState =
+  | "registered"
+  | "already"
+  | "diverged"
+  | "unavailable";
+
+export type LeaderboardRegistrationResult = {
+  state: LeaderboardRegistrationState;
+  registeredName?: string | null;
+  registeredTag?: string | null;
+};
+
+export function leaderboardRegistrationMessage(
+  result: LeaderboardRegistrationResult | null | undefined,
+): string | null {
+  if (!result) return null;
+  switch (result.state) {
+    case "registered":
+      return "You are now on the VALORANT leaderboard.";
+    case "diverged": {
+      const older =
+        result.registeredName && result.registeredTag
+          ? `${result.registeredName}#${result.registeredTag}`
+          : "a different account";
+      return `Your leaderboard entry still points at ${older}. Contact an admin to move it to this account.`;
+    }
+    case "already":
+    case "unavailable":
+    default:
+      return null;
+  }
+}
+
 export async function linkValorantAccount(riotId: string): Promise<GameAccount> {
   const { response, data } = await apiFetchJson<{ data?: GameAccount }>(
     "/api/v1/game-accounts/valorant/link",
@@ -138,6 +181,52 @@ export async function linkValorantAccount(riotId: string): Promise<GameAccount> 
   const account = unwrap<GameAccount>(data);
   if (!account) throw new Error("Could not link that VALORANT account.");
   return account;
+}
+
+/**
+ * Adopt the account this player already registered on the VALORANT leaderboard.
+ *
+ * That journey asked for the same proof through a longer door: a connected
+ * Discord and a PUUID copied from their own Riot account page. Someone who has
+ * done it has already told Quest who they are, and asking again — from a
+ * display name they now have to remember — is a step that teaches them nothing.
+ *
+ * The server re-resolves the Riot ID rather than trusting the leaderboard's
+ * answer, so this is a shortcut through the same door, not a second one.
+ */
+export async function importValorantFromLeaderboard(): Promise<GameAccount> {
+  const { response, data } = await apiFetchJson<{ data?: GameAccount }>(
+    "/api/v1/game-accounts/valorant/import-from-leaderboard",
+    { method: "POST", json: {} },
+  );
+  const message = getApiErrorMessage(
+    response,
+    data,
+    "Could not import your leaderboard account.",
+  );
+  if (message) throw new Error(message);
+  const account = unwrap<GameAccount>(data);
+  if (!account) throw new Error("Could not import your leaderboard account.");
+  return account;
+}
+
+/**
+ * The Riot ID a connected account represents, in the `Name#TAG` form every
+ * VALORANT surface expects. Null unless both halves are present: half an
+ * identifier looks like a value and matches nothing.
+ */
+export function gameAccountRiotId(account: GameAccount | null | undefined): string | null {
+  if (!account?.username || !account?.tagline) return null;
+  return `${account.username}#${account.tagline}`;
+}
+
+/** The connected account for a game, if this player has one. */
+export function findGameAccount(
+  accounts: GameAccount[] | null | undefined,
+  game: string,
+): GameAccount | null {
+  const normalized = String(game || "").trim().toLowerCase();
+  return (accounts ?? []).find((account) => account.game?.toLowerCase() === normalized) ?? null;
 }
 
 /**

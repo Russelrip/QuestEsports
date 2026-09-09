@@ -2305,6 +2305,32 @@ const SAVED_TEAM_MEMBER_SELECT = {
   discord: true,
   riotId: true,
   inviteStatus: true,
+  // The member's own connected account, which is what `gameId` should be.
+  // `riotId` is a string a captain or an admin typed and nothing ever checked;
+  // a game account was resolved against Riot, is keyed by PUUID rather than a
+  // display name, and cannot be claimed by two Quest users at once.
+  player: {
+    select: {
+      gameAccounts: {
+        where: { status: { in: ["active", "locked"] } },
+        orderBy: { linkedAt: "desc" },
+        select: { game: true, username: true, tagline: true, verificationStatus: true },
+      },
+    },
+  },
+};
+
+// `Name#TAG`, the form every VALORANT surface here expects. Null unless both
+// halves are present: half an identifier is worse than none, because it looks
+// like a value and matches nothing.
+const gameAccountRiotId = (account) =>
+  account?.username && account?.tagline ? `${account.username}#${account.tagline}` : null;
+
+const connectedGameId = (member, game = "valorant") => {
+  const account = (member.player?.gameAccounts || []).find(
+    (candidate) => candidate.game === game
+  );
+  return gameAccountRiotId(account);
 };
 
 const getSavedTeamCaptainName = (team) =>
@@ -2333,7 +2359,13 @@ const mapAdminSavedTeamDetail = (team) => ({
     email: member.email,
     phone: member.phone ?? null,
     discord: member.discord,
-    gameId: member.riotId,
+    // The connected account first, the typed string only as a fallback for a
+    // roster that predates game accounts. Reported separately so a surface can
+    // tell a verified identity from an inherited guess rather than having to
+    // treat them alike.
+    gameId: connectedGameId(member) ?? member.riotId,
+    gameAccountConnected: Boolean(connectedGameId(member)),
+    legacyGameId: member.riotId ?? null,
     inviteStatus: member.inviteStatus,
   })),
 });

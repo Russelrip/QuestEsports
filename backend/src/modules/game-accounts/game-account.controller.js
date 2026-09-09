@@ -3,6 +3,7 @@ const { requestAuditContext } = require("../../lib/audit");
 const {
   resolveValorantAccount,
   linkValorantAccount,
+  importValorantAccountFromLeaderboard,
   listGameAccountsForUser,
 } = require("./game-account.service");
 const { getRegistrationReadiness } = require("./registration-readiness.service");
@@ -39,7 +40,32 @@ const linkValorant = asyncHandler(async (req, res) => {
     displayName: req.user.username || req.user.firstName || "Player",
     audit: requestAuditContext(req),
   });
-  respond(res, result.account, result.alreadyLinked ? 200 : 201);
+  // The leaderboard outcome rides along so the panel can say what happened,
+  // including the one case the player has to act on: an entry still pointing at
+  // an account they no longer use.
+  respond(
+    res,
+    { ...result.account, leaderboard: result.leaderboard ?? null },
+    result.alreadyLinked ? 200 : 201
+  );
+});
+
+// Adopts the account this user already registered on the leaderboard, which
+// asked for the same proof through a longer door.
+const importValorantFromLeaderboard = asyncHandler(async (req, res) => {
+  const result = await importValorantAccountFromLeaderboard({
+    userId: req.user.id,
+    displayName: req.user.username || req.user.firstName || "Player",
+    audit: requestAuditContext(req),
+  });
+  // The leaderboard outcome rides along so the panel can say what happened,
+  // including the one case the player has to act on: an entry still pointing at
+  // an account they no longer use.
+  respond(
+    res,
+    { ...result.account, leaderboard: result.leaderboard ?? null },
+    result.alreadyLinked ? 200 : 201
+  );
 });
 
 const listMyGameAccounts = asyncHandler(async (req, res) => {
@@ -96,6 +122,7 @@ module.exports = {
   listAdminChangeRequests,
   reviewAdminChangeRequest,
   linkValorant,
+  importValorantFromLeaderboard,
   listMyGameAccounts,
   getTeamRegistrationReadiness,
 };

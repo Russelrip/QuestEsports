@@ -12,6 +12,10 @@ const gameAccountServicePath = path.join(
   __dirname,
   "../src/modules/game-accounts/game-account.service.js",
 );
+const leaderboardServicePath = path.join(
+  __dirname,
+  "../src/modules/valorant-leaderboard/service.js"
+);
 const prismaPath = path.join(__dirname, "../src/lib/prisma.js");
 const auditPath = path.join(__dirname, "../src/lib/audit.js");
 const loggerPath = path.join(__dirname, "../src/lib/logger.js");
@@ -40,6 +44,7 @@ const loadService = ({
   resolved = { externalId: "puuid-new", username: "NewName", tagline: "2222", region: "ap", linkedElsewhere: false },
   openRequest = null,
   request = null,
+  leaderboardOverride = null,
 } = {}) => {
   const state = { accountUpdates: [], accountCreates: [], requests: [], audits: [], reviews: [] };
   const tx = {
@@ -72,6 +77,9 @@ const loadService = ({
       fingerprint: (value) => `fp-${String(value).slice(0, 6)}`,
       publicView: (account) => ({ id: account.id, username: account.username, tagline: account.tagline }),
       VALORANT: "valorant",
+    },
+    [leaderboardServicePath]: leaderboardOverride || {
+      repointRegistration: async () => ({ success: true }),
     },
     [prismaPath]: {
       prisma: {
@@ -404,4 +412,95 @@ test("the change-request migration enforces integrity in the database", () => {
   }
 
   assert.doesNotMatch(statements, /DROP TABLE|DROP COLUMN|TRUNCATE/i);
+});
+
+// An approved account change moves the player's leaderboard entry too.
+//
+// The leaderboard registers once and refuses afterwards, so a player who
+// changed Riot accounts is stuck pointing at one they no longer play. The admin
+// decision recorded here is what unsticks it — the upstream carries the
+// decision out rather than making it.
+
+const REVIEWABLE_REQUEST = {
+  id: "request-1",
+  status: "pending",
+  playerId: "player-1",
+  game: "valorant",
+  currentAccountId: "account-1",
+  currentAccount: { id: "account-1", externalId: "puuid-old", status: "change_requested" },
+  requestedExternalId: "puuid-new",
+  requestedUsername: "NewName",
+  requestedTagline: "2222",
+  requestedRegion: "ap",
+  player: { userId: "user-1" },
+};
+
+test("approving a change moves the leaderboard registration to the new account", async () => {
+  const moves = [];
+  const { module: service, restore } = loadService({
+    request: REVIEWABLE_REQUEST,
+    leaderboardOverride: {
+      repointRegistration: async (input) => { moves.push(input); return { success: true }; },
+    },
+  });
+
+  try {
+    const result = await service.reviewChangeRequest({
+      requestId: "request-1",
+      approve: true,
+      adminUserId: "admin-1",
+      adminNote: "Verified with the player.",
+    });
+
+    assert.equal(result.status, "approved");
+    assert.deepEqual(moves, [{ userId: "user-1", puuid: "puuid-new" }]);
+  } finally {
+    restore();
+  }
+});
+
+test("a rejected change moves nothing", async () => {
+  const moves = [];
+  const { module: service, restore } = loadService({
+    request: REVIEWABLE_REQUEST,
+    leaderboardOverride: {
+      repointRegistration: async (input) => { moves.push(input); return { success: true }; },
+    },
+  });
+
+  try {
+    await service.reviewChangeRequest({
+      requestId: "request-1",
+      approve: false,
+      adminUserId: "admin-1",
+      adminNote: "Could not verify the account.",
+    });
+    assert.deepEqual(moves, []);
+  } finally {
+    restore();
+  }
+});
+
+test("an unreachable leaderboard does not undo an admin's decision", async () => {
+  const { module: service, restore } = loadService({
+    request: REVIEWABLE_REQUEST,
+    leaderboardOverride: {
+      repointRegistration: async () => { throw new Error("upstream down"); },
+    },
+  });
+
+  try {
+    // The approval is the durable thing. A leaderboard that cannot be reached
+    // is a retry, not a reversal — and a player who was never on the
+    // leaderboard reaches this same path with nothing to move.
+    const result = await service.reviewChangeRequest({
+      requestId: "request-1",
+      approve: true,
+      adminUserId: "admin-1",
+      adminNote: "Verified with the player.",
+    });
+    assert.equal(result.status, "approved");
+  } finally {
+    restore();
+  }
 });

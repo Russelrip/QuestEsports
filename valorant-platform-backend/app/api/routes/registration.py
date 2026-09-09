@@ -3,7 +3,7 @@
 Four service-token-gated endpoints (R15: no geo-gating — ``valorantsl-new``'s
 ``require_allowed_country`` is NOT ported): the ``POST /preview`` +
 ``GET /preview/{puuid}`` snapshot pair and the ``POST /submit`` + ``POST /``
-alias pair — the latter keeps the frontend's ``/api/v1/register`` contract
+alias pair, plus ``PUT /`` for an admin-reviewed move to a different PUUID — the latter keeps the frontend's ``/api/v1/register`` contract
 working unchanged (mirrors ``valorantsl-new``'s alias routes).
 """
 
@@ -45,6 +45,24 @@ async def submit_registration(
 ) -> RegistrationSubmitResponse:
     """Final registration: upsert the player onto the leaderboard."""
     return await svc.submit(
+        discord_id=body.discord_id,
+        discord_username=body.discord_username,
+        puuid=body.puuid,
+    )
+
+
+@router.put("", response_model=RegistrationSubmitResponse, dependencies=[Depends(require_service_token)])
+async def repoint_registration(
+    body: RegistrationRequest, svc: _RegistrationServiceDep
+) -> RegistrationSubmitResponse:
+    """Move an existing registration to a different PUUID.
+
+    ``submit`` registers once and refuses afterwards, which cannot tell a
+    stranger apart from a player who changed Riot accounts. Quest decides which
+    it is — the move is reviewed by an admin there — and calls this once that
+    decision is recorded.
+    """
+    return await svc.repoint(
         discord_id=body.discord_id,
         discord_username=body.discord_username,
         puuid=body.puuid,

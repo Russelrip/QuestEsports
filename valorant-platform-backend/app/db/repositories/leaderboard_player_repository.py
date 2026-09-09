@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -125,6 +125,26 @@ class LeaderboardPlayerRepository:
         players are not poisoned by the aborted transaction (fix round 1).
         """
         await self._session.rollback()
+
+    async def release_discord(self, puuid: str) -> None:
+        """Detach the Discord owner from a row without deleting it.
+
+        A registration is re-pointed by moving its Discord identity to a
+        different PUUID, and this is the half that lets go. The old row stays:
+        it is a real player's ranking history, tournament and series data point
+        at it, and `discord_id` is unique-per-registration rather than the
+        row's identity.
+
+        Nothing is needed to hide the abandoned account from the leaderboard —
+        `list_page` already filters on `last_played_match` inside the last two
+        weeks, so an account somebody stopped playing falls off on its own
+        rather than showing the same human twice.
+        """
+        await self._session.execute(
+            update(LeaderboardPlayer)
+            .where(LeaderboardPlayer.puuid == puuid)
+            .values(discord_id="", discord_username="")
+        )
 
     async def upsert(self, *, puuid: str, name: str, tag: str, region: str, **fields) -> LeaderboardPlayer:
         # ``discord_username`` is NOT NULL with no default: a bare INSERT that

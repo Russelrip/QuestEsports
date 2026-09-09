@@ -181,6 +181,12 @@ router.post("/valorant/leaderboard/register/submit", requireAuth, leaderboardReg
 // is stored by nothing here.
 router.post("/game-accounts/valorant/resolve", requireAuth, gameAccountResolveLimiter, gameAccountController.resolveValorant);
 router.post("/game-accounts/valorant/link", requireAuth, gameAccountResolveLimiter, gameAccountController.linkValorant);
+router.post(
+  "/game-accounts/valorant/import-from-leaderboard",
+  requireAuth,
+  gameAccountResolveLimiter,
+  gameAccountController.importValorantFromLeaderboard
+);
 router.get("/users/me/game-accounts", requireAuth, gameAccountController.listMyGameAccounts);
 router.get("/teams/:teamId/registration-readiness", requireAuth, gameAccountController.getTeamRegistrationReadiness);
 router.post("/game-accounts/valorant/change-request", requireAuth, gameAccountResolveLimiter, gameAccountController.requestValorantChange);
