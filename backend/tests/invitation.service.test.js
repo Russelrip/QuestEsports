@@ -433,3 +433,68 @@ test("accepting takes no captain-entered identity with it", async () => {
     restore();
   }
 });
+
+// The shape a real request actually carries.
+//
+// `PUBLIC_USER_SELECT` is what every authenticated request attaches as
+// `req.user`, and it has `email` but no `emailNormalized`. Every test above
+// hands the service a `user` with `emailNormalized` already set, which no
+// caller in the application does — so the suite was green while the feature was
+// completely broken in production: the email clause was dropped, only the user
+// link remained, and a pending invitation has no user link until somebody
+// accepts it. Nobody could see an invitation, and nobody could accept one.
+const SESSION_USER = {
+  id: "user-1",
+  email: "Player@Example.com",
+  emailVerified: true,
+};
+
+test("a session user without emailNormalized still matches the invitation", async () => {
+  const { module: service, restore, state } = loadService({ members: [invite()] });
+  try {
+    const { invitations } = await service.listInvitationsForUser({ user: SESSION_USER });
+
+    const [{ args }] = state.queries;
+    assert.deepEqual(args.where.OR, [
+      { userId: "user-1" },
+      // Derived from `email`, and normalized: the address on the row was
+      // normalized when the captain typed it, so a raw comparison would miss
+      // on capitalization alone.
+      { emailNormalized: "player@example.com", userId: null },
+    ]);
+    assert.equal(invitations.length, 1);
+  } finally {
+    restore();
+  }
+});
+
+test("an unverified session user still matches nothing", async () => {
+  const { module: service, restore, state } = loadService({ members: [] });
+  try {
+    await service.listInvitationsForUser({
+      user: { ...SESSION_USER, emailVerified: false },
+    });
+    const [{ args }] = state.queries;
+    // Deriving the address must not weaken the rule it is derived for: signing
+    // up with somebody else's address still hands over nothing.
+    assert.deepEqual(args.where.OR, [{ userId: "user-1" }]);
+  } finally {
+    restore();
+  }
+});
+
+test("a session user can answer the invitation they can see", async () => {
+  const { module: service, restore } = loadService({ members: [invite()] });
+  try {
+    const result = await service.respondToInvitation({
+      invitationId: "member-1",
+      decision: "accept",
+      user: SESSION_USER,
+    });
+    // Accepting used the same filter, so it refused with "not available to your
+    // account" for exactly as long as the listing was empty.
+    assert.equal(result.inviteStatus, "accepted");
+  } finally {
+    restore();
+  }
+});

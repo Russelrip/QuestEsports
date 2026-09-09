@@ -1,6 +1,6 @@
 const { prisma } = require("../../lib/prisma");
 const { HttpError } = require("../../lib/http-error");
-const { normalizeText } = require("../../lib/validation");
+const { normalizeEmail, normalizeText } = require("../../lib/validation");
 const { requireLinkedDiscord } = require("../auth/discord-link.service");
 const {
   refreshRegistrationVerificationStatus,
@@ -38,10 +38,22 @@ const OPEN_REGISTRATION_STATUSES = ["pending", "waitlisted"];
 // linked to, or an address that account has proven it controls. An unverified
 // address is never matched, or signing up with someone else's address would
 // hand over their invitations.
+//
+// The address is derived rather than read off the session. `PUBLIC_USER_SELECT`
+// — what every authenticated request carries as `req.user` — has `email` but
+// not `emailNormalized`, so reading the latter directly yielded `undefined`,
+// the email clause was silently dropped, and the only filter left was the user
+// link. A pending invitation has no user link until somebody accepts it, so
+// nothing ever matched: every invitee saw an empty list, and accepting refused
+// with "not available to your account".
+//
+// Deriving it also removes the coupling. This is correct for any caller that
+// can name the user's address, whatever projection it was loaded with.
 const buildIdentityFilters = (user) => {
   const filters = [{ userId: user.id }];
-  if (user.emailVerified && user.emailNormalized) {
-    filters.push({ emailNormalized: user.emailNormalized, userId: null });
+  const emailNormalized = user.emailNormalized || normalizeEmail(user.email);
+  if (user.emailVerified && emailNormalized) {
+    filters.push({ emailNormalized, userId: null });
   }
   return filters;
 };
