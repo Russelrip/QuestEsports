@@ -272,14 +272,13 @@ export default function TeamManagementPanel({
 
   // The channel that always works: the captain already talks to these people.
   //
-  // The link is that member's, and it is still not a credential — nothing in it
-  // is accepted as authority, and whoever opens it has to sign in as the person
-  // the invitation was addressed to before there is anything to see. What being
-  // member-specific buys is that it lands on the right invitation instead of a
-  // list, and that somebody with no Quest account yet gets told what to do
-  // rather than a login form with no explanation attached.
+  // The same link for everybody, deliberately. It used to name the member, which
+  // bought a scrolled-to invitation and cost a message telling people the
+  // invitation was not for their account whenever a roster edit had replaced
+  // the row it pointed at. Whoever opens this signs in and sees the invitations
+  // addressed to them, which was always the part that worked.
   const copyInvitationLink = async (member: EditableMember) => {
-    const url = onboardingUrl(window.location.origin, member.key);
+    const url = onboardingUrl(window.location.origin);
     try {
       await navigator.clipboard.writeText(url);
       setCopiedMemberKey(member.key);

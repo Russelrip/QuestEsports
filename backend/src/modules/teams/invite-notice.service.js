@@ -2,12 +2,7 @@ const { prisma } = require("../../lib/prisma");
 const { logger } = require("../../lib/logger");
 const { createNotification } = require("../notifications/notification.service");
 const { notifyInviteOnDiscord } = require("./invite-discord-notice");
-const {
-  INVITATIONS_PATH,
-  buildInvitationUrl,
-  invitationsPath,
-  onboardingPath,
-} = require("./invite-paths");
+const { INVITATIONS_PATH, buildInvitationUrl } = require("./invite-paths");
 
 // How a roster invitation reaches the person it is for.
 //
@@ -79,7 +74,7 @@ const notifyInvite = async ({
         type: "team_invite",
         title: buildTitle({ teamName }),
         body: buildBody({ captainName, teamName, tournamentTitle }),
-        actionUrl: invitationsPath(invitationId),
+        actionUrl: INVITATIONS_PATH,
         userIds: [questUserId],
       });
       inApp = true;
@@ -92,7 +87,6 @@ const notifyInvite = async ({
   }
 
   const discordResult = await notifyInviteOnDiscord({
-    invitationId,
     userId: questUserId,
     emailNormalized,
     recipientName,
@@ -108,7 +102,7 @@ const notifyInvite = async ({
     // Whether this person can be reached inside Quest at all. False means the
     // captain has to send them the link, and the UI has to say so.
     hasQuestAccount: Boolean(questUserId),
-    invitationUrl: buildInvitationUrl(invitationId),
+    invitationUrl: buildInvitationUrl(),
   };
 };
 
@@ -133,7 +127,5 @@ module.exports = {
   notifyInvites,
   findQuestUserForInvite,
   buildInvitationUrl,
-  invitationsPath,
-  onboardingPath,
   INVITATIONS_PATH,
 };

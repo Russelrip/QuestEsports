@@ -1,35 +1,26 @@
-// Where an invitation is found, and the reference that points at one.
+// Where an invitation is found.
 //
-// The reference is a routing hint and nothing else. No endpoint accepts it as
-// authority, it names neither the team nor the invitee, and it is not enough to
-// read anything: signed out it reaches a page of generic onboarding
-// instructions, and signed in it only decides which of the invitations that
-// already belong to that account gets scrolled to.
+// There is no per-member link. There was: a captain copied a URL carrying a
+// reference to one roster row, and the invitations page used it to focus that
+// invitation. It never granted anything — the invitations were selected by
+// identity either way — but it could still be wrong, and wrong in the worst
+// direction. The reference names a row, and the row is replaced whenever a
+// captain corrects an email or re-adds somebody, so an older link resolved to
+// nothing and the page told the reader the invitation was not for their
+// account: accusatory, plausible, and sometimes sitting directly above the
+// invitation they had come to accept.
 //
-// That is what makes it safe to forward — which matters, because forwarding is
-// exactly what will happen to it. It is a link a captain pastes into whatever
-// chat they already share with the person they are waiting on.
+// What replaced it is what was underneath all along. Sign in, and the
+// invitations addressed to you are listed. Nothing to resolve means nothing to
+// resolve wrongly.
 
-export const MEMBER_REFERENCE_PARAM = "member";
 export const INVITATIONS_PATH = "/profile?tab=invitations";
 export const ONBOARDING_PATH = "/team-invite";
 
-export function invitationsPath(memberReference?: string | null): string {
-  return memberReference
-    ? `${INVITATIONS_PATH}&${MEMBER_REFERENCE_PARAM}=${encodeURIComponent(memberReference)}`
-    : INVITATIONS_PATH;
-}
-
-// The one a captain copies and sends. It starts at the onboarding page rather
-// than at the invitations tab because the person who needs it is usually the
-// person with no Quest account yet, and the tab would only bounce them to a
-// login screen they were given no explanation for.
-export function onboardingPath(memberReference?: string | null): string {
-  return memberReference
-    ? `${ONBOARDING_PATH}?${MEMBER_REFERENCE_PARAM}=${encodeURIComponent(memberReference)}`
-    : ONBOARDING_PATH;
-}
-
-export function onboardingUrl(origin: string, memberReference?: string | null): string {
-  return `${origin}${onboardingPath(memberReference)}`;
+// The link a captain copies for somebody who cannot be reached any other way.
+// It starts at onboarding rather than the invitations tab because the person
+// who needs it usually has no Quest account yet, and the tab would only bounce
+// them to a login they were given no explanation for.
+export function onboardingUrl(origin: string): string {
+  return `${origin}${ONBOARDING_PATH}`;
 }

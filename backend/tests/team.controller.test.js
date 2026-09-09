@@ -48,11 +48,7 @@ const load = ({ delivery = {}, listResult = {}, readiness = {} } = {}) => {
     [invitationServicePath]: {
       listInvitationsForUser: async (args) => {
         listCalls.push(args);
-        return {
-          invitations: [],
-          reference: { state: "none", member: null },
-          ...listResult,
-        };
+        return { invitations: [], ...listResult };
       },
       respondToInvitation: async () => ({ inviteStatus: "accepted" }),
       getInvitationReadiness: async () => ({
@@ -103,42 +99,39 @@ test("a nudge names the channels that actually carried it", async () => {
   }
 });
 
-test("the member reference is passed through, never used to select anything", async () => {
-  const { module: controller, restore } = load({
-    listResult: { reference: { state: "waiting", member: "member-7" } },
-  });
+test("invitations are whatever the signed-in identity has, with nothing to select them by", async () => {
+  const { module: controller, restore } = load();
   const res = buildResponse();
   try {
     await invoke(
       controller.getMyInvitations,
-      { query: { member: "member-7" }, user: { id: "user-1", emailVerified: true } },
+      { query: {}, user: { id: "user-1", emailVerified: true } },
       res
     );
 
-    assert.deepEqual(res.body.reference, { state: "waiting", member: "member-7" });
     assert.deepEqual(res.body.invitations, []);
+    // Nothing in the response describes a particular invitation a link meant.
+    // A link that named one told readers it was not for their account whenever
+    // a roster edit had replaced the row it pointed at.
+    assert.equal("reference" in res.body, false);
   } finally {
     restore();
   }
 });
 
-test("an unverified account is told to verify rather than that the link was somebody else's", async () => {
-  const { module: controller, restore } = load({
-    listResult: { reference: { state: "mismatch", member: null } },
-  });
+test("an unverified account is told to verify rather than shown an unexplained empty list", async () => {
+  const { module: controller, restore } = load();
   const res = buildResponse();
   try {
     await invoke(
       controller.getMyInvitations,
-      { query: { member: "member-7" }, user: { id: "user-1", emailVerified: false } },
+      { query: {}, user: { id: "user-1", emailVerified: false } },
       res
     );
 
-    // An unverified address matches no invitation, so the mismatch is a
-    // symptom. Without this flag the page would send a player to ask their
-    // captain to resend something that was never the problem.
+    // An unverified address matches no invitation, so the list is empty for a
+    // reason the reader cannot otherwise guess.
     assert.equal(res.body.readiness.emailVerified, false);
-    assert.equal(res.body.reference.state, "mismatch");
   } finally {
     restore();
   }

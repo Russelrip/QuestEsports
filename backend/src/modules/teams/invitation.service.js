@@ -97,60 +97,7 @@ const mapInvitation = (member) => {
   };
 };
 
-// What a member reference in the URL turned out to mean, for the page that has
-// to say something useful about it.
-//
-// The reference decides nothing about authority — the invitations returned
-// alongside it were selected by identity and would be the same without it. All
-// this does is name the case, so that somebody who followed a captain's link
-// into an account it was not addressed to is told to sign in with the invited
-// address instead of being shown an empty page and left to guess.
-//
-// Deliberately thin. `mismatch` says only that the reference is not this
-// account's to answer: not whose it is, not which team it is for, not what
-// address it was sent to. A reference is meant to be forwarded, so it has to be
-// safe to hold one you were never the intended reader of.
-const MEMBER_REFERENCE_STATES = {
-  none: "none",
-  waiting: "waiting",
-  answered: "answered",
-  expired: "expired",
-  mismatch: "mismatch",
-};
-
-const resolveMemberReference = async ({ user, memberReference, invitations }) => {
-  const normalizedReference = normalizeText(memberReference);
-  if (!normalizedReference) return { state: MEMBER_REFERENCE_STATES.none, member: null };
-
-  if (invitations.some((invitation) => invitation.id === normalizedReference)) {
-    return { state: MEMBER_REFERENCE_STATES.waiting, member: normalizedReference };
-  }
-
-  // Not in the list above, so either it is already answered, it ran out, or it
-  // belongs to somebody else. Only the first two are this account's business,
-  // and they are distinguished by the same identity filter used to list them.
-  const answered = await prisma.savedTeamMember.findFirst({
-    where: {
-      id: normalizedReference,
-      OR: buildIdentityFilters(user),
-    },
-    select: { id: true, inviteStatus: true },
-  });
-
-  if (!answered) {
-    return { state: MEMBER_REFERENCE_STATES.mismatch, member: null };
-  }
-
-  return {
-    state:
-      answered.inviteStatus === "expired"
-        ? MEMBER_REFERENCE_STATES.expired
-        : MEMBER_REFERENCE_STATES.answered,
-    member: normalizedReference,
-  };
-};
-
-const listInvitationsForUser = async ({ user, memberReference = null }) => {
+const listInvitationsForUser = async ({ user }) => {
   const members = await prisma.savedTeamMember.findMany({
     where: {
       inviteStatus: { in: RESPONDABLE_STATUSES },
@@ -160,12 +107,7 @@ const listInvitationsForUser = async ({ user, memberReference = null }) => {
     select: invitationSelect,
   });
 
-  const invitations = members.map(mapInvitation);
-
-  return {
-    invitations,
-    reference: await resolveMemberReference({ user, memberReference, invitations }),
-  };
+  return { invitations: members.map(mapInvitation) };
 };
 
 // Whether this user can accept right now, and if not, what is in the way. The
@@ -322,7 +264,6 @@ const respondToInvitation = async ({ invitationId, decision, user }) => {
 
 module.exports = {
   listInvitationsForUser,
-  MEMBER_REFERENCE_STATES,
   respondToInvitation,
   getInvitationReadiness,
   DISCORD_REQUIRED_MESSAGE,

@@ -2,7 +2,7 @@ const { prisma } = require("../../lib/prisma");
 const { env } = require("../../config/env");
 const { logger } = require("../../lib/logger");
 const { sendDirectMessage, UNDELIVERABLE } = require("../../lib/discord/discord-dm");
-const { invitationsPath } = require("./invite-paths");
+const { INVITATIONS_PATH } = require("./invite-paths");
 
 // A Discord nudge pointing at an invitation that is already written down.
 //
@@ -40,7 +40,6 @@ const findRecipientDiscordId = async ({ userId, emailNormalized }) => {
 };
 
 const buildInviteMessage = ({
-  invitationId = null,
   recipientName,
   teamName,
   captainName,
@@ -50,10 +49,8 @@ const buildInviteMessage = ({
   const event = tournamentTitle ? ` for **${tournamentTitle}**` : "";
   // The link goes to the invitations page rather than carrying the invite token:
   // a token in a DM is a credential sitting in a chat log, and the recipient is
-  // already signed in to Quest to see it. The member reference on the end is
-  // not a credential either — it only decides which invitation this account
-  // already has gets scrolled to.
-  const link = `${env.APP_URL || "https://questesports.lk"}${invitationsPath(invitationId)}`;
+  // already signed in to Quest to see it.
+  const link = `${env.APP_URL || "https://questesports.lk"}${INVITATIONS_PATH}`;
   return [
     opening,
     "",
@@ -66,7 +63,6 @@ const buildInviteMessage = ({
 // Returns why it did or did not send, so callers can log an outcome rather than
 // guessing. Never throws: an invitation must not fail because a DM did not.
 const notifyInviteOnDiscord = async ({
-  invitationId = null,
   userId = null,
   emailNormalized = null,
   recipientName,
@@ -83,7 +79,6 @@ const notifyInviteOnDiscord = async ({
     return await sendDirectMessage({
       discordUserId,
       content: buildInviteMessage({
-        invitationId,
         recipientName,
         teamName,
         captainName,

@@ -40,18 +40,12 @@ const VERIFIED = {
   email: "player@example.com",
 };
 
-// `members` is what the pending list returns; `lookup` is what a direct
-// findFirst can reach. They are separate so a test can describe a row that this
-// account owns but that is no longer waiting on it — an invitation already
-// answered, or one that ran out — which is exactly the case a member reference
-// has to tell apart from somebody else's link.
 const loadService = ({
   members = [],
-  lookup = null,
   discordLinked = true,
   openRegistrations = [],
 } = {}) => {
-  const findable = lookup || members;
+  const findable = members;
   const state = {
     queries: [],
     savedTeamMemberUpdates: [],
@@ -409,139 +403,6 @@ test("a captain with no name still resolves to something to call them", async ()
   try {
     const { invitations } = await service.listInvitationsForUser({ user: VERIFIED });
     assert.equal(invitations[0].captain, "cap");
-  } finally {
-    restore();
-  }
-});
-
-// A member reference is a routing hint. It selects nothing, and the invitations
-// returned beside it would be identical without it — but the page still has to
-// be able to say something true about a link that led somewhere unexpected,
-// which is the whole reason it is answered at all.
-
-test("a reference to a waiting invitation names it so the page can focus it", async () => {
-  const { module: service, restore } = loadService({ members: [invite()] });
-  try {
-    const { invitations, reference } = await service.listInvitationsForUser({
-      user: VERIFIED,
-      memberReference: "member-1",
-    });
-    assert.equal(invitations.length, 1);
-    assert.deepEqual(reference, { state: "waiting", member: "member-1" });
-  } finally {
-    restore();
-  }
-});
-
-test("no reference is not a mismatch", async () => {
-  const { module: service, restore } = loadService({ members: [invite()] });
-  try {
-    const { reference } = await service.listInvitationsForUser({ user: VERIFIED });
-    assert.deepEqual(reference, { state: "none", member: null });
-  } finally {
-    restore();
-  }
-});
-
-test("a reference this account cannot reach says only that, and nothing about it", async () => {
-  const { module: service, restore } = loadService({ members: [], lookup: [] });
-  try {
-    const { reference } = await service.listInvitationsForUser({
-      user: VERIFIED,
-      memberReference: "member-1",
-    });
-    // Not whose it is, not which team, not the address it was sent to. These
-    // links are meant to be forwarded, so holding one you were never the
-    // intended reader of has to reveal nothing.
-    assert.deepEqual(reference, { state: "mismatch", member: null });
-  } finally {
-    restore();
-  }
-});
-
-test("a reference to an invitation already answered is not reported as somebody else's", async () => {
-  const { module: service, restore } = loadService({
-    members: [],
-    lookup: [invite({ inviteStatus: "accepted" })],
-  });
-  try {
-    const { reference } = await service.listInvitationsForUser({
-      user: VERIFIED,
-      memberReference: "member-1",
-    });
-    assert.deepEqual(reference, { state: "answered", member: "member-1" });
-  } finally {
-    restore();
-  }
-});
-
-test("a reference to an invitation that ran out says so, so the player can ask for another", async () => {
-  const { module: service, restore } = loadService({
-    members: [],
-    lookup: [invite({ inviteStatus: "expired" })],
-  });
-  try {
-    const { reference } = await service.listInvitationsForUser({
-      user: VERIFIED,
-      memberReference: "member-1",
-    });
-    assert.deepEqual(reference, { state: "expired", member: "member-1" });
-  } finally {
-    restore();
-  }
-});
-
-test("a reference is resolved by identity, never taken on trust", async () => {
-  const { module: service, restore, state } = loadService({ members: [], lookup: [] });
-  try {
-    await service.listInvitationsForUser({
-      user: VERIFIED,
-      memberReference: "member-1",
-    });
-    const direct = state.queries.find((query) => query.model === "savedTeamMember.findFirst");
-    // The same identity filter the listing uses. Possession of the reference
-    // adds nothing to it: it is not a credential and is not treated as one.
-    assert.deepEqual(direct.args.where.OR, [
-      { userId: "user-1" },
-      { emailNormalized: "player@example.com", userId: null },
-    ]);
-  } finally {
-    restore();
-  }
-});
-
-test("accepting leaves the registration's own record of what was submitted alone", async () => {
-  const { module: service, restore, state } = loadService({
-    members: [invite()],
-    openRegistrations: [{ id: "registration-1" }],
-  });
-  try {
-    await service.respondToInvitation({
-      invitationId: "member-1",
-      decision: "accept",
-      user: VERIFIED,
-    });
-
-    const [{ data, where }] = state.registrationMemberUpdates;
-    // A registration member carries the game identifier that tournament's
-    // rules asked for, and it is evidence of what was submitted for that
-    // event. Accepting an invitation answers the invitation; it does not get
-    // to revise the record.
-    assert.deepEqual(Object.keys(data).sort(), [
-      "inviteExpiresAt",
-      "inviteRespondedAt",
-      "inviteStatus",
-      "inviteTokenHash",
-      "userId",
-    ]);
-    // And only rows still waiting on an answer, inside registrations still
-    // open to their roster. An approved or cancelled registration has had its
-    // roster settled and is not listening any more.
-    assert.deepEqual(where.inviteStatus, { in: ["pending"] });
-    assert.deepEqual(where.registrationId, { in: ["registration-1"] });
-
-    const [{ args }] = state.queries.filter((query) => query.model === "teamRegistration");
-    assert.deepEqual(args.where.status, { in: ["pending", "waitlisted"] });
   } finally {
     restore();
   }

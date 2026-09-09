@@ -1,31 +1,27 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import AuthPanel from "@/components/auth/AuthPanel";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { buttonClassName } from "@/components/ui/button";
-import { invitationsPath, MEMBER_REFERENCE_PARAM } from "@/lib/team-invite-links";
+import { INVITATIONS_PATH } from "@/lib/team-invite-links";
 
 // The signed-out half of a captain's invitation link.
 //
-// Everything on this page is generic. It does not resolve the reference, name
-// the team or the captain, or say which address was invited — it cannot, and
-// that is the point: these links get forwarded, and holding one you were not
-// the intended reader of must reveal nothing. The reference travels on as a
-// routing hint so that whoever does sign in with the right account lands on the
-// invitation rather than on a dashboard.
+// Everything on this page is generic, and there is nothing in the link to make
+// it otherwise: no team, no captain, no address, and no reference to a
+// particular invitation. These links get forwarded, so holding one you were not
+// the intended reader of must reveal nothing — and must not tell you anything
+// about an invitation either, including that it exists.
 //
-// Signing in is not what grants anything either. The backend still matches the
-// authenticated account against the invitation, and a link in the wrong hands
-// stays as useless after signing in as before it.
+// Signing in is not what grants anything. The invitations someone sees are the
+// ones addressed to the account they signed in as, which is the whole rule.
 export default function TeamInviteOnboarding() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const { user, isLoading } = useAuth();
-  const memberReference = searchParams.get(MEMBER_REFERENCE_PARAM);
-  const destination = invitationsPath(memberReference);
+  const destination = INVITATIONS_PATH;
 
   // Somebody already signed in has no use for onboarding instructions. Replaced
   // rather than pushed so that Back does not drop them here again.

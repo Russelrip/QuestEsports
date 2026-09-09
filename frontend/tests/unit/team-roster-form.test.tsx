@@ -123,19 +123,17 @@ describe("TeamManagementPanel", () => {
     ]);
   });
 
-  it("copies a link that points at one member's invitation", async () => {
+  it("copies the same onboarding link for everybody", async () => {
     renderPanel();
 
     await userEvent.click(screen.getByRole("button", { name: "Copy onboarding link" }));
 
-    // Member-specific, and still not a credential: whoever opens it has to sign
-    // in as the person the invitation was addressed to before there is anything
-    // to see. What it buys is landing on the right invitation, and giving
-    // somebody with no Quest account yet an explanation instead of a login form.
+    // Not member-specific any more. Naming the row bought a scrolled-to
+    // invitation and cost a message telling people the invitation was not for
+    // their account whenever a roster edit had replaced that row. Whoever opens
+    // this signs in and sees the invitations addressed to them.
     await waitFor(() =>
-      expect(mocks.clipboard).toEqual([
-        `${window.location.origin}/team-invite?member=pending-member`,
-      ]),
+      expect(mocks.clipboard).toEqual([`${window.location.origin}/team-invite`]),
     );
   });
 
