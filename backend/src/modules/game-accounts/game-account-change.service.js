@@ -9,6 +9,7 @@ const {
   publicView,
   VALORANT,
 } = require("./game-account.service");
+const { repointRegistration } = require("../valorant-leaderboard/service");
 
 const MAX_REASON_LENGTH = 1000;
 
@@ -218,10 +219,13 @@ const reviewChangeRequest = async ({ requestId, approve, adminUserId, adminNote,
     throw new HttpError(400, "Give a reason when rejecting an account change.");
   }
 
-  return prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     const request = await tx.gameAccountChangeRequest.findUnique({
       where: { id: requestId },
-      include: { currentAccount: true },
+      // The player's Quest user is what the leaderboard move is made for: the
+      // upstream is addressed by the Discord identity linked to that account,
+      // never by anything the request carries.
+      include: { currentAccount: true, player: { select: { userId: true } } },
     });
     if (!request) throw new HttpError(404, "Account change request not found.");
     if (request.status !== "pending") {
@@ -294,8 +298,39 @@ const reviewChangeRequest = async ({ requestId, approve, adminUserId, adminNote,
       },
     });
 
-    return { status: updated.status, gameAccountId: replacement?.id ?? null };
+    return {
+      status: updated.status,
+      gameAccountId: replacement?.id ?? null,
+      playerUserId: request.player?.userId ?? null,
+      approvedExternalId: approve ? request.requestedExternalId : null,
+    };
   });
+
+  // The leaderboard follows the decision that was just recorded.
+  //
+  // Outside the transaction on purpose: it is a call to another service, and
+  // holding a database transaction open across one turns a slow dependency into
+  // a database problem. It also must not be able to undo the approval — an
+  // admin's decision is the durable thing here, and a leaderboard that cannot
+  // be reached is a retry, not a reversal.
+  if (result.approvedExternalId && result.playerUserId) {
+    try {
+      await repointRegistration({
+        userId: result.playerUserId,
+        puuid: result.approvedExternalId,
+      });
+    } catch (error) {
+      // Includes the ordinary case of a player who was never on the
+      // leaderboard: there is no registration to move, and nothing is wrong.
+      logger.warn("Leaderboard registration not moved after an approved change.", {
+        requestId,
+        code: error?.code || error?.body?.code || null,
+        status: error?.statusCode || error?.status || null,
+      });
+    }
+  }
+
+  return { status: result.status, gameAccountId: result.gameAccountId };
 };
 
 module.exports = {

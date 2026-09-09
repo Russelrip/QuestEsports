@@ -112,7 +112,12 @@ DOCUMENTED_SURFACE: dict[str, dict[str, tuple[type | None, type | None]]] = {
     "/api/v1/register/preview": {"post": (PreviewRequest, PlayerPreview)},
     "/api/v1/register/submit": {"post": (RegistrationRequest, RegistrationSubmitResponse)},
     "/api/v1/register/preview/{puuid}": {"get": (None, PlayerPreview)},
-    "/api/v1/register": {"post": (RegistrationRequest, RegistrationSubmitResponse)},
+    "/api/v1/register": {
+        "post": (RegistrationRequest, RegistrationSubmitResponse),
+        # An admin-reviewed move to a different PUUID. Quest decides whether the
+        # move is legitimate; this endpoint only carries out the decision.
+        "put": (RegistrationRequest, RegistrationSubmitResponse),
+    },
     "/api/v1/auth/discord/login": {"get": (None, DiscordLoginResponse)},
     "/api/v1/auth/discord/callback": {"get": (None, DiscordCallbackResponse)},
     "/api/v1/auth/check-discord": {"post": (CheckDiscordRequest, CheckDiscordResponse)},

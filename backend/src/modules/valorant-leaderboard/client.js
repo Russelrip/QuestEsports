@@ -126,7 +126,19 @@ const previewRegistration = async (puuid) =>
 const submitRegistration = async (input) =>
   post("/api/v1/register/submit", input, REGISTRATION_TIMEOUT_MS);
 
+// Move an existing registration to a different account. Only called after an
+// admin has approved the move on the Quest side: the upstream carries the
+// decision out, it does not make it.
+const repointRegistration = async (input) =>
+  requestJson({
+    path: "/api/v1/register",
+    method: "PUT",
+    body: input,
+    timeoutMs: REGISTRATION_TIMEOUT_MS,
+  });
+
 module.exports = {
+  repointRegistration,
   getLeaderboard,
   searchLeaderboard,
   checkPuuid,

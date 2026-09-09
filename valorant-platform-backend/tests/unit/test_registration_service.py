@@ -104,12 +104,16 @@ class FakeRepo:
         self.by_puuid = by_puuid or {}
         self.by_discord_id = by_discord_id or {}
         self.upserted: dict | None = None
+        self.released: list[str] = []
 
     async def get_by_puuid(self, puuid: str) -> object | None:
         return self.by_puuid.get(puuid)
 
     async def get_by_discord_id(self, discord_id: str) -> object | None:
         return self.by_discord_id.get(str(discord_id))
+
+    async def release_discord(self, puuid: str) -> None:
+        self.released.append(puuid)
 
     async def upsert(self, **fields) -> _Player:
         self.upserted = fields
@@ -302,3 +306,117 @@ async def test_submit_maps_henrik_rate_limit(
 
     assert excinfo.value.code == "HENRIK_RATE_LIMITED"
     assert excinfo.value.status == 429
+
+
+# ----------------------------------------------------------------- repoint
+
+# `submit` registers once and then refuses, which is right for a stranger and
+# wrong for the one case it cannot tell apart: a player who changed Riot
+# accounts. Their entry keeps pointing at an account they no longer play, and a
+# stale entry is worse than an absent one because it looks current.
+#
+# Whether a move is legitimate is not decided here — Quest reviews it and calls
+# this once an admin has approved. What is tested here are the guards this
+# service is the authority for.
+
+
+async def test_repoint_moves_the_discord_to_the_new_account(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    old_row = _Player(puuid="puuid-old", name="Old", tag="OLD", currenttierpatched="Silver 1", elo=900, discord_id="d-1")
+    repo = FakeRepo(by_puuid={"puuid-old": old_row}, by_discord_id={"d-1": old_row})
+    session = FakeSession()
+    svc = _service(repo, FakeHenrik(mmr=MMR, last_played=None), monkeypatch, session)
+
+    result = await svc.repoint(discord_id="d-1", discord_username="dusername", puuid="puuid-new")
+
+    assert result.success is True
+    assert result.player.puuid == "puuid-new"
+    # The old row is detached rather than deleted: it is a real player's ranking
+    # history, and the two-week activity filter drops it from the leaderboard on
+    # its own rather than showing the same human twice.
+    assert repo.released == ["puuid-old"]
+    assert repo.upserted["discord_id"] == "d-1"
+    # One commit: the detach and the new row land together, so a failure cannot
+    # leave a player attached to neither.
+    assert session.committed == 1
+
+
+async def test_repoint_404_when_there_is_nothing_to_move(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = FakeRepo()
+    svc = _service(repo, FakeHenrik(mmr=MMR), monkeypatch)
+
+    with pytest.raises(AppError) as excinfo:
+        await svc.repoint(discord_id="d-1", discord_username="dusername", puuid="puuid-new")
+
+    assert excinfo.value.code == "DISCORD_NOT_REGISTERED"
+    assert excinfo.value.status == 404
+    assert repo.released == []
+
+
+async def test_repoint_409_when_the_destination_belongs_to_someone_else(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    old_row = _Player(puuid="puuid-old", name="Old", tag="OLD", currenttierpatched="Silver 1", elo=900, discord_id="d-1")
+    taken = _Player(puuid="puuid-new", name="Taken", tag="NEW", currenttierpatched="Gold 1", elo=1200, discord_id="d-2")
+    repo = FakeRepo(by_puuid={"puuid-old": old_row, "puuid-new": taken}, by_discord_id={"d-1": old_row})
+    svc = _service(repo, FakeHenrik(mmr=MMR), monkeypatch)
+
+    with pytest.raises(AppError) as excinfo:
+        await svc.repoint(discord_id="d-1", discord_username="dusername", puuid="puuid-new")
+
+    assert excinfo.value.code == "PUUID_ALREADY_REGISTERED"
+    assert excinfo.value.status == 409
+    # Nothing was let go of, so a refused move leaves the player exactly as they
+    # were rather than stranded.
+    assert repo.released == []
+
+
+async def test_repoint_adopts_an_unowned_row_the_updater_already_wrote(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    old_row = _Player(puuid="puuid-old", name="Old", tag="OLD", currenttierpatched="Silver 1", elo=900, discord_id="d-1")
+    # The updater writes rows for players who never registered; those carry no
+    # Discord owner and are free to claim.
+    unowned = _Player(puuid="puuid-new", name="Seen", tag="NEW", currenttierpatched="Gold 1", elo=1200, discord_id="")
+    repo = FakeRepo(by_puuid={"puuid-old": old_row, "puuid-new": unowned}, by_discord_id={"d-1": old_row})
+    svc = _service(repo, FakeHenrik(mmr=MMR, last_played=None), monkeypatch)
+
+    result = await svc.repoint(discord_id="d-1", discord_username="dusername", puuid="puuid-new")
+
+    assert result.player.puuid == "puuid-new"
+    assert repo.released == ["puuid-old"]
+
+
+async def test_repoint_is_idempotent_when_already_pointing_there(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    row = _Player(puuid="puuid-1", name="Same", tag="ONE", currenttierpatched="Gold 1", elo=1200, discord_id="d-1")
+    repo = FakeRepo(by_puuid={"puuid-1": row}, by_discord_id={"d-1": row})
+    henrik = FakeHenrik(mmr=MMR)
+    svc = _service(repo, henrik, monkeypatch)
+
+    result = await svc.repoint(discord_id="d-1", discord_username="dusername", puuid="puuid-1")
+
+    assert result.success is True
+    # A retried approval must not detach anything or spend a Henrik call.
+    assert repo.released == []
+    assert henrik.calls == []
+
+
+async def test_repoint_leaves_the_player_attached_when_henrik_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    old_row = _Player(puuid="puuid-old", name="Old", tag="OLD", currenttierpatched="Silver 1", elo=900, discord_id="d-1")
+    repo = FakeRepo(by_puuid={"puuid-old": old_row}, by_discord_id={"d-1": old_row})
+    henrik = FakeHenrik(errors={"mmr": HenrikRateLimitError("slow down", None, None)})
+    svc = _service(repo, henrik, monkeypatch)
+
+    with pytest.raises(AppError):
+        await svc.repoint(discord_id="d-1", discord_username="dusername", puuid="puuid-new")
+
+    # The detach runs after every call that can fail. An outage must not leave
+    # somebody detached from one account without being attached to the other.
+    assert repo.released == []
