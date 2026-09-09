@@ -104,9 +104,6 @@ export default function ProfileView() {
   const [matchRooms, setMatchRooms] = useState<MatchRoomSummary[]>([]);
   const [avatarSaving, setAvatarSaving] = useState(false);
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
-  // The reference from a captain's copied link. It grants nothing — the backend
-  // still answers by identity — and only decides which invitation is focused.
-  const [memberReference, setMemberReference] = useState<string | null>(null);
   const [showCreatedTeamNotice, setShowCreatedTeamNotice] = useState(false);
   const { data: teamsData, setData: setTeamsData, loading: teamsLoading, error: teamsError } = useTeams(Boolean(user));
   const showToast = useToastStore((state) => state.showToast);
@@ -139,7 +136,6 @@ export default function ProfileView() {
       // Every invitation notice points here, and so does the onboarding page a
       // captain's copied link starts at.
       setActiveTab("invitations");
-      setMemberReference(params.get("member"));
     } else if (params.get("tab") === "teams") {
       setActiveTab("teams");
       setSelectedTeamId(params.get("team"));
@@ -472,7 +468,7 @@ export default function ProfileView() {
               </div>
             ) : activeTab === "invitations" ? (
               <div className="grid min-w-0 gap-8">
-                <InvitationsPanel memberReference={memberReference} />
+                <InvitationsPanel />
               </div>
             ) : activeTab === "account" ? (
               <div className="grid min-w-0 gap-8">

@@ -112,24 +112,24 @@ allowance is now reserved for.
 ## The onboarding link
 
 `invite-paths.js` builds the link a captain copies when nothing reached
-somebody: `/team-invite?member=<id>`.
+somebody: `/team-invite`. It is the same link for everybody.
 
-The reference on it is a routing hint and nothing else. No endpoint accepts it
-as authority, it names neither the team nor the invitee, and it is not enough to
-read anything. Signed out it reaches a page of generic onboarding instructions;
-signed in it only decides which of the invitations that already belong to that
-account gets scrolled to. `listInvitationsForUser` resolves it with the same
-identity filter it lists by, and reports `mismatch` for one this account cannot
-reach — without saying whose it is, which team it is for, or what address it was
-sent to.
+It named the member once — `?member=<row id>` — which bought a scrolled-to
+invitation on arrival. It never granted anything; the invitations were selected
+by the signed-in identity either way. What it cost was a message. The reference
+names a row, and the row is replaced whenever a captain corrects an email or
+removes and re-adds somebody, so an older link resolved to nothing and the page
+said the invitation was not for that account and to sign in as someone else —
+accusatory, plausible, and sometimes rendered directly above the invitation the
+reader had come to accept.
 
-That is what makes it safe to forward, which matters because forwarding is
-exactly what will happen to it: it is a link pasted into whatever chat the
-captain and the player already share.
+What is left is what was underneath it: sign in, and the invitations addressed
+to you are listed. The in-app notification and the Discord DM point at the same
+page. Nothing to resolve means nothing to resolve wrongly.
 
-It starts at the onboarding page rather than the invitations tab because the
-person who needs it is usually the person with no Quest account yet, and the tab
-would only bounce them to a login screen they were given no explanation for.
+The link still starts at the onboarding page rather than the invitations tab,
+because the person who needs it usually has no Quest account yet and the tab
+would only bounce them to a login they were given no explanation for.
 
 ## Propagation
 

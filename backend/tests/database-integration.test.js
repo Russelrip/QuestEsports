@@ -175,9 +175,8 @@ test("real PostgreSQL protects sessions and claims a queued job only once", {
 
 // A saved-team roster is assembled from two queries that mocks cannot judge:
 // one `findMany` whose `where` is an OR of a verified-address match and a
-// linked-account match, and one `findFirst` that answers a member reference by
-// the same identity rule the listing uses. A mocked client accepts any `where`
-// at all, so the shape is only really checked here.
+// linked-account match. A mocked client accepts any `where` at all, so the
+// shape is only really checked here.
 //
 // The behaviour matters as much as the shape. Resolving by address alone
 // reported somebody who accepted and later changed their account email as
@@ -294,23 +293,32 @@ test("a roster resolves its members by linked account against real PostgreSQL", 
     // blanked: losing data to say nothing helps nobody.
     assert.equal(pending.discord, "also-typed");
 
-    // A reference to an invitation this account cannot reach. The findFirst
-    // behind it carries the same identity filter as the listing, so possession
-    // of the reference adds nothing.
-    const stranger = { id: acceptedUserId, emailVerified: true, emailNormalized: `moved-${suffix}@example.com` };
-    const { invitations, reference } = await listInvitationsForUser({
-      user: stranger,
-      memberReference: pendingMemberId,
-    });
-    assert.deepEqual(invitations, []);
-    assert.deepEqual(reference, { state: "mismatch", member: null });
+    // Invitations are whatever the signed-in identity has, over real rows. This
+    // account's own invitation is already accepted and somebody else's is still
+    // pending, so nothing is waiting on them — and there is no reference for a
+    // caller to supply that could change that answer.
+    const moved = {
+      id: acceptedUserId,
+      emailVerified: true,
+      emailNormalized: `moved-${suffix}@example.com`,
+    };
+    const listed = await listInvitationsForUser({ user: moved });
+    assert.deepEqual(listed.invitations, []);
+    assert.equal("reference" in listed, false);
 
-    // And one that is theirs, already answered.
-    const answered = await listInvitationsForUser({
-      user: stranger,
-      memberReference: acceptedMemberId,
-    });
-    assert.deepEqual(answered.reference, { state: "answered", member: acceptedMemberId });
+    // The pending invitation belongs to an address nobody has proven, so no
+    // account reaches it — which is the property that used to be reimplemented
+    // as a reference check and is really just the identity filter.
+    const stranger = {
+      id: captainId,
+      emailVerified: true,
+      emailNormalized: `captain-${suffix}@example.com`,
+    };
+    const strangerList = await listInvitationsForUser({ user: stranger });
+    assert.equal(
+      strangerList.invitations.some((invitation) => invitation.id === pendingMemberId),
+      false
+    );
   } finally {
     await prisma.savedTeam.deleteMany({ where: { id: teamId } });
     await prisma.oAuthAccount.deleteMany({ where: { userId: acceptedUserId } });

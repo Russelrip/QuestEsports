@@ -88,9 +88,7 @@ test("an invitee with a Quest account is notified in the app and on Discord", as
     assert.equal(result.discord, true);
     const [notification] = state.notifications;
     assert.deepEqual(notification.userIds, ["user-9"]);
-    // Pointed at the invitation rather than at the tab, so somebody with
-    // several waiting is not left to work out which one this was about.
-    assert.equal(notification.actionUrl, "/profile?tab=invitations&member=invite-1");
+    assert.equal(notification.actionUrl, "/profile?tab=invitations");
     assert.match(notification.body, /Quest Captain/);
     assert.match(notification.body, /Quest Cup/);
   } finally {
@@ -110,8 +108,9 @@ test("an invitee with no Quest account is reported as unreachable, not as sent",
     assert.equal(result.inApp, false);
     assert.deepEqual(state.notifications, []);
     // The link the captain is told to send starts at onboarding, because the
-    // person who needs it is the person with no account to sign in to yet.
-    assert.equal(result.invitationUrl, "https://quest.test/team-invite?member=invite-1");
+    // person who needs it is the person with no account to sign in to yet. It
+    // names no invitation: there is nothing in it to resolve wrongly.
+    assert.equal(result.invitationUrl, "https://quest.test/team-invite");
   } finally {
     restore();
   }

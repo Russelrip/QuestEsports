@@ -1,46 +1,33 @@
 const { env } = require("../../config/env");
 
-// Where an invitation is found, and the reference that points at one.
+// Where an invitation is found.
 //
-// The reference is a routing hint and nothing else. No endpoint accepts it as
-// authority, it names neither the team nor the invitee, and it is not enough to
-// read anything: signed out it reaches a page of generic onboarding
-// instructions, and signed in it only decides which of the invitations that
-// already belong to that account gets scrolled to. That is what makes it safe
-// to forward — which matters, because forwarding is exactly what will happen to
-// it. It is a link a captain pastes into whatever chat they already share.
+// There is no per-member link. There was: a captain copied a URL carrying a
+// reference to one roster row, and the invitations page used it to focus that
+// invitation. It never granted anything — the invitations were selected by
+// identity either way — but it could still be wrong, and it was wrong in the
+// worst direction. The reference names a row, and the row is replaced whenever
+// a captain corrects an email or re-adds somebody, so an older link resolved to
+// nothing and the page told the reader the invitation was not for their
+// account. That message was accusatory, plausible, and sometimes sitting
+// directly above the invitation they had come to accept.
 //
-// Kept in its own module because both notice channels need it and one of them
-// requires the other.
+// What replaced it is what was underneath all along: sign in, and the
+// invitations addressed to you are listed. A notification and a Discord DM
+// point at the same page. Nothing to resolve means nothing to resolve wrongly.
 
 const INVITATIONS_PATH = "/profile?tab=invitations";
 const ONBOARDING_PATH = "/team-invite";
-const MEMBER_REFERENCE_PARAM = "member";
 
-const invitationsPath = (invitationId) =>
-  invitationId
-    ? `${INVITATIONS_PATH}&${MEMBER_REFERENCE_PARAM}=${encodeURIComponent(invitationId)}`
-    : INVITATIONS_PATH;
-
-const onboardingPath = (invitationId) =>
-  invitationId
-    ? `${ONBOARDING_PATH}?${MEMBER_REFERENCE_PARAM}=${encodeURIComponent(invitationId)}`
-    : ONBOARDING_PATH;
-
-// The one a captain copies and sends. It starts at the onboarding page because
-// the person who needs it is usually the person who has no Quest account yet,
-// and the invitations tab would only bounce them to a login they were given no
-// explanation for.
-const buildInvitationUrl = (invitationId) =>
-  `${env.APP_URL || "https://questesports.lk"}${
-    invitationId ? onboardingPath(invitationId) : INVITATIONS_PATH
-  }`;
+// The link a captain copies for somebody who cannot be reached any other way.
+// It starts at the onboarding page rather than the invitations tab because the
+// person who needs it usually has no Quest account yet, and the tab would only
+// bounce them to a login they were given no explanation for.
+const buildInvitationUrl = () =>
+  `${env.APP_URL || "https://questesports.lk"}${ONBOARDING_PATH}`;
 
 module.exports = {
   INVITATIONS_PATH,
   ONBOARDING_PATH,
-  MEMBER_REFERENCE_PARAM,
-  invitationsPath,
-  onboardingPath,
   buildInvitationUrl,
 };

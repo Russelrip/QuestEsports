@@ -102,22 +102,6 @@ export type SavedTeam = {
   members: SavedTeamMember[];
 };
 
-// What the member reference in a captain's copied link turned out to mean.
-// It grants nothing — these invitations were found by identity and would be the
-// same without it — but the page has to be able to explain a link that led into
-// an account it was not addressed to.
-export type InvitationReferenceState =
-  | "none"
-  | "waiting"
-  | "answered"
-  | "expired"
-  | "mismatch";
-
-export type InvitationReference = {
-  state: InvitationReferenceState;
-  member: string | null;
-};
-
 export type TeamInvitation = {
   id: string;
   role: "CAPTAIN" | "PLAYER" | "SUBSTITUTE" | "COACH";
@@ -298,23 +282,18 @@ export async function nudgeTeamInvite(teamId: string, memberId: string) {
   };
 }
 
-export async function fetchMyInvitations(memberReference?: string | null) {
-  const query = memberReference
-    ? `?member=${encodeURIComponent(memberReference)}`
-    : "";
+export async function fetchMyInvitations() {
   const { response, data } = await apiFetchJson<{
     success?: boolean;
     message?: string;
     invitations?: TeamInvitation[];
     readiness?: InvitationReadiness;
-    reference?: InvitationReference;
-  }>(`/api/me/invitations${query}`);
+  }>("/api/me/invitations");
   const errorMessage = getApiErrorMessage(response, data, "Could not load your invitations.");
   if (errorMessage) throw new Error(errorMessage);
   return {
     invitations: data.invitations || [],
     readiness: data.readiness || { hasQuestAccount: true, hasDiscord: false },
-    reference: data.reference || { state: "none" as const, member: null },
   };
 }
 

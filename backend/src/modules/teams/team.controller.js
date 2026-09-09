@@ -91,24 +91,22 @@ const nudgeProfileTeamInvite = asyncHandler(async (req, res) => {
 // An invitation must be findable inside Quest, not only at the end of whatever
 // message happened to deliver it.
 //
-// `member` is the reference from a captain's copied link. It selects nothing:
-// the invitations here were found by identity and would be identical without
-// it. It is answered separately so the page can explain a link that led into
-// the wrong account rather than showing an empty list.
+// Everything here is selected by the signed-in identity. There is no reference
+// to resolve and nothing a link can say about which invitation is meant, which
+// is what makes this answer impossible to get wrong.
 const getMyInvitations = asyncHandler(async (req, res) => {
-  const [{ invitations, reference }, readiness] = await Promise.all([
-    listInvitationsForUser({ user: req.user, memberReference: req.query.member }),
+  const [{ invitations }, readiness] = await Promise.all([
+    listInvitationsForUser({ user: req.user }),
     getInvitationReadiness({ userId: req.user.id }),
   ]);
   res.status(200).json({
     success: true,
     invitations,
-    reference,
     readiness: {
       ...readiness,
-      // An unverified account matches no invitation at all, so without this the
-      // page would report the link as somebody else's when the real answer is
-      // that this address has not been proven yet.
+      // An unverified account matches no invitation at all. Without this the
+      // page would show an empty list to somebody who has one waiting, with no
+      // hint that the address simply has not been proven yet.
       emailVerified: Boolean(req.user.emailVerified),
     },
   });

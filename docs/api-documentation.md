@@ -826,12 +826,7 @@ Protected route. Returns the invitations addressed to the signed-in user, resolv
 
 There is no token and no anonymous preview. An invitation is a durable row; possession of a link is never authority to read or answer one.
 
-Optional `member` query parameter: the reference from a captain's copied link. It selects nothing — the invitations returned are identical without it — and is answered separately in `reference.state` so the page can explain a link that led somewhere unexpected:
-
-- `waiting` — the reference names an invitation in the list, which the UI focuses
-- `answered` / `expired` — this account's invitation, no longer open
-- `mismatch` — not reachable by this account. Deliberately says nothing else: not whose it is, not which team, not the address it was sent to
-- `none` — no reference was supplied
+There is no per-invitation parameter. A `member` reference existed and was removed: it selected nothing, but it named a roster row, and the row is replaced whenever a captain corrects a member's email or re-adds them. An older link then resolved to nothing and the page told the reader the invitation was not for their account — sometimes directly above the invitation they had come to accept.
 
 `readiness` reports `hasQuestAccount`, `hasDiscord` and `emailVerified`, so the page can offer the fix rather than only refusing.
 
@@ -843,9 +838,9 @@ Accepting requires a connected Discord account and links the saved-team member t
 
 Concurrent responses are serialized: the pending row is consumed conditionally, and a second answer receives `409`. Acceptance propagates to the `RegistrationMember` rows the spot stands for, scoped to registrations whose status is still open to their roster (`pending`, `waitlisted`) — never by payment. The registration verification status becomes `verified` when every member has accepted, `flagged` when any member declines, and otherwise remains `pending`.
 
-### `GET /team-invite?member=...`
+### `GET /team-invite`
 
-A frontend route, not an API endpoint. Signed out it renders generic onboarding instructions with sign-in and create-account actions; it resolves nothing and names no team, captain or address. Signed in it forwards to `/profile?tab=invitations&member=...`.
+A frontend route, not an API endpoint. Signed out it renders generic onboarding instructions with sign-in and create-account actions; it names no team, captain or address, and carries nothing identifying a particular invitation. Signed in it forwards to `/profile?tab=invitations`.
 
 ## Rulebook Endpoints
 

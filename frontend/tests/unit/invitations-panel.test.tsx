@@ -12,21 +12,15 @@ import { InvitationsPanel } from "../../components/auth/InvitationsPanel";
 const mocks = vi.hoisted(() => ({
   invitations: [] as unknown[],
   readiness: { hasQuestAccount: true, hasDiscord: true } as Record<string, unknown>,
-  reference: { state: "none", member: null } as Record<string, unknown>,
-  fetchArgs: [] as (string | null | undefined)[],
   respond: vi.fn(),
   toasts: [] as Record<string, unknown>[],
 }));
 
 vi.mock("@/lib/teams", () => ({
-  fetchMyInvitations: async (memberReference?: string | null) => {
-    mocks.fetchArgs.push(memberReference);
-    return {
-      invitations: mocks.invitations,
-      readiness: mocks.readiness,
-      reference: mocks.reference,
-    };
-  },
+  fetchMyInvitations: async () => ({
+    invitations: mocks.invitations,
+    readiness: mocks.readiness,
+  }),
   respondToInvitation: (...args: unknown[]) => mocks.respond(...args),
 }));
 
@@ -60,8 +54,6 @@ const invitation = (overrides: Record<string, unknown> = {}) => ({
 beforeEach(() => {
   mocks.invitations = [invitation()];
   mocks.readiness = { hasQuestAccount: true, hasDiscord: true, emailVerified: true };
-  mocks.reference = { state: "none", member: null };
-  mocks.fetchArgs = [];
   mocks.respond = vi.fn(async () => ({ inviteStatus: "accepted", message: "You have joined the team." }));
   mocks.toasts = [];
 });
@@ -123,72 +115,17 @@ describe("InvitationsPanel", () => {
     expect(screen.queryByRole("button", { name: "Connect Discord" })).not.toBeInTheDocument();
   });
 
-  // A captain's copied link carries a member reference. It grants nothing — the
-  // invitations below it were found by identity and would be the same without
-  // it — but the page still has to be able to explain a link that led somewhere
-  // unexpected, because being forwarded is exactly what these links are for.
-
-  it("asks the server about the reference the link carried", async () => {
-    render(<InvitationsPanel memberReference="invite-1" />);
-
-    await screen.findByText("Quest Five");
-    expect(mocks.fetchArgs).toEqual(["invite-1"]);
-  });
-
-  it("explains a link that landed in the wrong account without saying whose it is", async () => {
-    mocks.invitations = [];
-    mocks.reference = { state: "mismatch", member: null };
-    render(<InvitationsPanel memberReference="invite-9" />);
-
-    expect(
-      await screen.findByText("This invitation is not for this account"),
-    ).toBeInTheDocument();
-    // Not the team, not the captain, not the address it was sent to. Somebody
-    // holding a forwarded link must learn nothing from it.
-    expect(screen.queryByText("Quest Five")).not.toBeInTheDocument();
-    expect(screen.queryByText(/Quest Captain/)).not.toBeInTheDocument();
-  });
-
-  it("does not send somebody away when the link is stale but they have invitations", async () => {
-    // A reference goes stale whenever the row it names is replaced — a captain
-    // correcting an email, or removing and re-adding a member. The person
-    // following it can be signed in as exactly the right account.
-    mocks.reference = { state: "mismatch", member: null };
-    render(<InvitationsPanel memberReference="invite-old" />);
-
-    expect(await screen.findByText("That link is out of date")).toBeInTheDocument();
-    // Telling them to sign in as somebody else, directly above the invitation
-    // they came to accept, sends them away from the thing that was working.
-    expect(
-      screen.queryByText("This invitation is not for this account"),
-    ).not.toBeInTheDocument();
-    expect(screen.getByText("Quest Five")).toBeInTheDocument();
-  });
-
-  it("reports an unverified address as itself rather than as somebody else's link", async () => {
+  it("reports an unverified address as itself rather than as an empty list", async () => {
     mocks.invitations = [];
     mocks.readiness = { hasQuestAccount: true, hasDiscord: true, emailVerified: false };
-    mocks.reference = { state: "mismatch", member: null };
-    render(<InvitationsPanel memberReference="invite-1" />);
+    render(<InvitationsPanel />);
 
-    // An unverified address matches no invitation, so the mismatch is a
-    // symptom. Told it was somebody else's link, a player would go and ask
-    // their captain to resend something that was never the problem.
+    // An unverified address matches no invitation, so the list is empty for a
+    // reason the reader cannot otherwise guess.
     expect(await screen.findByText("Verify your email first")).toBeInTheDocument();
-    expect(
-      screen.queryByText("This invitation is not for this account"),
-    ).not.toBeInTheDocument();
   });
 
-  it("says an invitation ran out instead of leaving the page blank", async () => {
-    mocks.invitations = [];
-    mocks.reference = { state: "expired", member: "invite-1" };
-    render(<InvitationsPanel memberReference="invite-1" />);
-
-    expect(await screen.findByText("This invitation ran out")).toBeInTheDocument();
-  });
-
-  it("sends the Discord detour back to the invitation it interrupted", async () => {
+  it("sends the Discord detour back to the invitations tab", async () => {
     mocks.readiness = { hasQuestAccount: true, hasDiscord: false, emailVerified: true };
     const assign = vi.fn();
     const original = window.location;
@@ -198,15 +135,11 @@ describe("InvitationsPanel", () => {
     });
 
     try {
-      render(<InvitationsPanel memberReference="invite-1" />);
+      render(<InvitationsPanel />);
       await userEvent.click(await screen.findByRole("button", { name: "Connect Discord" }));
-
-      // Without the destination this lands on the account tab, and the
-      // invitation somebody was one click away from accepting is a tab away
-      // again — after a redirect they did not ask for.
       expect(assign).toHaveBeenCalledWith(
         `https://api.example.com/auth/discord/link?redirect=${encodeURIComponent(
-          "/profile?tab=invitations&member=invite-1",
+          "/profile?tab=invitations",
         )}`,
       );
     } finally {
