@@ -1,6 +1,6 @@
 const { recordAuditInTransaction } = require("../../lib/audit");
 const { logger } = require("../../lib/logger");
-const { requiredGameFor } = require("./registration-readiness.service");
+const { trackedGameFor } = require("./registration-readiness.service");
 
 // Snapshot a roster's competitive identities and lock the accounts behind them.
 //
@@ -18,8 +18,8 @@ const snapshotAndLockRoster = async ({
   requestId = null,
   ipAddress = null,
 }) => {
-  const requiredGame = requiredGameFor(tournamentGame);
-  if (!requiredGame) {
+  const trackedGame = trackedGameFor(tournamentGame);
+  if (!trackedGame) {
     // A title Quest has no adapter for has nothing to snapshot. That is not a
     // failure — it is the honest state for every non-VALORANT tournament.
     return { snapshotted: 0, locked: 0, skipped: "no_adapter" };
@@ -34,7 +34,7 @@ const snapshotAndLockRoster = async ({
       player: {
         select: {
           gameAccounts: {
-            where: { game: requiredGame, status: { in: ["active", "locked"] } },
+            where: { game: trackedGame, status: { in: ["active", "locked"] } },
             orderBy: { linkedAt: "desc" },
           },
         },
@@ -85,13 +85,13 @@ const snapshotAndLockRoster = async ({
       targetType: "TeamRegistration",
       targetId: registrationId,
       beforeData: null,
-      afterData: { game: requiredGame, snapshotted, locked },
+      afterData: { game: trackedGame, snapshotted, locked },
     });
   }
 
   logger.info("Registration roster competitive identities snapshotted.", {
     registrationId,
-    game: requiredGame,
+    game: trackedGame,
     snapshotted,
     locked,
   });

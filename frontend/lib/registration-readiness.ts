@@ -7,11 +7,7 @@ import type { GameAccount } from "@/lib/game-accounts";
  * two-sources-of-truth registration status bug, and the server is the only
  * authority that also blocks the submit.
  */
-export type RequirementType =
-  | "ROSTER_SIZE"
-  | "INVITES_ACCEPTED"
-  | "DISCORD_CONNECTED"
-  | "PLAYER_GAME_ACCOUNTS";
+export type RequirementType = "ROSTER_SIZE" | "INVITES_ACCEPTED" | "DISCORD_CONNECTED";
 
 export type Requirement = {
   type: RequirementType;
@@ -33,10 +29,14 @@ export type ReadinessMember = {
   hasQuestAccount: boolean;
   hasDiscord: boolean;
   requiresDiscord: boolean;
+  /**
+   * Shown, never required. A connected account is what feeds the VALORANT
+   * leaderboard and the approval-time snapshot; registration does not wait on
+   * it, so a missing one is never a blocker here.
+   */
   gameAccount: GameAccount | null;
   /** A Riot ID typed into an older registration. Shown, never trusted. */
   legacyRiotId: string | null;
-  requiresGameAccount: boolean;
   ready: boolean;
 };
 
@@ -44,7 +44,8 @@ export type RosterReadiness = {
   teamId: string;
   teamName: string;
   tournamentId: string | null;
-  requiredGame: string | null;
+  /** Which title's game accounts are worth showing — not a requirement. */
+  game: string | null;
   discordRequired: boolean;
   ready: boolean;
   requirements: Requirement[];
@@ -59,8 +60,6 @@ export const requirementLabel = (requirement: Requirement): string => {
       return "All invitations accepted";
     case "DISCORD_CONNECTED":
       return "Discord connected";
-    case "PLAYER_GAME_ACCOUNTS":
-      return "Game accounts connected";
     default:
       return "Requirement";
   }
@@ -71,13 +70,9 @@ export const memberBlockingReason = (member: ReadinessMember): string | null => 
   if (member.inviteStatus === "declined") return "Declined the invitation";
   if (member.inviteStatus === "pending") return "Invitation not accepted yet";
   if (member.requiresDiscord && !member.hasDiscord) return "Needs to connect Discord";
-  if (member.requiresGameAccount && !member.gameAccount) {
-    // Being explicit matters here: a captain looking at a filled-in Riot ID
-    // from a previous event will otherwise think this is a bug.
-    return member.legacyRiotId
-      ? "Riot ID was typed by hand and never verified — needs connecting"
-      : "Needs to connect their game account";
-  }
+  // A missing game account is deliberately not a reason. It is worth having —
+  // it is what puts a player on the leaderboard — but it never holds up a
+  // registration, so it must not appear in a list of things to chase.
   return null;
 };
 

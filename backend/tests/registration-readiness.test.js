@@ -111,7 +111,7 @@ test("a fully linked roster is ready", async () => {
   }
 });
 
-test("one unlinked player blocks the whole roster and is named", async () => {
+test("an unlinked player does not block the roster", async () => {
   const members = [
     ...Array.from({ length: 4 }, (_, index) =>
       member({ id: `ok-${index}`, memberOrder: index, player: withAccount().player }),
@@ -128,12 +128,17 @@ test("one unlinked player blocks the whole roster and is named", async () => {
       tournamentId: "tournament-1",
       user: CAPTAIN,
     });
-    assert.equal(result.ready, false);
-    const accounts = result.requirements.find((r) => r.type === "PLAYER_GAME_ACCOUNTS");
-    assert.equal(accounts.status, "FAIL");
-    // The captain has to know WHICH player to chase, not just that something
-    // is wrong.
-    assert.deepEqual(accounts.members, ["missing-1"]);
+    // Connecting Riot is each player's own act, for the leaderboard and the
+    // approval snapshot. A captain cannot do it for them, so holding the whole
+    // registration on it kept real teams out of events.
+    assert.equal(result.ready, true);
+    assert.equal(
+      result.requirements.some((r) => r.type === "PLAYER_GAME_ACCOUNTS"),
+      false,
+    );
+    const unlinked = result.members.find((entry) => entry.id === "missing-1");
+    assert.equal(unlinked.gameAccount, null);
+    assert.equal(unlinked.ready, true);
   } finally {
     restore();
   }
@@ -168,7 +173,7 @@ test("a pending invite is not a player", async () => {
   }
 });
 
-test("a coach is on the roster but is never asked for a game account", async () => {
+test("a coach is on the roster but does not fill a slot", async () => {
   const members = [
     ...Array.from({ length: 5 }, (_, index) =>
       member({ id: `ok-${index}`, memberOrder: index, player: withAccount().player }),
@@ -185,18 +190,16 @@ test("a coach is on the roster but is never asked for a game account", async () 
       tournamentId: "tournament-1",
       user: CAPTAIN,
     });
-    // A coach does not play, so requiring an account from them would block
-    // real teams; they also do not fill a roster slot.
+    // A coach does not play, so they must not be counted toward the minimum
+    // the five players already meet.
     assert.equal(result.ready, true);
-    const coach = result.members.find((entry) => entry.id === "coach-1");
-    assert.equal(coach.requiresGameAccount, false);
     assert.equal(result.requirements.find((r) => r.type === "ROSTER_SIZE").actual, 5);
   } finally {
     restore();
   }
 });
 
-test("a legacy typed Riot ID is shown but never satisfies the requirement", async () => {
+test("a typed Riot ID is reported for what it is", async () => {
   const members = [
     member({ id: "legacy-1", riotId: "Someone#0000", player: null }),
   ];
@@ -211,17 +214,18 @@ test("a legacy typed Riot ID is shown but never satisfies the requirement", asyn
       user: CAPTAIN,
     });
     const entry = result.members[0];
+    // Typed by a human and never checked against anything, so it is surfaced
+    // as text and never as a linked account.
     assert.equal(entry.legacyRiotId, "Someone#0000");
-    // It was typed by a human and never checked against anything. Treating it
-    // as a linked account is exactly the problem this work exists to fix.
-    assert.equal(entry.ready, false);
-    assert.equal(result.ready, false);
+    assert.equal(entry.gameAccount, null);
+    assert.equal(entry.ready, true);
+    assert.equal(result.ready, true);
   } finally {
     restore();
   }
 });
 
-test("a title with no adapter imposes no game-account requirement", async () => {
+test("a title with no adapter reports no tracked game", async () => {
   const members = [member({ id: "m-1", player: null })];
   const { module: service, restore } = loadService({
     team: baseTeam(members),
@@ -233,9 +237,9 @@ test("a title with no adapter imposes no game-account requirement", async () => 
       tournamentId: "tournament-1",
       user: CAPTAIN,
     });
-    // Blocking registration on a check Quest cannot perform would break every
-    // non-VALORANT tournament.
-    assert.equal(result.requiredGame, null);
+    // There is nothing to show and nothing to snapshot for a title Quest has
+    // no adapter for.
+    assert.equal(result.game, null);
     assert.equal(result.requirements.some((r) => r.type === "PLAYER_GAME_ACCOUNTS"), false);
     assert.equal(result.ready, true);
   } finally {
@@ -258,8 +262,10 @@ test("a locked account still counts as linked", async () => {
       tournamentId: "tournament-1",
       user: CAPTAIN,
     });
-    // Locked means "committed to a tournament", not "unusable".
+    // Locked means "committed to a tournament", not "unusable", so it is still
+    // the account shown for that player.
     assert.equal(result.ready, true);
+    assert.equal(result.members[0].gameAccount.status, "locked");
   } finally {
     restore();
   }

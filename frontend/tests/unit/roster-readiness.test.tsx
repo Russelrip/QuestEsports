@@ -40,7 +40,6 @@ const member = (overrides: Partial<ReadinessMember> = {}): ReadinessMember => ({
     lastSyncedAt: null,
   },
   legacyRiotId: null,
-  requiresGameAccount: true,
   ready: true,
   ...overrides,
 });
@@ -49,7 +48,7 @@ const readiness = (overrides: Partial<RosterReadiness> = {}): RosterReadiness =>
   teamId: "team-1",
   teamName: "Example Team",
   tournamentId: "tournament-1",
-  requiredGame: "valorant",
+  game: "valorant",
   discordRequired: false,
   ready: true,
   requirements: [{ type: "INVITES_ACCEPTED", status: "PASS" }],
@@ -80,13 +79,14 @@ describe("blocking reasons", () => {
     expect(memberBlockingReason(member())).toBeNull();
   });
 
-  it("explains why a filled-in Riot ID still is not good enough", () => {
-    // A captain seeing a Riot ID from a previous event will otherwise assume
-    // this is a bug in Quest rather than something they need to act on.
-    const reason = memberBlockingReason(
-      member({ gameAccount: null, legacyRiotId: "Someone#0000" }),
-    );
-    expect(reason).toMatch(/typed by hand and never verified/i);
+  it("never asks a captain to chase a missing game account", () => {
+    // Connecting Riot is the player's own business and only matters for the
+    // leaderboard. Listing it here sent captains after a requirement that does
+    // not exist, which is what this panel got wrong.
+    expect(memberBlockingReason(member({ gameAccount: null }))).toBeNull();
+    expect(
+      memberBlockingReason(member({ gameAccount: null, legacyRiotId: "Someone#0000" })),
+    ).toBeNull();
   });
 
   it("names the roster-size shortfall rather than just failing", () => {
@@ -108,7 +108,7 @@ describe("the roster check panel", () => {
         ready: false,
         requirements: [
           { type: "INVITES_ACCEPTED", status: "FAIL", members: ["m-1"] },
-          { type: "PLAYER_GAME_ACCOUNTS", status: "FAIL", members: ["m-1"] },
+          { type: "DISCORD_CONNECTED", status: "FAIL", members: ["m-1"] },
         ],
       }),
     );
@@ -120,23 +120,49 @@ describe("the roster check panel", () => {
     mocks.fetchRosterReadiness.mockResolvedValue(
       readiness({
         ready: false,
+        discordRequired: true,
         members: [
-          member({ id: "ok", name: "Ready Player" }),
+          member({ id: "ok", name: "Ready Player", requiresDiscord: true }),
           member({
             id: "bad",
             name: "Blocking Player",
-            gameAccount: null,
+            requiresDiscord: true,
+            hasDiscord: false,
             ready: false,
           }),
         ],
-        requirements: [{ type: "PLAYER_GAME_ACCOUNTS", status: "FAIL", members: ["bad"] }],
+        requirements: [{ type: "DISCORD_CONNECTED", status: "FAIL", members: ["bad"] }],
       }),
     );
     renderPanel();
 
     expect(await screen.findByText("Blocking Player")).toBeTruthy();
-    expect(screen.getByText("Needs to connect their game account")).toBeTruthy();
+    expect(screen.getByText("Needs to connect Discord")).toBeTruthy();
     expect(screen.getAllByText("Ready").length).toBe(1);
+  });
+
+  it("never crosses a member out for having no game account", async () => {
+    mocks.fetchRosterReadiness.mockResolvedValue(
+      readiness({ members: [member({ gameAccount: null })] }),
+    );
+    renderPanel();
+
+    // A cross here is what made captains think registration was blocked on
+    // something their teammates had not done.
+    await waitFor(() => {
+      expect(screen.queryByLabelText("Missing")).toBeNull();
+    });
+    expect(screen.getByText("Every roster member is ready.")).toBeTruthy();
+    expect(screen.getByText(/does not hold up this registration/i)).toBeTruthy();
+  });
+
+  it("still shows a typed Riot ID for what it is", async () => {
+    mocks.fetchRosterReadiness.mockResolvedValue(
+      readiness({ members: [member({ gameAccount: null, legacyRiotId: "Someone#0000" })] }),
+    );
+    renderPanel();
+    expect(await screen.findByText(/Someone#0000/)).toBeTruthy();
+    expect(screen.getByText("(typed)")).toBeTruthy();
   });
 
   it("shows the connected account so a captain can sanity-check it", async () => {
