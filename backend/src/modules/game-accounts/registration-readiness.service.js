@@ -2,12 +2,15 @@ const { prisma } = require("../../lib/prisma");
 const { HttpError } = require("../../lib/http-error");
 const { publicView, VALORANT } = require("./game-account.service");
 
-// Which stable game identity a tournament needs. `Tournament.game` is free text
-// and always has been, so it is normalized here rather than anywhere a caller
-// might forget to. A title Quest has no adapter for simply imposes no game
-// account requirement — it must not block registration on a check that cannot
-// be performed.
-const requiredGameFor = (game) => {
+// Which stable game identity a tournament is played on. `Tournament.game` is
+// free text and always has been, so it is normalized here rather than anywhere
+// a caller might forget to. A title Quest has no adapter for simply has no
+// connected identity to report.
+//
+// This answers "which game account is worth showing", never "which one is
+// required": a connected account feeds the VALORANT leaderboard and the
+// approval-time roster snapshot, and nothing else waits on it.
+const trackedGameFor = (game) => {
   const normalized = String(game || "").trim().toLowerCase();
   return normalized === VALORANT ? VALORANT : null;
 };
@@ -15,20 +18,18 @@ const requiredGameFor = (game) => {
 const PASS = "PASS";
 const FAIL = "FAIL";
 
-// Roles that must field a competing account. A coach is on the roster but does
-// not play, so requiring a game account from them would block real teams.
+// Roles that fill a playing slot. A coach is on the roster but does not play,
+// so they do not count toward the roster minimum.
 const COMPETING_ROLES = new Set(["CAPTAIN", "PLAYER", "SUBSTITUTE"]);
 
-const memberView = (member, requiredGame, discordRequired) => {
+const memberView = (member, discordRequired) => {
   const account = member.player?.gameAccounts?.[0] ?? null;
-  const competing = COMPETING_ROLES.has(member.role);
   const inviteAccepted = member.inviteStatus === "accepted";
-  const needsAccount = competing && Boolean(requiredGame);
   // Discord is a connected identity on `OAuthAccount`, never the mutable
   // `User.discordTag`, which is display text anyone can change.
   const hasDiscord = (member.user?.oauthAccounts?.length ?? 0) > 0;
-  // A coach still needs reaching during an event, so unlike a game account
-  // this applies to every roster member, not just competing ones.
+  // Applies to every roster member, coach included: the point is being
+  // reachable during the event.
   const needsDiscord = Boolean(discordRequired);
 
   return {
@@ -42,16 +43,15 @@ const memberView = (member, requiredGame, discordRequired) => {
     // reachable, whether or not this event requires it.
     hasDiscord,
     requiresDiscord: needsDiscord,
+    // Reported, never required. A connected account is what the VALORANT
+    // leaderboard and the approval-time snapshot use; a player without one can
+    // still be registered, and a captain who cannot make their teammates link
+    // Riot must not be stuck at the door over it.
     gameAccount: account ? publicView(account) : null,
-    // A legacy roster row may still carry a typed Riot ID. It is shown so a
-    // captain can see what the old registration used, but it never satisfies
-    // the requirement: it was never checked against anything.
+    // A roster row may carry a Riot ID somebody typed. Shown for what it is —
+    // a hand-entered string that was never checked against anything.
     legacyRiotId: member.riotId || null,
-    requiresGameAccount: needsAccount,
-    ready:
-      inviteAccepted &&
-      (!needsAccount || Boolean(account)) &&
-      (!needsDiscord || hasDiscord),
+    ready: inviteAccepted && (!needsDiscord || hasDiscord),
   };
 };
 
@@ -127,12 +127,13 @@ const getRegistrationReadiness = async ({ teamId, tournamentId, user }) => {
     }
   }
 
-  const requiredGame = requiredGameFor(tournament?.game ?? team.game);
+  // Which title's accounts to surface, not a gate. Named plainly so nobody reads
+  // it back as "a game account is required".
+  const game = trackedGameFor(tournament?.game ?? team.game);
   // Off unless this specific tournament asks for it, so existing events are
   // unaffected and Discord can be trialled on one before committing.
   const discordRequired = tournament?.discordRequired === true;
-  const members = team.members.map((member) =>
-    memberView(member, requiredGame, discordRequired));
+  const members = team.members.map((member) => memberView(member, discordRequired));
   const competing = members.filter((member) => COMPETING_ROLES.has(member.role));
 
   const requirements = [];
@@ -169,21 +170,17 @@ const getRegistrationReadiness = async ({ teamId, tournamentId, user }) => {
     });
   }
 
-  if (requiredGame) {
-    const missing = competing.filter((member) => member.requiresGameAccount && !member.gameAccount);
-    requirements.push({
-      type: "PLAYER_GAME_ACCOUNTS",
-      status: missing.length === 0 ? PASS : FAIL,
-      game: requiredGame,
-      members: missing.map((member) => member.id),
-    });
-  }
+  // No game-account requirement, deliberately. Connecting Riot is worth doing —
+  // it is what puts a player on the VALORANT leaderboard and what the approval
+  // snapshot records — but it is a per-player act a captain cannot perform on
+  // anyone's behalf, so gating registration on it stopped real teams from
+  // entering. The accounts are still reported above for whoever has one.
 
   return {
     teamId: team.id,
     teamName: team.name,
     tournamentId: tournament?.id ?? null,
-    requiredGame,
+    game,
     discordRequired,
     ready: requirements.every((requirement) => requirement.status === PASS),
     requirements,
@@ -193,6 +190,6 @@ const getRegistrationReadiness = async ({ teamId, tournamentId, user }) => {
 
 module.exports = {
   getRegistrationReadiness,
-  requiredGameFor,
+  trackedGameFor,
   COMPETING_ROLES,
 };

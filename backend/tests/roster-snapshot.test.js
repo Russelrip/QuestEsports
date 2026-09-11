@@ -53,7 +53,7 @@ const loadService = ({ members = [] } = {}) => {
   };
   const loaded = loadModuleWithMocks(servicePath, {
     [readinessPath]: {
-      requiredGameFor: (game) =>
+      trackedGameFor: (game) =>
         String(game || "").trim().toLowerCase() === "valorant" ? "valorant" : null,
     },
     [auditPath]: {

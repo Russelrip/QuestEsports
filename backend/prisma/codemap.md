@@ -87,10 +87,11 @@ existing contact, match-room, notification, or OAuth tables.
   tournament behaves exactly as it does today. Roster readiness reports each
   member's Discord status regardless of the flag — a captain should always be
   able to see who is reachable — and the flag only decides whether a missing
-  connection BLOCKS registration. Unlike a game account this covers every roster
-  member including a coach, because the point is being contactable during the
-  event. Discord identity is read from `OAuthAccount`, never from the mutable
-  `User.discordTag`.
+  connection BLOCKS registration. It covers every roster member including a
+  coach, because the point is being contactable during the event. It is also the
+  only identity that can block anything: a connected game account is reported
+  beside it but never required. Discord identity is read from `OAuthAccount`,
+  never from the mutable `User.discordTag`.
 - `20260907120000_add_unlimited_capacity_and_auto_approval` makes
   `tournaments.max_teams` nullable and adds
   `tournaments.auto_approve_registrations`, defaulting to FALSE. NULL capacity

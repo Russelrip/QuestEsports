@@ -121,7 +121,8 @@ export default function RosterReadinessPanel({
               <th scope="col" className="py-2 pr-3 font-medium">Quest</th>
               <th scope="col" className="py-2 pr-3 font-medium">Discord</th>
               <th scope="col" className="py-2 pr-3 font-medium">
-                {readiness.requiredGame ? readiness.requiredGame.toUpperCase() : "Game"}
+                {readiness.game ? readiness.game.toUpperCase() : "Game"}
+                <span className="ml-2 normal-case tracking-normal text-slate-600">optional</span>
               </th>
               <th scope="col" className="py-2 font-medium">Status</th>
             </tr>
@@ -147,17 +148,19 @@ export default function RosterReadinessPanel({
                       }
                     />
                   </td>
+                  {/* Never a cross. A game account earns a player their place on
+                      the leaderboard; it has never been what lets a team enter,
+                      and a red mark here had captains chasing teammates over a
+                      requirement that does not exist. */}
                   <td className="py-3 pr-3">
-                    <Mark
-                      state={
-                        member.requiresGameAccount
-                          ? member.gameAccount ? "yes" : "no"
-                          : "not-required"
-                      }
-                    />
+                    <Mark state={member.gameAccount ? "yes" : "not-required"} />
                     {member.gameAccount ? (
                       <span className="ml-2 text-xs text-slate-400">
                         {member.gameAccount.username}#{member.gameAccount.tagline}
+                      </span>
+                    ) : member.legacyRiotId ? (
+                      <span className="ml-2 text-xs text-slate-500">
+                        {member.legacyRiotId} <span className="text-slate-600">(typed)</span>
                       </span>
                     ) : null}
                   </td>
@@ -187,11 +190,20 @@ export default function RosterReadinessPanel({
           leaving a captain to chase people without knowing what to ask for. */}
       {readiness.ready ? null : (
         <p className="text-sm leading-6 text-slate-400">
-          Roster members connect their accounts on their own Quest profile, under
-          Linked accounts and Game accounts. Ask anyone marked above to do that,
-          then re-check.
+          Roster members connect Discord on their own Quest profile, under Linked
+          accounts. Ask anyone marked above to do that, then re-check.
         </p>
       )}
+
+      {/* Says plainly what the game column is for, so a blank one does not read
+          as something left undone. */}
+      {readiness.game ? (
+        <p className="text-sm leading-6 text-slate-500">
+          Connecting a {readiness.game.toUpperCase()} account is optional and up to
+          each player — it is what puts them on the leaderboard and records the
+          account they played under. It does not hold up this registration.
+        </p>
+      ) : null}
     </div>
   );
 }
