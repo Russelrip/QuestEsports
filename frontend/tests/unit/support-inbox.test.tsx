@@ -56,12 +56,23 @@ describe("support inbox rendered states", () => {
   });
 
   it("renders private attachments and reports an unavailable image", () => {
-    const withAttachment = conversation();
-    withAttachment.messages[0].attachments = [{ id: "a-1", position: 0, contentType: "image/png", byteSize: 1024, contentUrl: "/api/v1/support/attachments/a-1/content" }];
-    render(<SupportThread conversation={withAttachment} currentUserId="user-1" onChanged={vi.fn()} />);
-    expect(screen.getByRole("link", { name: "Open attachment 1" })).toHaveAttribute("href", "/api/v1/support/attachments/a-1/content");
-    fireEvent.error(screen.getByAltText("Attachment 1"));
-    expect(screen.getByText("Attachment 1 unavailable")).toBeInTheDocument();
+    // Pin the origin rather than inherit it: CI runs with a real
+    // NEXT_PUBLIC_API_URL, so an unpinned href here passes locally and fails
+    // there. Unset is the same-origin case; the next test covers a configured
+    // origin.
+    const originalApiUrl = process.env.NEXT_PUBLIC_API_URL;
+    delete process.env.NEXT_PUBLIC_API_URL;
+    try {
+      const withAttachment = conversation();
+      withAttachment.messages[0].attachments = [{ id: "a-1", position: 0, contentType: "image/png", byteSize: 1024, contentUrl: "/api/v1/support/attachments/a-1/content" }];
+      render(<SupportThread conversation={withAttachment} currentUserId="user-1" onChanged={vi.fn()} />);
+      expect(screen.getByRole("link", { name: "Open attachment 1" })).toHaveAttribute("href", "/api/v1/support/attachments/a-1/content");
+      fireEvent.error(screen.getByAltText("Attachment 1"));
+      expect(screen.getByText("Attachment 1 unavailable")).toBeInTheDocument();
+    } finally {
+      if (originalApiUrl === undefined) delete process.env.NEXT_PUBLIC_API_URL;
+      else process.env.NEXT_PUBLIC_API_URL = originalApiUrl;
+    }
   });
 
   it("resolves relative private attachment URLs against the configured API origin", () => {
