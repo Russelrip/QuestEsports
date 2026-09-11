@@ -90,6 +90,14 @@ const server = createServer((request, response) => {
     }));
     return;
   }
+  if (request.method === "GET" && request.url === "/api/v1/support/unread") {
+    // Every signed-in page mounts the support provider, so this is a real app
+    // request on specs that have nothing to do with support. It belongs here
+    // rather than in the teardown guard's tolerated list, which is only for
+    // endpoints a spec routes itself.
+    response.end(JSON.stringify({ success: true, data: { unreadConversations: 0 } }));
+    return;
+  }
   if (request.method === "GET" && request.url === "/api/posters/poster-duplicate/image") {
     response.setHeader("Content-Type", "image/png");
     response.end(mobileTestAvatar);

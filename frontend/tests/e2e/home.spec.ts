@@ -117,7 +117,7 @@ test("notifications stay grouped with the signed-in account on desktop and mobil
     await expect(notificationsButton).toBeVisible();
     await notificationsButton.click();
 
-    const notificationsPanel = page.getByText("Match updates stay in the app").locator("../../..");
+    const notificationsPanel = page.getByText("Your latest updates").locator("../../..");
     await expect(notificationsPanel).toBeVisible();
     const accountBox = await accountButton.boundingBox();
     const panelBox = await notificationsPanel.boundingBox();
@@ -140,7 +140,7 @@ test("notifications stay grouped with the signed-in account on desktop and mobil
     expect(notificationsBox).not.toBeNull();
     expect(notificationsBox?.y || 0).toBeGreaterThan((identityBox?.y || 0) + (identityBox?.height || 0));
     await notificationsButton.click();
-    await expect(page.getByText("Match updates stay in the app")).toBeVisible();
+    await expect(page.getByText("Your latest updates")).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   }
 });
