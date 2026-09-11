@@ -29,6 +29,9 @@ const EXEMPT_PREFIXES = [
   // Linked accounts are managed here, so holding it would strand anyone who
   // wants to review their connections.
   "/profile",
+  // Account-linking problems must not prevent a player from reaching support.
+  "/support",
+  "/contact",
   // Staff reach each other through the server's own role structure, and an
   // operator locked out of the dashboard cannot investigate the lockout.
   "/admin",

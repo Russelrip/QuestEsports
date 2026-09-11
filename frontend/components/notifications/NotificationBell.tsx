@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { AuthUser } from "@/lib/auth";
 import { apiFetchJson } from "@/lib/auth";
 import { subscribeToRealtimeUpdates } from "@/lib/realtime";
+import { notifySupportRead } from "@/components/support/SupportProvider";
 
 type NotificationData = {
   items: Array<{ id: string; type: string; title: string; body: string; actionUrl: string | null; readAt: string | null; createdAt: string }>;
@@ -131,7 +132,11 @@ export default function NotificationBell({
       if (document.visibilityState === "visible") void refresh();
     };
     document.addEventListener("visibilitychange", onVisibilityChange);
-    return () => document.removeEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("quest:support-read", onVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("quest:support-read", onVisibilityChange);
+    };
   }, [refresh]);
   useEffect(() => {
     const close = (event: MouseEvent) => { if (!root.current?.contains(event.target as Node)) updateOpen(false); };
@@ -139,15 +144,18 @@ export default function NotificationBell({
     return () => document.removeEventListener("mousedown", close);
   }, [updateOpen]);
 
-  const mutate = useCallback(async (path: string, apply?: (current: NotificationData) => NotificationData) => {
+  const mutate = useCallback(async (path: string, apply?: (current: NotificationData) => NotificationData): Promise<boolean> => {
     const requestGeneration = generation.current;
     const controller = createController(requestGeneration);
     try {
-      await apiFetchJson(path, { method: "PATCH", json: {}, signal: controller.signal });
-      if (!isCurrent(requestGeneration, controller.signal)) return;
+      const result = await apiFetchJson(path, { method: "PATCH", json: {}, signal: controller.signal });
+      if (!result.response.ok) throw new Error("Unable to update notifications.");
+      if (!isCurrent(requestGeneration, controller.signal)) return false;
       if (apply) setData(apply); else await refresh(requestGeneration);
+      return true;
     } catch (caught) {
       if (isCurrent(requestGeneration, controller.signal)) setError(caught instanceof Error ? caught.message : "Unable to update notifications.");
+      return false;
     } finally {
       releaseController(requestGeneration, controller);
     }
@@ -159,7 +167,10 @@ export default function NotificationBell({
     items: current.items.map((item) => item.id === id ? { ...item, readAt: new Date().toISOString() } : item),
   })), [mutate]);
 
-  const markAllRead = useCallback(() => mutate("/api/v1/notifications/read-all"), [mutate]);
+  const markAllRead = useCallback(async () => {
+    const completed = await mutate("/api/v1/notifications/read-all");
+    if (completed) notifySupportRead();
+  }, [mutate]);
 
   const enablePush = useCallback(async () => {
     if (!data.push.publicKey || !("serviceWorker" in navigator) || !("PushManager" in window)) return;
@@ -191,8 +202,21 @@ export default function NotificationBell({
         {data.unreadCount ? <span className={compact ? "rounded-full bg-cyan-300 px-2 py-0.5 text-xs font-bold text-slate-950" : "absolute -right-1 -top-1 min-w-5 rounded-full bg-cyan-300 px-1 text-center text-[10px] font-bold leading-5 text-slate-950"}>{Math.min(data.unreadCount, 99)}</span> : null}
       </button>
       {open ? <div className={compact ? "mt-2 max-h-[28rem] overflow-y-auto rounded-2xl border border-white/10 bg-[#0c0c14] p-3" : "absolute right-0 top-[calc(100%+.75rem)] z-50 max-h-[32rem] w-[min(24rem,calc(100vw-2rem))] overflow-y-auto border border-white/10 bg-[rgba(12,12,20,.99)] p-3 shadow-2xl"}>
-        <div className="flex items-center justify-between border-b border-white/8 px-2 pb-3"><div><p className="font-semibold text-white">Notifications</p><p className="text-xs text-slate-500">Match updates stay in the app</p></div>{data.unreadCount ? <button type="button" className="text-xs text-cyan-200" onClick={() => void markAllRead()}>Mark all read</button> : null}</div>
-        <div className="mt-2 grid gap-1">{data.items.length ? data.items.map((item) => <Link key={item.id} href={item.actionUrl || "/profile"} onClick={() => { updateOpen(false); void markRead(item.id); }} className={`rounded-xl px-3 py-3 transition hover:bg-white/8 ${item.readAt ? "opacity-65" : "bg-cyan-400/[.07]"}`}><div className="flex items-start justify-between gap-3"><p className="text-sm font-semibold text-white">{item.title}</p>{!item.readAt ? <span className="mt-1 size-2 shrink-0 rounded-full bg-cyan-300" /> : null}</div><p className="mt-1 text-xs leading-5 text-slate-400">{item.body}</p></Link>) : <p className="px-3 py-10 text-center text-sm text-slate-500">No match notifications yet.</p>}</div>
+        <div className="flex items-center justify-between border-b border-white/8 px-2 pb-3"><div><p className="font-semibold text-white">Notifications</p><p className="text-xs text-slate-500">Your latest updates</p></div>{data.unreadCount ? <button type="button" className="text-xs text-cyan-200" onClick={() => void markAllRead()}>Mark all read</button> : null}</div>
+        <div className="mt-2 grid gap-3">{data.items.length ? [
+          { label: "Support", items: data.items.filter((item) => item.type === "support_message") },
+          { label: "Matches", items: data.items.filter((item) => item.type !== "support_message" && item.type.includes("match")) },
+          { label: "Other updates", items: data.items.filter((item) => item.type !== "support_message" && !item.type.includes("match")) },
+        ].filter((group) => group.items.length).map((group) => <section key={group.label} aria-label={`${group.label} notifications`}>
+          <h3 className="px-3 py-2 text-xs font-semibold uppercase tracking-wider text-slate-300">{group.label}</h3>
+          {group.items.map((item) => <Link key={item.id} href={item.actionUrl || "/profile"} onClick={() => { updateOpen(false); void markRead(item.id); }} className={`block rounded-xl border-l-2 px-3 py-3 transition-colors hover:bg-white/8 ${item.type === "support_message" ? "border-purple-300/60" : "border-transparent"} ${item.readAt ? "" : "bg-cyan-400/[.07]"}`}>
+            <div className="flex items-start justify-between gap-3"><p className="text-sm font-semibold text-white">{item.title}</p>{!item.readAt ? <span className="mt-1 size-2 shrink-0 rounded-full bg-cyan-300"><span className="sr-only">Unread</span></span> : null}</div>
+            <p className="mt-1 text-sm leading-5 text-slate-300">{item.type === "support_message" ? "A message is waiting in your private conversation." : item.body}</p>
+            <time dateTime={item.createdAt} className="mt-2 block text-xs text-slate-400">{new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(item.createdAt))}</time>
+            {item.type === "support_message" && <span className="mt-2 block text-sm font-semibold text-cyan-200">View conversation →</span>}
+          </Link>)}
+        </section>) : <p className="px-3 py-10 text-center text-sm text-slate-300">No notifications yet.</p>}</div>
+        <Link href="/support" onClick={() => updateOpen(false)} className="mt-3 flex min-h-11 items-center justify-center border-t border-white/10 text-sm font-semibold text-cyan-200">View support inbox</Link>
         {data.push.enabled && typeof Notification !== "undefined" && Notification.permission !== "granted" ? <button type="button" disabled={pushBusy} onClick={() => void enablePush()} className="mt-3 w-full rounded-xl border border-cyan-300/20 bg-cyan-400/10 px-3 py-2 text-xs font-semibold text-cyan-100">{pushBusy ? "Enabling…" : "Enable browser alerts"}</button> : null}
       </div> : null}
     </div>

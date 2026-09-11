@@ -7,7 +7,10 @@
  * still fails the run, so a genuinely unmocked call cannot slip through: the
  * guard only relaxes for paths a spec has explicitly taken ownership of.
  */
-const pageRoutedEndpoints = [/^\/api\/v1\/veto-rooms\//];
+const pageRoutedEndpoints = [
+  /^\/api\/v1\/veto-rooms\//,
+  /^\/api\/v1\/support\/conversations(?:\/|$)/,
+];
 
 export default async function globalTeardown() {
   if (process.env.PLAYWRIGHT_SKIP_WEBSERVER) return;

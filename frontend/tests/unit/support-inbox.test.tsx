@@ -5,10 +5,12 @@ import SupportComposer from "../../components/support/SupportComposer";
 import SupportConversationList from "../../components/support/SupportConversationList";
 import SupportInbox from "../../components/support/SupportInbox";
 import SupportThread from "../../components/support/SupportThread";
+import SupportAttachmentPicker from "../../components/support/SupportAttachmentPicker";
+import SupportAttachments from "../../components/support/SupportAttachments";
 import NotificationBell from "../../components/notifications/NotificationBell";
 import type { SupportConversation, SupportConversationSummary } from "../../lib/support";
 
-const mocks = vi.hoisted(() => ({ apiFetchJson: vi.fn(), listSupportConversations: vi.fn(), getSupportConversation: vi.fn(), markSupportConversationRead: vi.fn(), createSupportConversation: vi.fn(), sendSupportMessage: vi.fn(), reopenSupportConversation: vi.fn(), resolveSupportConversation: vi.fn(), subscribeToRealtimeUpdates: vi.fn(), showToast: vi.fn(), auth: { user: { id: "user-1" }, isLoading: false } }));
+const mocks = vi.hoisted(() => ({ push: vi.fn(), apiFetchJson: vi.fn(), listSupportConversations: vi.fn(), getSupportConversation: vi.fn(), markSupportConversationRead: vi.fn(), createSupportConversation: vi.fn(), sendSupportMessage: vi.fn(), reopenSupportConversation: vi.fn(), resolveSupportConversation: vi.fn(), subscribeToRealtimeUpdates: vi.fn(), showToast: vi.fn(), auth: { user: { id: "user-1" }, isLoading: false } }));
 const { apiFetchJson, listSupportConversations, getSupportConversation, markSupportConversationRead, createSupportConversation, sendSupportMessage, reopenSupportConversation, subscribeToRealtimeUpdates } = mocks;
 
 vi.mock("@/lib/auth", () => ({ apiFetchJson: mocks.apiFetchJson, apiFetch: vi.fn() }));
@@ -16,6 +18,7 @@ vi.mock("@/lib/support", () => ({ listSupportConversations: mocks.listSupportCon
 vi.mock("@/components/auth/AuthProvider", () => ({ useAuth: () => mocks.auth }));
 vi.mock("@/hooks/useToastStore", () => ({ useToastStore: (selector: (state: { showToast: typeof mocks.showToast }) => unknown) => selector({ showToast: mocks.showToast }) }));
 vi.mock("@/lib/realtime", () => ({ subscribeToRealtimeUpdates: mocks.subscribeToRealtimeUpdates }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: mocks.push }) }));
 vi.mock("next/link", () => ({ default: ({ children, ...props }: React.PropsWithChildren<{ href: string }>) => <a {...props}>{children}</a> }));
 
 const message = (id: string, senderUserId = "user-1", body = "I need help", conversationId = "conversation-1") => ({ id, conversationId, senderUserId, body, createdAt: "2026-08-19T12:00:00.000Z", sender: { id: senderUserId, username: "player", firstName: senderUserId === "user-1" ? "Player" : "Staff", lastName: null, avatarUrl: null } });
@@ -25,15 +28,76 @@ beforeEach(() => { vi.clearAllMocks(); mocks.auth.user = { id: "user-1" }; subsc
 afterEach(() => cleanup());
 
 describe("support inbox rendered states", () => {
-  it("shows a helpful empty state", async () => { render(<SupportInbox />); expect(await screen.findByText(/No conversations yet/)).toBeInTheDocument(); expect(screen.getByText("Start a support conversation")).toBeInTheDocument(); });
+  it("validates screenshot type, size, and count before selecting files", async () => {
+    const onChange = vi.fn();
+    const view = render(<SupportAttachmentPicker files={[]} onChange={onChange} />);
+    const input = screen.getByLabelText("Choose screenshots");
+    const valid = new File(["image"], "one.png", { type: "image/png" });
+    const invalid = new File(["text"], "notes.txt", { type: "text/plain" });
+    fireEvent.change(input, { target: { files: [valid, invalid] } });
+    expect(onChange).toHaveBeenLastCalledWith([valid]);
+    expect(screen.getByRole("alert")).toHaveTextContent("not a supported image");
+    view.rerender(<SupportAttachmentPicker files={[valid, valid, valid]} onChange={onChange} />);
+    fireEvent.change(screen.getByLabelText("Choose screenshots"), { target: { files: [valid] } });
+    expect(screen.getByRole("alert")).toHaveTextContent("up to 3 screenshots");
+  });
 
-  it("renders unread counts and status labels", () => { render(<SupportConversationList selectedId="one" items={[{ ...conversation(), lastMessage: message("message-2", "staff-1", "We are checking this"), preview: "We are checking this", unreadCount: 2, status: "PENDING_USER" }]} />); expect(screen.getByText("Your reply")).toBeInTheDocument(); expect(screen.getByText("2")).toBeInTheDocument(); expect(screen.getByText("We are checking this")).toBeInTheDocument(); });
+  it("sends selected screenshots with a new conversation", async () => {
+    const user = userEvent.setup();
+    const file = new File(["image"], "error.png", { type: "image/png" });
+    createSupportConversation.mockRejectedValue(new Error("Network unavailable"));
+    render(<SupportInbox composing />);
+    await user.type(screen.getByLabelText(/Subject/), "Login issue");
+    await user.type(screen.getByLabelText(/Message/), "Please help me sign in.");
+    await user.upload(screen.getByLabelText("Choose screenshots"), file);
+    await user.click(screen.getByRole("button", { name: "Send message" }));
+    await waitFor(() => expect(createSupportConversation).toHaveBeenCalledWith("Login issue", "Please help me sign in.", [file]));
+    expect(screen.getByAltText(/Screenshot 1/)).toBeInTheDocument();
+  });
+
+  it("renders private attachments and reports an unavailable image", () => {
+    // Pin the origin rather than inherit it: CI runs with a real
+    // NEXT_PUBLIC_API_URL, so an unpinned href here passes locally and fails
+    // there. Unset is the same-origin case; the next test covers a configured
+    // origin.
+    const originalApiUrl = process.env.NEXT_PUBLIC_API_URL;
+    delete process.env.NEXT_PUBLIC_API_URL;
+    try {
+      const withAttachment = conversation();
+      withAttachment.messages[0].attachments = [{ id: "a-1", position: 0, contentType: "image/png", byteSize: 1024, contentUrl: "/api/v1/support/attachments/a-1/content" }];
+      render(<SupportThread conversation={withAttachment} currentUserId="user-1" onChanged={vi.fn()} />);
+      expect(screen.getByRole("link", { name: "Open attachment 1" })).toHaveAttribute("href", "/api/v1/support/attachments/a-1/content");
+      fireEvent.error(screen.getByAltText("Attachment 1"));
+      expect(screen.getByText("Attachment 1 unavailable")).toBeInTheDocument();
+    } finally {
+      if (originalApiUrl === undefined) delete process.env.NEXT_PUBLIC_API_URL;
+      else process.env.NEXT_PUBLIC_API_URL = originalApiUrl;
+    }
+  });
+
+  it("resolves relative private attachment URLs against the configured API origin", () => {
+    const originalApiUrl = process.env.NEXT_PUBLIC_API_URL;
+    process.env.NEXT_PUBLIC_API_URL = "https://api.example.com";
+    try {
+      render(<SupportAttachments attachments={[{ id: "a-1", position: 0, contentType: "image/png", byteSize: 1024, contentUrl: "/api/v1/support/attachments/a-1/content" }]} />);
+      const link = screen.getByRole("link", { name: "Open attachment 1" });
+      expect(link).toHaveAttribute("href", "https://api.example.com/api/v1/support/attachments/a-1/content");
+      expect(screen.getByAltText("Attachment 1")).toHaveAttribute("src", "https://api.example.com/api/v1/support/attachments/a-1/content");
+    } finally {
+      if (originalApiUrl === undefined) delete process.env.NEXT_PUBLIC_API_URL;
+      else process.env.NEXT_PUBLIC_API_URL = originalApiUrl;
+    }
+  });
+
+  it("shows a helpful empty state", async () => { render(<SupportInbox />); expect(await screen.findByText(/No conversations yet/)).toBeInTheDocument(); expect(screen.getByRole("link", { name: /New conversation/ })).toHaveAttribute("href", "/support/new"); });
+
+  it("renders unread counts and status labels", () => { render(<SupportConversationList selectedId="one" items={[{ ...conversation(), lastMessage: message("message-2", "staff-1", "We are checking this"), preview: "We are checking this", unreadCount: 2, status: "PENDING_USER" }]} />); expect(screen.getByText("Your reply needed")).toBeInTheDocument(); expect(screen.getByText("New reply")).toBeInTheDocument(); expect(screen.getByText("We are checking this")).toBeInTheDocument(); });
 
   it("associates empty-composer errors with the subject input", async () => { const user = userEvent.setup(); render(<SupportComposer onSubmit={vi.fn()} />); await user.click(screen.getByRole("button", { name: "Send message" })); expect(await screen.findByText("Subject is required.")).toBeInTheDocument(); expect(screen.getByLabelText(/Subject/)).toHaveAttribute("aria-invalid", "true"); expect(screen.getByLabelText(/Subject/)).toHaveAttribute("aria-describedby", "supportSubject-error"); });
 
   it("announces body validation and associates it with the message field", async () => { const user = userEvent.setup(); render(<SupportComposer onSubmit={vi.fn()} />); await user.type(screen.getByLabelText(/Subject/), "Account help"); await user.click(screen.getByRole("button", { name: "Send message" })); expect(await screen.findByText("Message is required.")).toBeInTheDocument(); expect(screen.getByLabelText(/Message/)).toHaveAttribute("aria-invalid", "true"); expect(screen.getByLabelText(/Message/)).toHaveAttribute("aria-describedby", "supportBody-error"); });
 
-  it("shows a retryable create failure without losing the message", async () => { const user = userEvent.setup(); createSupportConversation.mockRejectedValue(new Error("Network unavailable")); render(<SupportInbox />); await screen.findByText("Start a support conversation"); const subject = screen.getByLabelText(/Subject/); const body = screen.getByLabelText(/Message/); await user.type(subject, "Login issue"); await user.type(body, "Please help me sign in."); await user.click(screen.getByRole("button", { name: "Send message" })); expect(await screen.findByRole("alert")).toHaveTextContent("Network unavailable"); expect(subject).toHaveValue("Login issue"); expect(body).toHaveValue("Please help me sign in."); await waitFor(() => expect(screen.getByRole("button", { name: "Send message" })).not.toBeDisabled()); });
+  it("shows a retryable create failure without losing the message", async () => { const user = userEvent.setup(); createSupportConversation.mockRejectedValue(new Error("Network unavailable")); render(<SupportInbox composing />); await screen.findByRole("heading", { name: "New conversation" }); const subject = screen.getByLabelText(/Subject/); const body = screen.getByLabelText(/Message/); await user.type(subject, "Login issue"); await user.type(body, "Please help me sign in."); await user.click(screen.getByRole("button", { name: "Send message" })); expect(await screen.findByRole("alert")).toHaveTextContent("Network unavailable"); expect(subject).toHaveValue("Login issue"); expect(body).toHaveValue("Please help me sign in."); await waitFor(() => expect(screen.getByRole("button", { name: "Send message" })).not.toBeDisabled()); });
 
   it("ignores a deferred create completion after the authenticated user changes", async () => {
     const user = userEvent.setup();
@@ -42,15 +106,15 @@ describe("support inbox rendered states", () => {
     const pushState = vi.spyOn(window.history, "pushState");
     createSupportConversation.mockReturnValue(pendingCreate);
 
-    const view = render(<SupportInbox />);
-    await screen.findByText("Start a support conversation");
+    const view = render(<SupportInbox composing />);
+    await screen.findByRole("heading", { name: "New conversation" });
     await user.type(screen.getByLabelText(/Subject/), "Login issue");
     await user.type(screen.getByLabelText(/Message/), "Please help me sign in.");
     await user.click(screen.getByRole("button", { name: "Send message" }));
     await waitFor(() => expect(createSupportConversation).toHaveBeenCalledWith("Login issue", "Please help me sign in."));
 
     mocks.auth.user = { id: "user-2" };
-    view.rerender(<SupportInbox />);
+    view.rerender(<SupportInbox composing />);
     await waitFor(() => expect(listSupportConversations).toHaveBeenCalledTimes(2));
 
     resolveCreate(conversation("OPEN", "stale-conversation", "Stale conversation"));
@@ -63,15 +127,37 @@ describe("support inbox rendered states", () => {
     mocks.auth.user = { id: "user-1" };
   });
 
-  it("reopens a resolved thread and resets the reply input after success", async () => { const user = userEvent.setup(); const resolved = conversation("RESOLVED"); reopenSupportConversation.mockResolvedValue(conversation("OPEN")); sendSupportMessage.mockResolvedValue({ message: message("message-2"), status: "PENDING_STAFF" }); render(<SupportThread conversation={resolved} currentUserId="user-1" onChanged={vi.fn()} />); await user.click(screen.getByRole("button", { name: "Reopen" })); expect(await screen.findByText("Open")).toBeInTheDocument(); await user.type(screen.getByLabelText(/Message/), "Following up"); await user.click(screen.getAllByRole("button", { name: "Send message" }).at(-1)!); await waitFor(() => expect(screen.getByLabelText(/Message/)).toHaveValue("")); });
+  it("reopens a resolved thread and resets the reply input after success", async () => { const user = userEvent.setup(); const resolved = conversation("RESOLVED"); reopenSupportConversation.mockResolvedValue(conversation("OPEN")); sendSupportMessage.mockResolvedValue({ message: message("message-2"), status: "PENDING_STAFF" }); render(<SupportThread conversation={resolved} currentUserId="user-1" onChanged={vi.fn()} />); await user.click(screen.getByRole("button", { name: "Reopen conversation" })); expect(await screen.findByText("Open")).toBeInTheDocument(); await user.type(screen.getByLabelText(/Reply/), "Following up"); await user.click(screen.getAllByRole("button", { name: "Send reply" }).at(-1)!); await waitFor(() => expect(screen.getByLabelText(/Reply/)).toHaveValue("")); });
 
-  it("shows a pending send state and disables the reply textarea", async () => { const user = userEvent.setup(); let resolveSend!: (value: { message: ReturnType<typeof message>; status: "PENDING_STAFF" }) => void; sendSupportMessage.mockReturnValue(new Promise((resolve) => { resolveSend = resolve; })); render(<SupportThread conversation={conversation()} currentUserId="user-1" onChanged={vi.fn()} />); const body = screen.getByLabelText(/Message/); await user.type(body, "Still need help"); await user.click(screen.getByRole("button", { name: "Send message" })); expect(screen.getByRole("button", { name: "Sending…" })).toBeDisabled(); expect(body).toBeDisabled(); resolveSend({ message: message("message-2"), status: "PENDING_STAFF" }); await waitFor(() => expect(screen.getByRole("button", { name: "Send message" })).toBeEnabled()); });
+  it("shows a pending send state and disables the reply textarea", async () => { const user = userEvent.setup(); let resolveSend!: (value: { message: ReturnType<typeof message>; status: "PENDING_STAFF" }) => void; sendSupportMessage.mockReturnValue(new Promise((resolve) => { resolveSend = resolve; })); render(<SupportThread conversation={conversation()} currentUserId="user-1" onChanged={vi.fn()} />); const body = screen.getByLabelText(/Reply/); await user.type(body, "Still need help"); await user.click(screen.getByRole("button", { name: "Send reply" })); expect(screen.getByRole("button", { name: "Sending…" })).toBeDisabled(); expect(body).toBeDisabled(); resolveSend({ message: message("message-2"), status: "PENDING_STAFF" }); await waitFor(() => expect(screen.getByRole("button", { name: "Send reply" })).toBeEnabled()); });
 
-  it("shows a failed reply and retries the actual send", async () => { const user = userEvent.setup(); sendSupportMessage.mockRejectedValueOnce(new Error("Reply failed")).mockResolvedValueOnce({ message: message("message-2"), status: "PENDING_STAFF" }); render(<SupportThread conversation={conversation()} currentUserId="user-1" onChanged={vi.fn()} />); const body = screen.getByLabelText(/Message/); await user.type(body, "Please retry this"); await user.click(screen.getByRole("button", { name: "Send message" })); expect(await screen.findByRole("alert")).toHaveTextContent("Reply failed"); await waitFor(() => expect(screen.getByRole("button", { name: "Send message" })).toBeEnabled()); await user.click(screen.getByRole("button", { name: "Send message" })); await waitFor(() => expect(body).toHaveValue("")); expect(sendSupportMessage).toHaveBeenCalledTimes(2); });
+  it("shows a failed reply and retries the actual send", async () => { const user = userEvent.setup(); sendSupportMessage.mockRejectedValueOnce(new Error("Reply failed")).mockResolvedValueOnce({ message: message("message-2"), status: "PENDING_STAFF" }); render(<SupportThread conversation={conversation()} currentUserId="user-1" onChanged={vi.fn()} />); const body = screen.getByLabelText(/Reply/); await user.type(body, "Please retry this"); await user.click(screen.getByRole("button", { name: "Send reply" })); expect(await screen.findByRole("alert")).toHaveTextContent("Reply failed"); await waitFor(() => expect(screen.getByRole("button", { name: "Send reply" })).toBeEnabled()); await user.click(screen.getByRole("button", { name: "Send reply" })); await waitFor(() => expect(body).toHaveValue("")); expect(sendSupportMessage).toHaveBeenCalledTimes(2); });
+
+  it("acknowledges a loaded thread only after the document becomes visible", async () => {
+    const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+    try {
+      render(<SupportInbox conversationId="conversation-1" />);
+      await screen.findByText("Registration help");
+      expect(markSupportConversationRead).not.toHaveBeenCalled();
+      visibility.mockReturnValue("visible");
+      fireEvent(document, new Event("visibilitychange"));
+      await waitFor(() => expect(markSupportConversationRead).toHaveBeenCalledWith("conversation-1", "message-1"));
+    } finally { visibility.mockRestore(); }
+  });
+
+  it("navigates to the persisted conversation with a durable receipt after creation", async () => {
+    createSupportConversation.mockResolvedValue(conversation());
+    const user = userEvent.setup();
+    render(<SupportInbox composing />);
+    await user.type(screen.getByLabelText(/Subject/), "Account help");
+    await user.type(screen.getByLabelText(/Message/), "Please help");
+    await user.click(screen.getByRole("button", { name: "Send message" }));
+    await waitFor(() => expect(mocks.push).toHaveBeenCalledWith("/support/conversation-1?sent=1"));
+  });
 
   it("offers thread retry and keeps list errors separate", async () => { const user = userEvent.setup(); getSupportConversation.mockRejectedValueOnce(new Error("Thread unavailable")); render(<SupportInbox conversationId="conversation-1" />); expect(await screen.findByRole("alert")).toHaveTextContent("Thread unavailable"); getSupportConversation.mockResolvedValueOnce(conversation()); await user.click(screen.getByRole("button", { name: "Try again" })); expect(await screen.findByText("Registration help")).toBeInTheDocument(); });
 
-  it("refreshes summaries after marking a thread read", async () => { render(<SupportInbox conversationId="conversation-1" />); await waitFor(() => expect(markSupportConversationRead).toHaveBeenCalledWith("conversation-1")); await waitFor(() => expect(listSupportConversations).toHaveBeenCalledTimes(2)); });
+  it("refreshes summaries after marking a thread read", async () => { render(<SupportInbox conversationId="conversation-1" />); await waitFor(() => expect(markSupportConversationRead).toHaveBeenCalledWith("conversation-1", "message-1")); await waitFor(() => expect(listSupportConversations).toHaveBeenCalledTimes(2)); });
 
   it("refreshes again when realtime invalidates a pending list request", async () => {
     let resolveList!: (value: { items: SupportConversationSummary[]; nextCursor: null }) => void;
@@ -90,7 +176,7 @@ describe("support inbox rendered states", () => {
     await waitFor(() => expect(listSupportConversations).toHaveBeenCalledTimes(2));
   });
 
-  it("shows mark-read failures inside the loaded thread", async () => { markSupportConversationRead.mockRejectedValueOnce(new Error("Read status failed")); render(<SupportInbox conversationId="conversation-1" />); expect(await screen.findByRole("alert")).toHaveTextContent("Read status failed"); expect(screen.getByText("Registration help")).toBeInTheDocument(); });
+  it("shows mark-read failures inside the loaded thread", async () => { markSupportConversationRead.mockRejectedValueOnce(new Error("Read status failed")); render(<SupportInbox conversationId="conversation-1" />); expect(await screen.findByRole("alert")).toHaveTextContent("update its read status"); expect(screen.getByText("Registration help")).toBeInTheDocument(); });
 
   it("polls the inbox and selected thread, then stops after unmount", async () => {
     vi.useFakeTimers();
@@ -168,7 +254,7 @@ describe("support inbox rendered states", () => {
     const view = render(<SupportInbox />);
     await waitFor(() => expect(listSupportConversations).toHaveBeenCalledTimes(1));
     mocks.auth.user = { id: "user-2" };
-    view.rerender(<SupportInbox />);
+    view.rerender(<SupportInbox composing />);
     await waitFor(() => expect(listSupportConversations).toHaveBeenCalledTimes(2));
     expect(await screen.findByText("User two conversation")).toBeInTheDocument();
 

@@ -23,12 +23,21 @@ export default function ContactPage() {
   return (
     <PageLayout title="Contact Us" description={defaultPageDescriptions.contact}>
       <Section className="pt-6">
-        <Card className="mb-6 border-cyan-300/20 bg-cyan-300/[.05] p-5 sm:p-6">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div><p className="text-xs uppercase tracking-[0.28em] text-cyan-200">Have an account?</p><h2 className="mt-2 text-xl text-white">Keep support replies in one private thread.</h2><p className="mt-2 text-sm leading-6 text-slate-400">Signed-in players can message Quest Support and follow up from their inbox.</p></div>
-            <Link href="/support" className="inline-flex h-11 shrink-0 items-center justify-center rounded-2xl border border-cyan-200/30 bg-cyan-200/10 px-5 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-200/20">Open support inbox →</Link>
-          </div>
-        </Card>
+        <h2 className="mb-5 text-3xl text-white">How can we help?</h2>
+        <div className="mb-8 grid gap-4 md:grid-cols-2">
+          <Card className="border-cyan-300/20 bg-cyan-300/[.05] p-5 sm:p-6">
+            <p className="text-xs font-semibold uppercase tracking-wider text-cyan-200">Private support</p>
+            <h3 className="mt-3 text-xl text-white">Get help with my account</h3>
+            <p className="mt-3 text-sm leading-6 text-slate-300">Tournament, registration, payment, or technical issue. Replies stay in your private support inbox. Sign in to get support.</p>
+            <Link href="/support" className="mt-5 inline-flex min-h-11 items-center justify-center rounded-xl bg-cyan-300 px-5 text-sm font-semibold text-slate-950! hover:text-slate-950! focus-visible:text-slate-950! hover:bg-cyan-200">Open support inbox →</Link>
+          </Card>
+          <Card className="p-5 sm:p-6">
+            <p className="text-xs font-semibold uppercase tracking-wider text-purple-200">Contact Quest</p>
+            <h3 className="mt-3 text-xl text-white">General enquiries</h3>
+            <p className="mt-3 text-sm leading-6 text-slate-300">Partnerships, media, sponsorships, and other questions. We will reply to the email address you provide.</p>
+            <Link href="#general-enquiries" className="mt-5 inline-flex min-h-11 items-center justify-center rounded-xl border border-white/20 px-5 text-sm font-semibold text-white hover:bg-white/5">General enquiries →</Link>
+          </Card>
+        </div>
         <div className="grid gap-6 xl:grid-cols-[0.88fr_1.12fr]">
           <ContactInfo />
           <ContactForm />

@@ -416,14 +416,21 @@ bodies are required and limited to 2,000 characters.
 
 `limit` defaults to 25. Values are parsed as integers, invalid/empty values use
 the default, and valid values are clamped to 1–100. `cursor` must be an
-ISO-8601 `updatedAt` value; malformed cursors return `400`. List results are
+ISO-8601 `updatedAt` value for the staff queue; malformed dates return `400`. User
+list cursors additionally include an ID tie-breaker (`updatedAt|id`); clients
+should pass the returned cursor unchanged. Legacy date-only cursors remain
+accepted. List results are
 ordered newest first and return one `nextCursor` when another page exists.
 
 ### User routes
 
+- `GET /api/v1/support/unread` — returns `{ unreadConversations }` across the
+  authenticated owner's entire inbox. It counts conversations, not messages or
+  notification records; resolved conversations can still have unread replies.
+
 - `GET /api/v1/support/conversations` — lists the current user's conversations.
   Optional query parameters are `limit` (1–100, default 25) and `cursor` (an
-  ISO-8601 `updatedAt` cursor). `data` is `{ items, nextCursor }`; each item
+  returned `updatedAt|id` cursor). `data` is `{ items, nextCursor }`; each item
   includes `id`, `ownerUserId`, `subject`, `status`, `assignedStaffUserId`,
   `createdAt`, `updatedAt`, `resolvedAt`, owner/assigned-staff summaries,
   `lastMessage`, `preview`, and the viewer-specific `unreadCount`.
@@ -438,9 +445,14 @@ ordered newest first and return one `nextCursor` when another page exists.
   `{ message, status }` in `data`; a user reply changes the conversation to
   `PENDING_STAFF` and reopens a resolved conversation.
 - `PATCH /api/v1/support/conversations/:conversationId/read` — advances the
-  authenticated user's conversation read cursor. The JSON body is empty and the
-  response data is `{ lastReadAt, unreadCount: 0 }`. Read state is per user and
-  does not modify message rows.
+  authenticated user's conversation read cursor. JSON body:
+  `{ "throughMessageId": "last-rendered-message-id" }`. The message must belong
+  to the owned conversation. Legacy empty bodies select the latest persisted
+  message. The cursor never moves backwards; response data is
+  `{ lastReadAt, unreadCount }`, including any later unread messages. Read state
+  is per user and does not modify message rows. Corresponding notification
+  recipients for displayed messages are marked read in the same transaction;
+  general notification dismissal never clears support read state.
 - `POST /api/v1/support/conversations/:conversationId/resolve` — resolves an
   owned conversation and sets `resolvedAt`. The `200` response data is the full
   conversation projection with `status: "RESOLVED"` and the persisted
@@ -468,7 +480,7 @@ Staff reads use the authenticated staff ID for their independent unread cursor.
   conversation read for the authenticated admin only. This is the staff-read
   operation documented in OpenAPI as an authenticated `PATCH` with the
   `conversationId` path parameter. The response data is
-  `{ lastReadAt, unreadCount: 0 }`; it does not mark the owner's messages read
+  `{ lastReadAt, unreadCount }`; it does not mark the owner's messages read
   and does not affect another admin's cursor.
 - `PATCH /api/v1/admin/support/conversations/:conversationId/assignment` —
   assigns or unassigns staff. JSON body:

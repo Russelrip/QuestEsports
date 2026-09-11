@@ -86,16 +86,17 @@ test("authenticated user and staff complete the persisted support flow", async (
     await login(adminContext, requiredEnvironment.E2E_ADMIN_EMAIL!, requiredEnvironment.E2E_ADMIN_PASSWORD!, frontendUrl!);
 
     await page.goto(`${frontendUrl}/support`, { waitUntil: "domcontentloaded" });
-    await expect(page.getByRole("heading", { name: "Start a support conversation" })).toBeVisible();
+    await page.getByRole("link", { name: /New conversation/ }).click();
+    await expect(page.getByRole("heading", { name: "New conversation", exact: true })).toBeVisible();
     await page.getByLabel("Subject").fill(subject);
     await page.getByLabel("Message").fill(openingBody);
     await page.getByRole("button", { name: "Send message" }).click();
-    await expect(page).toHaveURL(/\/support\/[^/?#]+$/);
+    await expect(page).toHaveURL(/\/support\/[^/?#]+\?sent=1$/);
     const conversationId = new URL(page.url()).pathname.split("/").pop();
     expect(conversationId).toBeTruthy();
 
     const staffNotifications = await readJson(adminContext.request, "/api/v1/notifications?limit=30", frontendUrl!);
-    expect(staffNotifications.data.items.find((item) => item.type === "support_message" && item.body === openingBody)?.actionUrl)
+    expect(staffNotifications.data.items.find((item) => item.type === "support_message" && item.actionUrl === `/admin/support?conversationId=${conversationId}`)?.actionUrl)
       .toBe(`/admin/support?conversationId=${conversationId}`);
 
     const queueBeforeRead = await readJson(adminContext.request, "/api/v1/admin/support/conversations", frontendUrl!);
@@ -116,7 +117,7 @@ test("authenticated user and staff complete the persisted support flow", async (
     await expect(adminPage.getByText(replyBody).last()).toBeVisible();
 
     const userNotifications = await readJson(page.context().request, "/api/v1/notifications?limit=30", frontendUrl!);
-    expect(userNotifications.data.items.find((item) => item.type === "support_message" && item.body === replyBody)?.actionUrl)
+    expect(userNotifications.data.items.find((item) => item.type === "support_message" && item.actionUrl === `/support/${conversationId}`)?.actionUrl)
       .toBe(`/support/${conversationId}`);
 
     await adminPage.getByRole("button", { name: "Resolve" }).click();
@@ -127,9 +128,9 @@ test("authenticated user and staff complete the persisted support flow", async (
 
     await page.goto(`${frontendUrl}/support/${conversationId}`, { waitUntil: "domcontentloaded" });
     await expect(page.getByText(replyBody).last()).toBeVisible();
-    await expect(page.getByRole("button", { name: "Reopen" })).toBeVisible();
-    await page.getByRole("button", { name: "Reopen" }).click();
-    await expect(page.getByRole("button", { name: "Resolve" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Reopen conversation" })).toBeVisible();
+    await page.getByRole("button", { name: "Reopen conversation" }).click();
+    await expect(page.getByRole("button", { name: "Mark resolved" })).toBeVisible();
   } finally {
     await adminContext.close();
   }

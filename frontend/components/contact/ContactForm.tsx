@@ -59,7 +59,7 @@ export default function ContactForm() {
 
   if (sent) {
     return (
-      <Card className="p-6 sm:p-8">
+      <Card id="general-enquiries" className="scroll-mt-32 p-6 sm:p-8">
         <p className="text-xs uppercase tracking-[0.28em] text-emerald-200">Message received</p>
         <h2 className="mt-3 text-3xl text-white">Thanks for contacting Quest</h2>
         <p className="mt-4 text-sm leading-7 text-slate-300">Your message was submitted successfully. We’ll reply using the email address you provided.</p>
@@ -69,10 +69,11 @@ export default function ContactForm() {
   }
 
   return (
-    <Card className="p-6 sm:p-8">
+    <Card id="general-enquiries" className="scroll-mt-32 p-6 sm:p-8">
       <div className="mb-6">
-        <p className="text-xs uppercase tracking-[0.28em] text-purple-200/80">Contact Form</p>
-        <h2 className="mt-3 text-3xl text-white">Send us a message</h2>
+        <p className="text-xs uppercase tracking-[0.28em] text-purple-200/80">General enquiries</p>
+        <h2 className="mt-3 text-3xl text-white">Contact the Quest team</h2>
+        <p className="mt-3 text-sm leading-6 text-slate-300">For partnerships, media, sponsorships, and other enquiries. We will reply by email.</p>
       </div>
 
       <form className="grid gap-5" onSubmit={onSubmit}>

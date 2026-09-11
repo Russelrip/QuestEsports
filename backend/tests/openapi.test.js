@@ -155,6 +155,33 @@ test("OpenAPI declares the staff support read operation", () => {
   ]);
 });
 
+test("OpenAPI documents authenticated support unread and attachment routes plus screenshot multipart bodies", () => {
+  const paths = openApiDocument.paths;
+  const unread = paths["/api/v1/support/unread"].get;
+  const attachment = paths["/api/v1/support/attachments/{attachmentId}/content"].get;
+  assert.deepEqual(unread.security, [{ sessionCookie: [] }, { mobileBearer: [] }]);
+  assert.ok(unread.responses[200]);
+  assert.deepEqual(attachment.parameters, [{
+    name: "attachmentId",
+    in: "path",
+    required: true,
+    schema: { type: "string" },
+  }]);
+  assert.deepEqual(attachment.security, [{ sessionCookie: [] }, { mobileBearer: [] }]);
+  assert.ok(attachment.responses[404]);
+
+  for (const operation of [
+    paths["/api/v1/support/conversations"].post,
+    paths["/api/v1/support/conversations/{conversationId}/messages"].post,
+    paths["/api/v1/admin/support/conversations/{conversationId}/messages"].post,
+  ]) {
+    assert.ok(operation.requestBody.content["application/json"]);
+    const multipart = operation.requestBody.content["multipart/form-data"].schema;
+    assert.equal(multipart.properties.screenshots.maxItems, 3);
+    assert.match(multipart.properties.screenshots.items.description, /JPEG, PNG, or WebP/);
+  }
+});
+
 test("OpenAPI declares canonical OAuth account-linking operations", () => {
   const paths = openApiDocument.paths;
 

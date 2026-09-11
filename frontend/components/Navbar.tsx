@@ -14,6 +14,7 @@ import { resolveImageUrl } from "@/lib/media";
 import { authNavItems, primaryNavItems, secondaryNavItems } from "@/lib/site";
 import NotificationBell from "@/components/notifications/NotificationBell";
 import { NavIcon } from "@/components/ui/icon";
+import { SupportUnreadBadge, SupportUnreadDot } from "@/components/support/SupportProvider";
 
 const isNavItemActive = (pathname: string, href: string) =>
   href === "/"
@@ -142,8 +143,10 @@ export default function Navbar() {
               onClick={toggleMobileNav}
               aria-expanded={mobileNavOpen}
               aria-label={mobileNavOpen ? "Close navigation" : "Open navigation"}
+              aria-describedby={user ? "mobile-support-unread" : undefined}
             >
               <span className="sr-only">Menu</span>
+              {user ? <SupportUnreadDot id="mobile-support-unread" /> : null}
               <div className="flex flex-col gap-1.5">
                 <span className={cn("h-0.5 w-5 rounded-full bg-white transition", mobileNavOpen && "translate-y-2 rotate-45")} />
                 <span className={cn("h-0.5 w-5 rounded-full bg-white transition", mobileNavOpen && "opacity-0")} />
@@ -182,6 +185,9 @@ export default function Navbar() {
                       </span>
                     </Link>
                     <NotificationBell user={user} compact />
+                    <Link href="/support" onClick={() => setMobileNavOpen(false)} className="flex min-h-11 items-center gap-3 rounded-2xl bg-white/6 px-4 py-3 text-sm text-white">
+                      <NavIcon icon="message" /> Support inbox <SupportUnreadBadge />
+                    </Link>
                     {user.role === "admin" ? (
                       <Link href="/admin" prefetch={false} className="flex items-center gap-3 rounded-2xl bg-white/6 px-4 py-3 text-sm text-white">
                         <NavIcon icon="shield" />

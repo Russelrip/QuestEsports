@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import SupportHelpLink from "@/components/support/SupportHelpLink";
 import { Button } from "@/components/ui/button";
 import { LoadingState } from "@/components/ui/loading-state";
 import { buildValorantTrackerProfileUrl } from "@/lib/valorant";
@@ -247,7 +248,7 @@ export default function GameAccountsPanel({ className = "" }: GameAccountsPanelP
       ) : null}
 
       {notice ? <p className="mt-5 border border-emerald-300/20 bg-emerald-400/8 p-3 text-sm text-emerald-100" role="status">{notice}</p> : null}
-      {error ? <p className="mt-5 border border-rose-300/20 bg-rose-400/8 p-3 text-sm leading-6 text-rose-100" role="alert">{error}</p> : null}
+      {error ? <p className="mt-5 border border-rose-300/20 bg-rose-400/8 p-3 text-sm leading-6 text-rose-100" role="alert">{error}<br /><SupportHelpLink subject="Game account issue" /></p> : null}
       {loadingError ? (
         <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border border-rose-300/20 bg-rose-400/8 p-3 text-sm text-rose-100" role="alert">
           <span>{loadingError}</span>
@@ -367,7 +368,7 @@ export default function GameAccountsPanel({ className = "" }: GameAccountsPanelP
                 <p className="mt-4 text-sm text-emerald-100">This account is already connected to your profile.</p>
               ) : resolved.linkedElsewhere ? (
                 <p className="mt-4 text-sm leading-6 text-rose-100" role="alert">
-                  This VALORANT account is already linked to another Quest account. If it is yours, contact support.
+                  This VALORANT account is already linked to another Quest account. If it is yours, contact support. <SupportHelpLink subject="Linked game account issue" />
                 </p>
               ) : (
                 <>

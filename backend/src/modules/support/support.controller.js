@@ -1,9 +1,17 @@
 const { asyncHandler } = require("../../lib/async-handler");
+const { streamFileToResponse } = require("../../lib/stream-response");
+const { HttpError } = require("../../lib/http-error");
 const { normalizeText } = require("../../lib/validation");
 const service = require("./support.service");
 
 const meta = () => ({ serverNow: new Date().toISOString() });
 const respond = (res, data, status = 200) => res.status(status).json({ success: true, data, meta: meta() });
+
+const scalarField = (body, field) => {
+  const value = body?.[field];
+  if (Array.isArray(value)) throw new HttpError(400, `${field} must be provided once.`);
+  return value;
+};
 
 const normalizeAssignedFilter = (value, staffUserId) => {
   const normalized = normalizeText(value);
@@ -24,12 +32,17 @@ const listConversations = asyncHandler(async (req, res) => respond(
   }),
 ));
 
+const unreadSummary = asyncHandler(async (req, res) => respond(res,
+  await service.getUserUnreadSummary({ userId: req.user.id }),
+));
+
 const createConversation = asyncHandler(async (req, res) => respond(
   res,
   await service.createConversation({
     ownerUserId: req.user.id,
-    subject: req.body?.subject,
-    body: req.body?.body,
+    subject: scalarField(req.body, "subject"),
+    body: scalarField(req.body, "body"),
+    ...(req.files ? { screenshots: req.files } : {}),
   }),
   201,
 ));
@@ -48,7 +61,8 @@ const sendMessage = asyncHandler(async (req, res) => respond(
   await service.sendMessage({
     conversationId: req.params.conversationId,
     senderUserId: req.user.id,
-    body: req.body?.body,
+    body: scalarField(req.body, "body"),
+    ...(req.files ? { screenshots: req.files } : {}),
     isStaff: false,
   }),
   201,
@@ -60,6 +74,7 @@ const markRead = asyncHandler(async (req, res) => respond(
     conversationId: req.params.conversationId,
     userId: req.user.id,
     isStaff: false,
+    throughMessageId: req.body?.throughMessageId,
   }),
 ));
 
@@ -128,7 +143,8 @@ const sendAdminMessage = asyncHandler(async (req, res) => respond(
   await service.sendMessage({
     conversationId: req.params.conversationId,
     senderUserId: req.user.id,
-    body: req.body?.body,
+    body: scalarField(req.body, "body"),
+    ...(req.files ? { screenshots: req.files } : {}),
     isStaff: true,
   }),
   201,
@@ -139,12 +155,27 @@ const updateAdminStatus = asyncHandler(async (req, res) => respond(
   await service.changeConversationStatus({
     conversationId: req.params.conversationId,
     actorUserId: req.user.id,
-    status: req.body?.status,
+    status: scalarField(req.body, "status"),
     isStaff: true,
   }),
 ));
 
+const streamAttachment = asyncHandler(async (req, res) => {
+  const attachment = await service.getAttachmentContent({
+    attachmentId: req.params.attachmentId,
+    userId: req.user.id,
+    isAdmin: req.user.role === "admin",
+  });
+  res.setHeader("Content-Type", attachment.contentType);
+  res.setHeader("Content-Length", attachment.byteSize);
+  res.setHeader("Cache-Control", "private, no-store");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.status(200);
+  await streamFileToResponse(attachment.path, res);
+});
+
 module.exports = {
+  unreadSummary,
   listConversations,
   createConversation,
   getConversation,
@@ -158,4 +189,5 @@ module.exports = {
   assignConversation,
   sendAdminMessage,
   updateAdminStatus,
+  streamAttachment,
 };

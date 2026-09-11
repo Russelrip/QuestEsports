@@ -21,9 +21,13 @@ const privateUploadRoot = env.PRIVATE_UPLOAD_ROOT
   : path.resolve(uploadRoot, "../private");
 const bankTransferProofDirectory = path.join(privateUploadRoot, "bank-transfer-proofs");
 const eventAlbumOriginalDirectory = path.join(privateUploadRoot, "event-album-originals");
+const supportScreenshotDirectory = path.join(privateUploadRoot, "support-screenshots");
 const TEAM_LOGO_MAX_FILE_SIZE = 5 * 1024 * 1024;
 const PAYMENT_PROOF_MAX_FILE_SIZE = 5 * 1024 * 1024;
 const ADMIN_UPLOAD_MAX_FILE_SIZE = 10 * 1024 * 1024;
+const SUPPORT_SCREENSHOT_MAX_FILE_SIZE = 5 * 1024 * 1024;
+const SUPPORT_SCREENSHOT_MAX_FILES = 3;
+const SUPPORT_SCREENSHOT_MAX_REQUEST_SIZE = 15 * 1024 * 1024;
 const DEFAULT_FIELD_LIMITS = {
   fieldNameSize: 80,
   fieldSize: 64 * 1024,
@@ -67,6 +71,8 @@ const ensureUploadDirectories = async () => {
   await fs.mkdir(sponsorLogoDirectory, { recursive: true });
   await fs.mkdir(bankTransferProofDirectory, { recursive: true, mode: 0o700 });
   await fs.mkdir(eventAlbumOriginalDirectory, { recursive: true, mode: 0o700 });
+  await fs.mkdir(supportScreenshotDirectory, { recursive: true, mode: 0o700 });
+  await fs.chmod(supportScreenshotDirectory, 0o700);
 };
 
 const checkUploadReadiness = async () => {
@@ -375,6 +381,24 @@ const paymentProofUpload = multer({
   },
 });
 
+const supportScreenshotUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: buildUploadLimits({
+    fileSize: SUPPORT_SCREENSHOT_MAX_FILE_SIZE,
+    files: SUPPORT_SCREENSHOT_MAX_FILES,
+    fields: 4,
+    parts: SUPPORT_SCREENSHOT_MAX_FILES + 4,
+  }),
+  fileFilter: (req, file, callback) => {
+    if (isAllowedImageMimeType(file.mimetype)) {
+      callback(null, true);
+      return;
+    }
+
+    callback(new HttpError(400, "Only JPEG, PNG, and WebP support screenshots are allowed."));
+  },
+});
+
 const persistValidatedUpload = async ({
   file,
   directory,
@@ -547,11 +571,40 @@ const persistBankTransferProofUpload = async (file) => {
   };
 };
 
+const persistSupportScreenshotUpload = async (file) => {
+  if (!file?.buffer) {
+    throw new HttpError(400, "Support screenshots must be valid images.");
+  }
+
+  const normalized = await normalizeImageUpload({
+    file,
+    invalidMessage: "Support screenshots must be valid JPEG, PNG, or WebP images.",
+    maxDimension: 4096,
+  });
+  const filename = buildSafeUploadFilename(normalized.extension);
+  const filePath = path.join(supportScreenshotDirectory, filename);
+  try {
+    await fs.writeFile(filePath, normalized.buffer, { mode: 0o600 });
+  } catch (error) {
+    await removeUploadFile({ directory: supportScreenshotDirectory, filename }).catch(() => undefined);
+    throw error;
+  }
+
+  return {
+    filename,
+    contentType: normalized.contentType,
+    byteSize: normalized.buffer.length,
+  };
+};
+
 module.exports = {
   ADMIN_UPLOAD_MAX_FILE_SIZE,
   ALLOWED_UPLOAD_TYPES,
   TEAM_LOGO_MAX_FILE_SIZE,
   PAYMENT_PROOF_MAX_FILE_SIZE,
+  SUPPORT_SCREENSHOT_MAX_FILE_SIZE,
+  SUPPORT_SCREENSHOT_MAX_FILES,
+  SUPPORT_SCREENSHOT_MAX_REQUEST_SIZE,
   createUploadRequestSizeGuard,
   detectImageType,
   normalizeImageUpload,
@@ -563,6 +616,7 @@ module.exports = {
   adminTournamentAssetsUpload,
   dbImageUpload,
   paymentProofUpload,
+  supportScreenshotUpload,
   persistTeamLogoUpload,
   persistAvatarUpload,
   persistTournamentBannerUpload,
@@ -572,6 +626,7 @@ module.exports = {
   persistSponsorLogoUpload,
   persistTournamentScheduleUpload,
   persistBankTransferProofUpload,
+  persistSupportScreenshotUpload,
   buildEventAlbumOriginalFilename,
   removeUploadFile,
   removeUploadFiles,
@@ -584,4 +639,5 @@ module.exports = {
   sponsorLogoDirectory,
   bankTransferProofDirectory,
   eventAlbumOriginalDirectory,
+  supportScreenshotDirectory,
 };

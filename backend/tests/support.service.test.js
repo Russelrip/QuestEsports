@@ -121,7 +121,9 @@ test("exports all requested operations and rejects missing user IDs before scope
       "assignConversation",
       "changeConversationStatus",
       "createConversation",
+      "getAttachmentContent",
       "getConversation",
+      "getUserUnreadSummary",
       "listStaffConversations",
       "listUserConversations",
       "markConversationRead",
@@ -197,28 +199,50 @@ test("staff assignment is restricted to staff users", async () => {
   } finally { restore(); }
 });
 
-test("markConversationRead upserts the per-user read cursor and unread counts exclude the sender", async () => {
-  let upsertInput;
-  let unreadWhere;
+test("read acknowledgements retain later unread replies and reconcile only displayed alerts", async () => {
   const readAt = new Date("2026-08-19T01:00:00.000Z");
-  const { module: service, restore } = loadService({
-    prisma: {
-      supportConversation: { findFirst: async () => conversation() },
-      supportConversationRead: {
-        findUnique: async () => ({ lastReadAt: new Date("2026-08-19T00:30:00.000Z") }),
-        upsert: async (input) => { upsertInput = input; return { lastReadAt: readAt }; },
-      },
-      supportMessage: { count: async ({ where }) => { unreadWhere = where; return 2; } },
+  let saved = null;
+  let alertQuery;
+  let boundaryQuery;
+  let unreadWhere;
+  const { module: service, restore } = loadService({ prisma: {
+    supportConversation: { findFirst: async () => conversation() },
+    supportConversationRead: {
+      findUnique: async () => saved,
+      upsert: async ({ create }) => { saved ||= create; },
+      updateMany: async ({ where, data }) => { if (saved.lastReadAt < where.lastReadAt.lt) saved = data; },
     },
-  });
+    supportMessage: {
+      findFirst: async (query) => { boundaryQuery = query; return { id: "displayed", createdAt: readAt }; },
+      findMany: async ({ where }) => { assert.deepEqual(where.createdAt, { lte: readAt }); return [{ id: "displayed" }]; },
+      count: async ({ where }) => { unreadWhere = where; return 1; },
+    },
+    notificationRecipient: { updateMany: async (query) => { alertQuery = query; } },
+  } });
   try {
-    const result = await service.markConversationRead({ conversationId: "c1", userId: "u1", isStaff: false });
+    const result = await service.markConversationRead({ conversationId: "c1", userId: "u1", throughMessageId: "displayed" });
+    assert.deepEqual(boundaryQuery.where, { conversationId: "c1", id: "displayed" });
     assert.equal(result.lastReadAt, readAt);
-    assert.equal(upsertInput.where.conversationId_userId.userId, "u1");
-    const detail = await service.getConversation({ conversationId: "c1", userId: "u1", isStaff: false });
-    assert.equal(detail.unreadCount, 2);
-    assert.equal(unreadWhere.senderUserId.not, "u1");
-    assert.deepEqual(unreadWhere.createdAt, { gt: new Date("2026-08-19T00:30:00.000Z") });
+    assert.equal(result.unreadCount, 1);
+    assert.equal(unreadWhere.OR[0].senderUserId.not, "u1");
+    assert.deepEqual(unreadWhere.createdAt, { gt: readAt });
+    assert.deepEqual(alertQuery.where.notification.eventKey, { in: ["support-message:displayed"] });
+    assert.equal(alertQuery.where.userId, "u1");
+    saved = { lastReadAt: new Date("2026-08-20T01:00:00.000Z") };
+    const olderTab = await service.markConversationRead({ conversationId: "c1", userId: "u1", throughMessageId: "displayed" });
+    assert.equal(olderTab.lastReadAt.toISOString(), "2026-08-20T01:00:00.000Z");
+  } finally { restore(); }
+});
+
+ test("unread summary uses a parameterized owner query without pagination or notification state", async () => {
+  let query;
+  const { module: service, restore } = loadService({ prisma: { $queryRaw: async (...args) => { query = args; return [{ unreadConversations: 2 }]; } } });
+  try {
+    assert.deepEqual(await service.getUserUnreadSummary({ userId: "u1" }), { unreadConversations: 2 });
+    assert.deepEqual(query.slice(1), ["u1", "u1", "u1"]);
+    assert.match(query[0].join("?"), /c.owner_user_id =/);
+    assert.match(query[0].join("?"), /EXISTS/);
+    await assert.rejects(service.getUserUnreadSummary({ userId: "" }), { statusCode: 400 });
   } finally { restore(); }
 });
 

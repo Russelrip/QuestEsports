@@ -744,10 +744,26 @@ model SupportMessage {
   createdAt      DateTime            @default(now()) @map("created_at")
   conversation   SupportConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   sender         User?               @relation("SupportMessageSender", fields: [senderUserId], references: [id], onDelete: SetNull)
+  attachments    SupportMessageAttachment[]
 
   @@index([conversationId, createdAt])
   @@index([senderUserId, createdAt])
   @@map("support_messages")
+}
+
+model SupportMessageAttachment {
+  id             String        @id @default(uuid()) @db.Uuid
+  messageId      String        @map("message_id") @db.Uuid
+  position       Int
+  storedFilename String        @map("stored_filename")
+  contentType    String        @map("content_type")
+  byteSize       Int           @map("byte_size")
+  createdAt      DateTime      @default(now()) @map("created_at")
+  message        SupportMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, position])
+  @@index([messageId, createdAt])
+  @@map("support_message_attachments")
 }
 
 model SupportConversationRead {
