@@ -96,6 +96,7 @@ test("user message, read, and status controllers pass authenticated ownership co
     conversationId: "conversation-1",
     userId: "user-1",
     isStaff: false,
+    throughMessageId: undefined,
   }]);
 
   const resolved = await callController("resolveConversation", req);
@@ -196,6 +197,7 @@ test("support routes require authentication and admin authorization for the queu
       ["POST", "/support/conversations"],
       ["GET", "/support/conversations/:conversationId"],
       ["POST", "/support/conversations/:conversationId/messages"],
+      ["GET", "/support/attachments/:attachmentId/content"],
       ["PATCH", "/support/conversations/:conversationId/read"],
       ["POST", "/support/conversations/:conversationId/resolve"],
       ["POST", "/support/conversations/:conversationId/reopen"],
@@ -215,7 +217,7 @@ test("support routes require authentication and admin authorization for the queu
       assert.ok(route.handlers.includes(requireAdmin));
     }
     const userRoutes = routes.filter((route) => route.path.startsWith("/support/"));
-    assert.equal(userRoutes.length, 7);
+    assert.equal(userRoutes.length, 9);
     for (const route of userRoutes) assert.ok(route.handlers.includes(requireAuth));
   } finally {
     restore();

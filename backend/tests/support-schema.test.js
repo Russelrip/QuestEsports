@@ -10,8 +10,10 @@ test("generated Prisma client exposes support conversation delegates", () => {
   try {
     assert.ok(models.has("SupportConversation"));
     assert.ok(models.has("SupportMessage"));
+    assert.ok(models.has("SupportMessageAttachment"));
     assert.equal(typeof client.supportConversation, "object");
     assert.equal(typeof client.supportMessage, "object");
+    assert.equal(typeof client.supportMessageAttachment, "object");
   } finally {
     client.$disconnect();
   }

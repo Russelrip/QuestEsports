@@ -86,12 +86,19 @@ const createOperation = (
     permissionScopes = [],
     requiredGlobalRole,
     permissionDescription,
+    description,
+    requestBody,
   } = {},
 ) => ({
   tags: [tag],
   summary,
-  ...(permissionDescription ? { description: permissionDescription } : {}),
+  ...(description
+    ? { description }
+    : permissionDescription
+      ? { description: permissionDescription }
+      : {}),
   parameters,
+  ...(requestBody ? { requestBody } : {}),
   ...(permissionScopes.length ? { "x-required-permission-scopes": permissionScopes } : {}),
   ...(requiredGlobalRole ? { "x-required-global-role": requiredGlobalRole } : {}),
   ...(authenticated
@@ -665,6 +672,64 @@ const openApiDocument = {
 };
 
 const idParameter = (name) => [createPathParameter(name, { type: "string" })];
+
+const supportScreenshotItems = {
+  type: "string",
+  format: "binary",
+  description: "JPEG, PNG, or WebP image only.",
+};
+
+const supportCreateRequestBody = {
+  required: true,
+  description: "JSON remains supported. Multipart requests may repeat screenshots up to three times.",
+  content: {
+    "application/json": {
+      schema: {
+        type: "object",
+        required: ["subject", "body"],
+        properties: {
+          subject: { type: "string", maxLength: 160 },
+          body: { type: "string", maxLength: 2000 },
+        },
+      },
+    },
+    "multipart/form-data": {
+      schema: {
+        type: "object",
+        required: ["subject", "body"],
+        properties: {
+          subject: { type: "string", maxLength: 160 },
+          body: { type: "string", maxLength: 2000 },
+          screenshots: { type: "array", maxItems: 3, items: supportScreenshotItems },
+        },
+      },
+    },
+  },
+};
+
+const supportReplyRequestBody = {
+  required: true,
+  description: "JSON remains supported. Multipart requests may repeat screenshots up to three times.",
+  content: {
+    "application/json": {
+      schema: {
+        type: "object",
+        required: ["body"],
+        properties: { body: { type: "string", maxLength: 2000 } },
+      },
+    },
+    "multipart/form-data": {
+      schema: {
+        type: "object",
+        required: ["body"],
+        properties: {
+          body: { type: "string", maxLength: 2000 },
+          screenshots: { type: "array", maxItems: 3, items: supportScreenshotItems },
+        },
+      },
+    },
+  },
+};
 const additionalPaths = {
   "/api/ticket-events": {
     get: createOperation("Tickets", "List public ticketed events"),
@@ -950,6 +1015,8 @@ const additionalPaths = {
     },
   },
   "/api/v1/support/conversations": {
+    // Both content types are intentional: existing JSON clients remain valid
+    // while screenshot uploads use repeated multipart `screenshots` fields.
     get: createOperation("Support", "List the signed-in user's support conversations", {
       authenticated: true,
       parameters: [
@@ -957,7 +1024,24 @@ const additionalPaths = {
         createQueryParameter("cursor", { type: "string", format: "date-time" }),
       ],
     }),
-    post: createOperation("Support", "Create a support conversation", { authenticated: true }),
+    post: createOperation("Support", "Create a support conversation", {
+      authenticated: true,
+      requestBody: supportCreateRequestBody,
+    }),
+  },
+  "/api/v1/support/unread": {
+    get: createOperation("Support", "Get the signed-in user's unread support conversation count", {
+      authenticated: true,
+    }),
+  },
+  "/api/v1/support/attachments/{attachmentId}/content": {
+    get: createOperation("Support", "Download an authorized private support attachment", {
+      authenticated: true,
+      parameters: idParameter("attachmentId"),
+      additionalResponses: {
+        404: createResponse("Support attachment not found"),
+      },
+    }),
   },
   "/api/v1/support/conversations/{conversationId}": {
     get: createOperation("Support", "Get an owned support conversation and its messages", {
@@ -969,6 +1053,7 @@ const additionalPaths = {
     post: createOperation("Support", "Reply to an owned support conversation", {
       authenticated: true,
       parameters: idParameter("conversationId"),
+      requestBody: supportReplyRequestBody,
     }),
   },
   "/api/v1/support/conversations/{conversationId}/read": {
@@ -1026,6 +1111,7 @@ const additionalPaths = {
     post: createOperation("Support", "Reply to a support conversation as staff", {
       authenticated: true,
       parameters: idParameter("conversationId"),
+      requestBody: supportReplyRequestBody,
     }),
   },
   "/api/v1/admin/support/conversations/{conversationId}/status": {

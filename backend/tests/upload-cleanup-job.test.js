@@ -17,6 +17,7 @@ test("file cleanup jobs serialize only configured directories and process them",
       gameAssetDirectory: "C:/uploads/games",
       posterImageDirectory: "C:/uploads/posters",
       sponsorLogoDirectory: "C:/uploads/sponsors",
+      supportScreenshotDirectory: "C:/private/support-screenshots",
       teamLogoDirectory: "C:/uploads/teams",
       tournamentBannerDirectory: "C:/uploads/tournaments",
       tournamentScheduleDirectory: "C:/uploads/schedules",
@@ -26,14 +27,17 @@ test("file cleanup jobs serialize only configured directories and process them",
   try {
     const uploads = cleanupJob.serializeCleanupUploads([
       { directory: "C:/private/proofs", filename: "proof.webp" },
+      { directory: "C:/private/support-screenshots", filename: "support-shot.webp" },
       { directory: "C:/untrusted", filename: "secret.txt" },
     ]);
     assert.deepEqual(uploads, [
       { directoryKey: "bank_transfer_proofs", filename: "proof.webp" },
+      { directoryKey: "support_screenshots", filename: "support-shot.webp" },
     ]);
     await cleanupJob.processFileCleanupJob({ uploads });
     assert.deepEqual(removed, [
       { directory: "C:/private/proofs", filename: "proof.webp" },
+      { directory: "C:/private/support-screenshots", filename: "support-shot.webp" },
     ]);
   } finally {
     restore();

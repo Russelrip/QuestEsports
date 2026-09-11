@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import SupportHelpLink from "@/components/support/SupportHelpLink";
 import { useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
@@ -454,7 +455,7 @@ export default function ConfiguredTournamentRegistrationForm({ tournament }: { t
             <ReservationCountdown expiresAt={existingRegistration.reservedUntil} />
           </div>
         ) : null}
-        {error ? <p className="mt-4 text-sm text-rose-300">{error}</p> : null}
+        {error ? <div role="alert" className="mt-4"><p className="text-sm text-rose-300">{error}</p><SupportHelpLink subject="Tournament registration issue" context={`Tournament: ${tournament.title} (/tournaments/${tournament.slug})`} /></div> : null}
         <div className="mt-7 flex flex-wrap justify-center gap-3">
           {rosterPending ? (
             <>
@@ -639,7 +640,7 @@ export default function ConfiguredTournamentRegistrationForm({ tournament }: { t
       <Card className="grid gap-4 p-6 sm:p-8">
         <label className="flex gap-3 text-sm text-slate-300"><input type="checkbox" required checked={form.rulebookAccepted} onChange={(event) => setForm((current) => ({ ...current, rulebookAccepted: event.target.checked }))} /><span>I have read and accept the tournament rulebook and competition rules.</span></label>
         <label className="flex gap-3 text-sm text-slate-300"><input type="checkbox" required checked={form.falsityWarningAccepted} onChange={(event) => setForm((current) => ({ ...current, falsityWarningAccepted: event.target.checked }))} /><span>I confirm that the registration information is accurate.</span></label>
-        {error ? <p className="text-sm text-rose-300">{error}</p> : null}
+        {error ? <div role="alert"><p className="text-sm text-rose-300">{error}</p><SupportHelpLink subject="Tournament registration issue" context={`Tournament: ${tournament.title} (/tournaments/${tournament.slug})`} /></div> : null}
         {success ? <p className="text-sm text-emerald-300">{success} <Link className="underline" href="/profile">Open dashboard</Link></p> : null}
         <Button type="submit" disabled={loading || Boolean(pendingSavedTeam)}>
           {loading

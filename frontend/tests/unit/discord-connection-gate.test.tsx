@@ -50,6 +50,12 @@ describe("DiscordConnectionGate", () => {
     expect(screen.getByRole("button", { name: "Connect Discord" })).toBeInTheDocument();
   });
 
+  it.each(["/support", "/support/new", "/support/thread-1", "/contact"])("keeps %s reachable when Discord linking is incomplete", (path) => {
+    mocks.auth = { user: player(), isLoading: false };
+    renderAt(path);
+    expect(heldBack()).toBe(false);
+  });
+
   it("lets a linked session through", () => {
     mocks.auth = { user: player({ discordId: "900000000000000001" }), isLoading: false };
     renderAt("/tournaments");

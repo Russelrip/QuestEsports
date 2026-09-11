@@ -1,14 +1,25 @@
+const fs = require("fs/promises");
+const path = require("path");
 const { HttpError } = require("../../lib/http-error");
 const { logger } = require("../../lib/logger");
 const { prisma } = require("../../lib/prisma");
 const { normalizeText } = require("../../lib/validation");
 const { createNotification } = require("../notifications/notification.service");
 const { publishRealtimeEvent } = require("../realtime/realtime.service");
+const {
+  persistSupportScreenshotUpload,
+  removeUploadFiles,
+  supportScreenshotDirectory,
+  SUPPORT_SCREENSHOT_MAX_FILE_SIZE,
+  SUPPORT_SCREENSHOT_MAX_FILES,
+  SUPPORT_SCREENSHOT_MAX_REQUEST_SIZE,
+} = require("../../middleware/upload");
 
 const MAX_SUBJECT_LENGTH = 160;
 const MAX_BODY_LENGTH = 2000;
 const DEFAULT_PAGE_SIZE = 25;
 const MAX_PAGE_SIZE = 100;
+const SUPPORT_ATTACHMENT_URL_PREFIX = "/api/v1/support/attachments/";
 const STATUSES = new Set(["OPEN", "PENDING_USER", "PENDING_STAFF", "RESOLVED"]);
 
 const userSelect = {
@@ -25,7 +36,7 @@ const conversationInclude = {
   assignedStaff: { select: userSelect },
   messages: {
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-    include: { sender: { select: userSelect } },
+    include: { sender: { select: userSelect }, attachments: { orderBy: { position: "asc" } } },
   },
 };
 
@@ -35,7 +46,7 @@ const conversationSummaryInclude = {
   messages: {
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     take: 1,
-    include: { sender: { select: userSelect } },
+    include: { sender: { select: userSelect }, attachments: { orderBy: { position: "asc" } } },
   },
 };
 
@@ -47,6 +58,15 @@ const normalizeUser = (user) => user ? {
   avatarUrl: user.avatarImageName ? `/api/uploads/avatars/${user.avatarImageName}` : null,
 } : null;
 
+const normalizeAttachment = (attachment) => ({
+  id: attachment.id,
+  position: attachment.position,
+  contentType: attachment.contentType,
+  byteSize: attachment.byteSize,
+  createdAt: attachment.createdAt,
+  contentUrl: `${SUPPORT_ATTACHMENT_URL_PREFIX}${encodeURIComponent(attachment.id)}/content`,
+});
+
 const normalizeMessage = (message) => ({
   id: message.id,
   conversationId: message.conversationId,
@@ -54,7 +74,44 @@ const normalizeMessage = (message) => ({
   body: message.body,
   createdAt: message.createdAt,
   sender: normalizeUser(message.sender),
+  attachments: Array.isArray(message.attachments) ? message.attachments.map(normalizeAttachment) : [],
 });
+
+const attachmentFiles = (screenshots) => {
+  if (screenshots === undefined || screenshots === null) return [];
+  if (!Array.isArray(screenshots)) throw new HttpError(400, "Support screenshots must be uploaded as repeated screenshots fields.");
+  if (screenshots.length > SUPPORT_SCREENSHOT_MAX_FILES) {
+    throw new HttpError(400, `A support message may include at most ${SUPPORT_SCREENSHOT_MAX_FILES} screenshots.`);
+  }
+  const sizes = screenshots.map((file) => Number(file?.buffer?.length ?? file?.size ?? 0));
+  if (sizes.some((size) => size > SUPPORT_SCREENSHOT_MAX_FILE_SIZE)) {
+    throw new HttpError(413, "A support screenshot is too large.");
+  }
+  const totalBytes = sizes.reduce((sum, size) => sum + size, 0);
+  if (totalBytes > SUPPORT_SCREENSHOT_MAX_REQUEST_SIZE) {
+    throw new HttpError(413, "The combined support screenshots are too large.");
+  }
+  return screenshots;
+};
+
+const persistSupportAttachments = async (screenshots) => {
+  const files = attachmentFiles(screenshots);
+  const persisted = [];
+  try {
+    for (const [position, file] of files.entries()) {
+      const upload = await persistSupportScreenshotUpload(file);
+      persisted.push({ ...upload, position, directory: supportScreenshotDirectory });
+    }
+    return persisted;
+  } catch (error) {
+    await removeUploadFiles(persisted).catch(() => undefined);
+    throw error;
+  }
+};
+
+const removePersistedSupportAttachments = async (attachments) => {
+  await removeUploadFiles(attachments.map(({ filename, directory }) => ({ filename, directory })));
+};
 
 const parseLimit = (value) => Math.min(
   Math.max(Number.parseInt(String(value ?? DEFAULT_PAGE_SIZE), 10) || DEFAULT_PAGE_SIZE, 1),
@@ -111,7 +168,7 @@ const unreadCount = async (db, conversationId, userId, lastReadAt = null) => {
   return db.supportMessage.count({
     where: {
       conversationId,
-      senderUserId: { not: userId },
+      OR: [{ senderUserId: { not: userId } }, { senderUserId: null }],
       ...(lastReadAt ? { createdAt: { gt: lastReadAt } } : {}),
     },
   });
@@ -190,8 +247,8 @@ const publishMessageEffects = async ({ conversation, message, senderUserId, isSt
   const notification = {
     eventKey: `support-message:${message.id}`,
     type: "support_message",
-    title: "New support message",
-    body: message.body,
+    title: isStaff ? "Quest Support replied" : "New support message",
+    body: "Open your private conversation to view the message.",
     actionUrl: isStaff
       ? `/support/${conversation.id}`
       : `/admin/support?conversationId=${encodeURIComponent(conversation.id)}`,
@@ -248,10 +305,11 @@ const publishMessageEffects = async ({ conversation, message, senderUserId, isSt
 const listUserConversations = async ({ userId, limit, cursor } = {}) => {
   userId = requireUserId(userId);
   const take = parseLimit(limit);
-  const cursorDate = parseCursor(cursor);
+  const [cursorTime, cursorId] = String(cursor || "").split("|");
+  const cursorDate = parseCursor(cursorTime);
   return transaction(async (tx) => {
     const rows = await tx.supportConversation.findMany({
-      where: { ownerUserId: userId, ...(cursorDate ? { updatedAt: { lt: cursorDate } } : {}) },
+      where: { ownerUserId: userId, ...(cursorDate ? { OR: [{ updatedAt: { lt: cursorDate } }, ...(cursorId ? [{ updatedAt: cursorDate, id: { lt: cursorId } }] : [])] } : {}) },
       include: conversationSummaryInclude,
       orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
       take: take + 1,
@@ -260,24 +318,56 @@ const listUserConversations = async ({ userId, limit, cursor } = {}) => {
     const page = rows.slice(0, take);
     return {
       items: await Promise.all(page.map((conversation) => mapSummary(conversation, userId, tx))),
-      nextCursor: hasMore ? page.at(-1)?.updatedAt?.toISOString() || null : null,
+      nextCursor: hasMore ? `${page.at(-1).updatedAt.toISOString()}|${page.at(-1).id}` : null,
     };
   });
 };
 
-const createConversation = async ({ ownerUserId, subject, body }) => {
+// Count across the complete owner inbox, independently of paginated alerts.
+const getUserUnreadSummary = async ({ userId }) => {
+  userId = requireUserId(userId);
+  const rows = await prisma.$queryRaw`
+    SELECT COUNT(*)::int AS "unreadConversations"
+    FROM support_conversations c
+    LEFT JOIN support_conversation_reads r
+      ON r.conversation_id = c.id AND r.user_id = ${userId}::uuid
+    WHERE c.owner_user_id = ${userId}::uuid
+      AND EXISTS (
+        SELECT 1 FROM support_messages m
+        WHERE m.conversation_id = c.id
+          AND m.sender_user_id IS DISTINCT FROM ${userId}::uuid
+          AND (r.last_read_at IS NULL OR m.created_at > r.last_read_at)
+      )
+  `;
+  return { unreadConversations: Number(rows[0]?.unreadConversations || 0) };
+};
+
+const createConversation = async ({ ownerUserId, subject, body, screenshots }) => {
   ownerUserId = requireUserId(ownerUserId, "ownerUserId");
   const normalizedSubject = validateSubject(subject);
   const normalizedBody = validateBody(body);
-  const conversation = await transaction((tx) => tx.supportConversation.create({
-    data: {
-      ownerUserId,
-      subject: normalizedSubject,
-      status: "OPEN",
-      messages: { create: { senderUserId: ownerUserId, body: normalizedBody } },
-    },
-    include: conversationInclude,
-  }));
+  const persistedAttachments = await persistSupportAttachments(screenshots);
+  let conversation;
+  try {
+    conversation = await transaction((tx) => tx.supportConversation.create({
+      data: {
+        ownerUserId,
+        subject: normalizedSubject,
+        status: "OPEN",
+        messages: { create: {
+          senderUserId: ownerUserId,
+          body: normalizedBody,
+          ...(persistedAttachments.length ? {
+            attachments: { create: persistedAttachments.map(({ filename, contentType, byteSize, position }) => ({ storedFilename: filename, contentType, byteSize, position })) },
+          } : {}),
+        } },
+      },
+      include: conversationInclude,
+    }));
+  } catch (error) {
+    await removePersistedSupportAttachments(persistedAttachments).catch(() => undefined);
+    throw error;
+  }
   const message = conversation.messages?.[0];
   if (message) await publishMessageEffects({ conversation, message, senderUserId: ownerUserId, isStaff: false });
   return mapConversation(conversation, ownerUserId);
@@ -292,29 +382,43 @@ const getConversation = async ({ conversationId, userId, isStaff = false }) => {
   });
 };
 
-const sendMessage = async ({ conversationId, senderUserId, body, isStaff = false }) => {
+const sendMessage = async ({ conversationId, senderUserId, body, screenshots, isStaff = false }) => {
   senderUserId = requireUserId(senderUserId, "senderUserId");
   const normalizedBody = validateBody(body);
-  const result = await transaction(async (tx) => {
-    const conversation = await findConversation(tx, {
-      conversationId,
-      userId: senderUserId,
-      isStaff,
-      include: { ...conversationInclude, messages: undefined },
-    });
-    if (!conversation) throw new HttpError(isStaff ? 404 : 403, "Support conversation not found.");
+  const persistedAttachments = await persistSupportAttachments(screenshots);
+  let result;
+  try {
+    result = await transaction(async (tx) => {
+      const conversation = await findConversation(tx, {
+        conversationId,
+        userId: senderUserId,
+        isStaff,
+        include: { ...conversationInclude, messages: undefined },
+      });
+      if (!conversation) throw new HttpError(isStaff ? 404 : 403, "Support conversation not found.");
 
-    const status = isStaff ? "PENDING_USER" : "PENDING_STAFF";
-    const message = await tx.supportMessage.create({
-      data: { conversationId, senderUserId, body: normalizedBody },
-      include: { sender: { select: userSelect } },
+      const status = isStaff ? "PENDING_USER" : "PENDING_STAFF";
+      const message = await tx.supportMessage.create({
+        data: {
+          conversationId,
+          senderUserId,
+          body: normalizedBody,
+          ...(persistedAttachments.length ? {
+            attachments: { create: persistedAttachments.map(({ filename, contentType, byteSize, position }) => ({ storedFilename: filename, contentType, byteSize, position })) },
+          } : {}),
+        },
+        include: { sender: { select: userSelect }, attachments: { orderBy: { position: "asc" } } },
+      });
+      const updated = await tx.supportConversation.update({
+        where: { id: conversationId },
+        data: { status, resolvedAt: null },
+      });
+      return { conversation: { ...conversation, ...updated, status }, message };
     });
-    const updated = await tx.supportConversation.update({
-      where: { id: conversationId },
-      data: { status, resolvedAt: null },
-    });
-    return { conversation: { ...conversation, ...updated, status }, message };
-  });
+  } catch (error) {
+    await removePersistedSupportAttachments(persistedAttachments).catch(() => undefined);
+    throw error;
+  }
 
   await publishMessageEffects({
     conversation: result.conversation,
@@ -328,19 +432,79 @@ const sendMessage = async ({ conversationId, senderUserId, body, isStaff = false
   };
 };
 
-const markConversationRead = async ({ conversationId, userId, isStaff = false }) => {
+const getAttachmentContent = async ({ attachmentId, userId, isAdmin = false }) => {
   userId = requireUserId(userId);
-  const lastReadAt = new Date();
+  const attachment = await prisma.supportMessageAttachment?.findUnique?.({
+    where: { id: attachmentId },
+    select: {
+      id: true,
+      storedFilename: true,
+      contentType: true,
+      byteSize: true,
+      message: { select: { conversation: { select: { ownerUserId: true } } } },
+    },
+  });
+  const ownerUserId = attachment?.message?.conversation?.ownerUserId;
+  if (!attachment || (!isAdmin && ownerUserId !== userId)) {
+    throw new HttpError(404, "Support attachment not found.");
+  }
+  const storedFilename = String(attachment.storedFilename || "");
+  if (!/^[A-Za-z0-9-]+\.(jpg|png|webp)$/.test(storedFilename)) {
+    throw new HttpError(404, "Support attachment not found.");
+  }
+  const filePath = path.join(supportScreenshotDirectory, storedFilename);
+  try {
+    const stats = await fs.stat(filePath);
+    if (!stats.isFile()) throw new Error("not a file");
+  } catch {
+    throw new HttpError(404, "Support attachment not found.");
+  }
+  return {
+    id: attachment.id,
+    path: filePath,
+    contentType: attachment.contentType,
+    byteSize: attachment.byteSize,
+  };
+};
+
+const markConversationRead = async ({ conversationId, userId, isStaff = false, throughMessageId }) => {
+  userId = requireUserId(userId);
   const result = await transaction(async (tx) => {
     const conversation = await findConversation(tx, { conversationId, userId, isStaff, include: undefined });
     if (!conversation) throw new HttpError(isStaff ? 404 : 403, "Support conversation not found.");
-    return tx.supportConversationRead.upsert({
+    // Old clients may omit the boundary; new clients acknowledge only rendered messages.
+    const boundary = await tx.supportMessage.findFirst({
+      where: { conversationId, ...(throughMessageId ? { id: throughMessageId } : {}) },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      select: { id: true, createdAt: true },
+    });
+    if (!boundary) throw new HttpError(400, "A displayed message is required to mark this conversation read.");
+    const lastReadAt = boundary.createdAt;
+    await tx.supportConversationRead.upsert({
       where: { conversationId_userId: { conversationId, userId } },
       create: { conversationId, userId, lastReadAt },
-      update: { lastReadAt },
+      update: {},
     });
+    // An older tab must never move the shared read cursor backwards.
+    await tx.supportConversationRead.updateMany({
+      where: { conversationId, userId, lastReadAt: { lt: lastReadAt } },
+      data: { lastReadAt },
+    });
+    const saved = await readCursor(tx, conversationId, userId);
+    const displayedMessages = await tx.supportMessage.findMany({
+      where: { conversationId, createdAt: { lte: lastReadAt } },
+      select: { id: true },
+    });
+    await tx.notificationRecipient.updateMany({
+      where: { userId, readAt: null, notification: {
+        type: "support_message",
+        eventKey: { in: displayedMessages.map((message) => `support-message:${message.id}`) },
+      } },
+      data: { readAt: new Date() },
+    });
+    return { lastReadAt: saved.lastReadAt, unreadCount: await unreadCount(tx, conversationId, userId, saved.lastReadAt) };
   });
-  return { lastReadAt: result?.lastReadAt || lastReadAt, unreadCount: 0 };
+  return result;
 };
 
 const changeConversationStatus = async ({ conversationId, actorUserId, status, isStaff = false }) => {
@@ -431,6 +595,7 @@ const listStaffConversations = async ({ status, assigned, search, limit, cursor,
 };
 
 module.exports = {
+  getUserUnreadSummary,
   listUserConversations,
   createConversation,
   getConversation,
@@ -439,4 +604,5 @@ module.exports = {
   changeConversationStatus,
   assignConversation,
   listStaffConversations,
+  getAttachmentContent,
 };

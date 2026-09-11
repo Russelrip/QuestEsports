@@ -4,6 +4,7 @@ import { AuthProvider } from "@/components/auth/AuthProvider";
 import DiscordConnectionGate from "@/components/auth/DiscordConnectionGate";
 import Footer from "@/components/Footer";
 import Navbar from "@/components/Navbar";
+import { SupportProvider } from "@/components/support/SupportProvider";
 import { ToastProvider } from "@/components/ui/toast-provider";
 import { designTokenCssVariables } from "@/lib/design-tokens";
 import { readSiteMaintenanceConfig } from "@/lib/maintenance";
@@ -41,12 +42,14 @@ export default function RootLayout({
         <style>{designTokenCssVariables}</style>
         <style>{"body:has([data-admin-route]) > header, body:has([data-admin-route]) > footer { display: none; } body:has([data-admin-route]) > main { margin: 0; }"}</style>
         <AuthProvider>
+          <SupportProvider>
           <Navbar />
           <main>
             <DiscordConnectionGate>{children}</DiscordConnectionGate>
           </main>
           <Footer />
           <ToastProvider />
+          </SupportProvider>
         </AuthProvider>
       </body>
     </html>

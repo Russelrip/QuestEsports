@@ -78,6 +78,13 @@ validated against the stable `quest-postgres` alias.
 
 ## Documentation links
 
+Account support is a persistent desktop/mobile account utility. The root
+frontend layout hosts account-scoped unread/draft state through
+[`SupportProvider`](frontend/components/support/codemap.md). Contact retains
+general enquiries alongside private support, and registration/payment/account
+errors provide contextual support entry points. Support and Contact remain
+reachable while Discord linking is incomplete.
+
 - [API contracts](docs/api-documentation.md)
 - [Admin workflows](docs/admin-operations.md)
 - [Commerce and tournament operations](docs/commerce-and-tournament-operations.md)

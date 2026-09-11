@@ -11,6 +11,7 @@ import { getInitials } from "@/lib/utils";
 import { resolveImageUrl } from "@/lib/media";
 import NotificationBell from "@/components/notifications/NotificationBell";
 import { NavIcon } from "@/components/ui/icon";
+import { SupportUnreadBadge, SupportUnreadDot } from "@/components/support/SupportProvider";
 
 type UserMenuProps = {
   user: AuthUser;
@@ -73,6 +74,7 @@ export default function UserMenu({ user, logout, isAdmin = false }: UserMenuProp
           <span aria-hidden="true">{initials}</span>{avatarUrl ? <Image src={avatarUrl} alt="" width={36} height={36} unoptimized className="absolute h-full w-full object-cover" onError={(event) => { event.currentTarget.style.display = "none"; }} /> : null}
         </span>
         <span className="text-sm font-semibold text-white">{user.username}</span>
+        <SupportUnreadDot />
       </button>
 
       {isOpen ? (
@@ -98,6 +100,9 @@ export default function UserMenu({ user, logout, isAdmin = false }: UserMenuProp
               <Link href="/profile" className="account-menu-item flex items-center gap-3 px-3 py-2 text-sm text-slate-200 transition hover:bg-white/8 hover:text-white">
                 <NavIcon icon="user" />
                 Profile
+              </Link>
+              <Link href="/support" onClick={() => setIsOpen(false)} className="account-menu-item flex min-h-11 items-center gap-3 px-3 py-2 text-sm text-slate-200 transition hover:bg-white/8 hover:text-white">
+                <NavIcon icon="message" /> Support inbox <SupportUnreadBadge />
               </Link>
               {isAdmin ? (
                 <Link href="/admin" className="account-menu-item flex items-center gap-3 px-3 py-2 text-sm text-slate-200 transition hover:bg-white/8 hover:text-white">

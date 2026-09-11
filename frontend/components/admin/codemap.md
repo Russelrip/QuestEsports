@@ -50,4 +50,5 @@ records are loaded only in the existing admin detail workflow.
 - `support/AdminSupportThread.tsx` renders the staff conversation, reply,
   resolve/reopen, and assignment controls; `SupportQueueFilters.tsx` keeps the
   queue contract explicit and `SupportAssignmentControl.tsx` supports
-  self-assigning or unassigning a conversation.
+  self-assigning or unassigning a conversation. Staff replies use the shared
+  private screenshot attachment picker and renderer.

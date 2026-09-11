@@ -26,6 +26,10 @@ existing contact, match-room, notification, or OAuth tables.
   non-null `show_bracket_publicly` tournament setting with default `TRUE`.
 - `20260819120000_add_support_conversations` adds support conversation,
   message, and per-user read-cursor tables plus their status enum and indexes.
+- `20260910120000_add_support_message_attachments` adds optional message
+  attachments (existing messages naturally read with `[]`), bounded positions
+  and content types, private stored filenames, and RLS/revoked Data API
+  privileges. Attachment bytes remain outside public upload serving.
 - `20260819170000_add_oauth_link_safety` adds the explicit password-set marker
   and durable, one-time OAuth link nonce records. Existing users without OAuth
   accounts are conservatively marked from `created_at`; OAuth-linked users stay

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import SupportHelpLink from "@/components/support/SupportHelpLink";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiFetchJson } from "@/lib/auth";
 import { Card } from "@/components/ui/card";
@@ -532,7 +533,8 @@ export default function PaymentStatusCard({
                   : payment?.statusMessage ||
                     "Do not retry until the final status appears."}
       </p>
-      {error ? <p className="mt-3 text-sm text-rose-300">{error}</p> : null}
+      {error ? <p className="mt-3 text-sm text-rose-300" role="alert">{error}</p> : null}
+      {(error || uploadError || ["failed", "expired", "review_required"].includes(payment?.status || "")) && <SupportHelpLink subject="Payment issue" />}
       <div className="mt-7 grid gap-3 sm:flex sm:flex-wrap sm:justify-center">
         <Link
           href={returnHref}

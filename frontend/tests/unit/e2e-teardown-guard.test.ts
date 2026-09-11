@@ -35,6 +35,14 @@ describe("e2e mock API guard", () => {
     expect(warn).toHaveBeenCalledWith(expect.stringContaining("GET /api/v1/veto-rooms/ALPHAB"));
   });
 
+  it("tolerates a support conversation request released during teardown", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    withRecorded([{ method: "GET", url: "/api/v1/support/conversations" }]);
+
+    await expect(globalTeardown()).resolves.toBeUndefined();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("GET /api/v1/support/conversations"));
+  });
+
   it("still fails on a real gap even when an escaped request is recorded alongside it", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     withRecorded([
