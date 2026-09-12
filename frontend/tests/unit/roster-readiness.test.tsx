@@ -91,8 +91,26 @@ describe("blocking reasons", () => {
 
   it("names the roster-size shortfall rather than just failing", () => {
     expect(
-      requirementLabel({ type: "ROSTER_SIZE", status: "FAIL", minimum: 5, actual: 3 }),
-    ).toBe("Roster size (3 of 5 needed)");
+      requirementLabel({ type: "ROSTER_SIZE", status: "FAIL", minimum: 5, maximum: 5, actual: 3 }),
+    ).toBe("Roster size (3 of 5 active players needed)");
+  });
+
+  // A roster can fail this by being too big, and the old label read "6 of 5
+  // needed" either way - which told a captain holding one player too many to go
+  // and recruit another. Say which direction it is wrong in.
+  it("tells a roster that is too big to remove someone, not to recruit", () => {
+    expect(
+      requirementLabel({ type: "ROSTER_SIZE", status: "FAIL", minimum: 5, maximum: 5, actual: 6 }),
+    ).toBe("Roster size (6 active players, maximum 5 — remove 1)");
+  });
+
+  it("reports the substitute limit separately from the playing roster", () => {
+    expect(
+      requirementLabel({ type: "SUBSTITUTE_LIMIT", status: "PASS", maximum: 2, actual: 1 }),
+    ).toBe("Substitutes (1 of 2 allowed)");
+    expect(
+      requirementLabel({ type: "SUBSTITUTE_LIMIT", status: "FAIL", maximum: 1, actual: 3 }),
+    ).toBe("Substitutes (3 of 1 allowed — remove 2)");
   });
 });
 
