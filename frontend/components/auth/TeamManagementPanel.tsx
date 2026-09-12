@@ -1,5 +1,6 @@
 "use client";
 
+import { formatSriLankaDateTime } from "@/lib/date-time";
 import Image from "next/image";
 import { FormEvent, useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
@@ -351,7 +352,7 @@ export default function TeamManagementPanel({
                       <div className="flex flex-wrap items-center justify-between gap-3">
                         <span>
                           {member.inviteStatus === "pending"
-                            ? `Waiting for them to accept${member.inviteSentAt ? ` · invited ${new Date(member.inviteSentAt).toLocaleString()}` : ""}`
+                            ? `Waiting for them to accept${member.inviteSentAt ? ` · invited ${formatSriLankaDateTime(member.inviteSentAt)}` : ""}`
                             : member.inviteStatus === "accepted"
                               ? "Accepted"
                               : member.inviteStatus === "expired"

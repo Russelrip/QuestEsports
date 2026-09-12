@@ -1,5 +1,6 @@
 "use client";
 
+import { formatSriLankaDateTime } from "@/lib/date-time";
 import Link from "next/link";
 import SupportHelpLink from "@/components/support/SupportHelpLink";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -380,7 +381,7 @@ export default function PaymentStatusCard({
             {isBankTransfer.expiresAt ? (
               <p className="mt-2 text-xs text-slate-400">
                 Upload deadline:{" "}
-                {new Date(isBankTransfer.expiresAt).toLocaleString()}
+                {formatSriLankaDateTime(isBankTransfer.expiresAt)}
               </p>
             ) : null}
           </div>
