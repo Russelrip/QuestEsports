@@ -10,6 +10,7 @@ import EmptyState from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { Container } from "@/components/ui/container";
 import { cn } from "@/lib/utils";
+import { formatSriLankaDate } from "@/lib/date-time";
 import {
   buildValorantTrackerProfileUrl,
   type ValorantPlayerLeaderboardEntry,
@@ -119,7 +120,7 @@ const LeaderboardRow = ({
         {entry.peakRank ? `${entry.peakRank}${entry.peakSeason ? ` · ${entry.peakSeason}` : ""}` : "—"}
       </td>
       <td className="px-4 py-4 whitespace-nowrap text-right text-slate-400">
-        {entry.lastPlayed ? new Date(entry.lastPlayed).toLocaleDateString() : "—"}
+        {formatSriLankaDate(entry.lastPlayed)}
       </td>
     </tr>
   );
