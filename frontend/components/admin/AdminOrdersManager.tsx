@@ -1,5 +1,6 @@
 "use client";
 
+import { formatSriLankaDateTime } from "@/lib/date-time";
 import { useEffect, useState } from "react";
 import AdminShell from "@/components/admin/AdminShell";
 import { Button } from "@/components/ui/button";
@@ -54,7 +55,7 @@ export default function AdminOrdersManager() {
             <p className="mt-2 text-sm text-slate-300">{order.firstName} {order.lastName} · {order.email} · {order.phone}</p>
             <p className="mt-1 text-sm text-slate-400">{order.address}, {order.city}, {order.country}</p>
             <p className="mt-2 text-sm text-slate-300">{order.items.map((item) => `${item.productName} (${item.variantName}) × ${item.quantity}`).join(", ")}</p>
-            <p className="mt-2 text-xs text-slate-500">Order {order.id} · {new Date(order.createdAt).toLocaleString()}</p>
+            <p className="mt-2 text-xs text-slate-500">Order {order.id} · {formatSriLankaDateTime(order.createdAt)}</p>
           </div>
           <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
             <Select aria-label="Order status" value={order.status} disabled={updating === order.id || nextStatuses(order).length === 1} onChange={(event) => void updateStatus(order, event.target.value)}>{nextStatuses(order).map((status) => <option key={status} value={status}>{status.replaceAll("_", " ")}</option>)}</Select>

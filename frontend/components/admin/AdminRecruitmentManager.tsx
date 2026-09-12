@@ -1,5 +1,6 @@
 "use client";
 
+import { formatSriLankaDateTime } from "@/lib/date-time";
 import { useState } from "react";
 import AdminShell from "@/components/admin/AdminShell";
 import EmptyState from "@/components/ui/empty-state";
@@ -171,7 +172,7 @@ export default function AdminRecruitmentManager() {
                     </div>
                     <h3 className="mt-4 text-2xl text-white">{application.fullName}</h3>
                     <p className="mt-1 text-sm text-slate-400">
-                      Submitted {new Date(application.createdAt).toLocaleString()}
+                      Submitted {formatSriLankaDateTime(application.createdAt)}
                     </p>
                   </div>
                   <div className="grid gap-3 sm:grid-cols-[minmax(180px,240px)_auto] sm:items-end">
@@ -263,7 +264,7 @@ export default function AdminRecruitmentManager() {
                           {member.phone ? <Detail label="WhatsApp" value={member.phone} /> : null}
                           {member.role ? <Detail label="Role" value={member.role} /> : null}
                           {member.nic ? <Detail label="NIC" value={member.nic} /> : null}
-                          <Detail label="Privacy Permission" value={member.privacyAcceptedAt ? new Date(member.privacyAcceptedAt).toLocaleString() : "Legacy record - not captured"} />
+                          <Detail label="Privacy Permission" value={member.privacyAcceptedAt ? formatSriLankaDateTime(member.privacyAcceptedAt) : "Legacy record - not captured"} />
                         </dl>
                       ))}
                     </div>

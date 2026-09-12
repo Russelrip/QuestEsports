@@ -1,5 +1,6 @@
 "use client";
 
+import { formatSriLankaDateTime } from "@/lib/date-time";
 import { useCallback, useEffect, useState } from "react";
 import PaymentStatusCard from "@/components/payments/PaymentStatusCard";
 import TicketQrCode from "@/components/tickets/TicketQrCode";
@@ -125,7 +126,7 @@ export default function TicketOrderStatus() {
                 </p>
                 {ticket.checkedInAt ? (
                   <p className="mt-1 text-xs text-slate-500">
-                    Checked in {new Date(ticket.checkedInAt).toLocaleString()}
+                    Checked in {formatSriLankaDateTime(ticket.checkedInAt)}
                   </p>
                 ) : null}
               </article>

@@ -1,5 +1,6 @@
 "use client";
 
+import { formatSriLankaDateTime } from "@/lib/date-time";
 import { useEffect, useState } from "react";
 import AdminShell from "@/components/admin/AdminShell";
 import EmptyState from "@/components/ui/empty-state";
@@ -207,8 +208,8 @@ export default function AdminUsersManager() {
                 </div>
                 <div className="grid gap-1 text-sm text-slate-400">
                   <p>Role: <span className="text-white">{user.role}</span></p>
-                  <p>Created: {user.createdAt ? new Date(user.createdAt).toLocaleString() : "N/A"}</p>
-                  <p>Last login: {user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString() : "N/A"}</p>
+                  <p>Created: {user.createdAt ? formatSriLankaDateTime(user.createdAt) : "N/A"}</p>
+                  <p>Last login: {user.lastLoginAt ? formatSriLankaDateTime(user.lastLoginAt) : "N/A"}</p>
                 </div>
                 <div className="grid gap-1 text-sm text-slate-400">
                   <p>Phone: {user.phone || "N/A"}</p>

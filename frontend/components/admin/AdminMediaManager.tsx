@@ -1,5 +1,6 @@
 "use client";
 
+import { formatSriLankaDate } from "@/lib/date-time";
 import Image from "next/image";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import AdminShell from "@/components/admin/AdminShell";
@@ -500,7 +501,7 @@ export default function AdminMediaManager() {
               <h3 className="truncate text-xl text-white">{selected.title}</h3>
               <p className="mt-1 break-all text-xs text-slate-500">{selected.originalName || selected.id}</p>
               <p className="mt-2 text-sm text-slate-400">
-                {selected.category} · {formatBytes(selected.byteSize)} · Added {new Date(selected.createdAt).toLocaleDateString()}
+                {selected.category} · {formatBytes(selected.byteSize)} · Added {formatSriLankaDate(selected.createdAt)}
               </p>
               {selected.description ? <p className="mt-2 text-sm text-slate-300">{selected.description}</p> : null}
               {selected.canDelete === false ? <p className="mt-2 text-xs text-amber-200">In use by {selected.usage?.posters || 0} gallery entries and {selected.usage?.products || 0} products. Remove those references before deleting.</p> : null}
@@ -522,7 +523,7 @@ export default function AdminMediaManager() {
           <div className="flex shrink-0 flex-col gap-3 pt-4 sm:flex-row sm:items-end sm:justify-between">
             <div className="min-w-0">
               <h3 className="break-all text-xl text-white">{selectedStorageFile.filename}</h3>
-              <p className="mt-2 text-sm text-slate-400">{selectedStorageFile.directory} · {formatBytes(selectedStorageFile.byteSize)} · Modified {new Date(selectedStorageFile.modifiedAt).toLocaleDateString()}</p>
+              <p className="mt-2 text-sm text-slate-400">{selectedStorageFile.directory} · {formatBytes(selectedStorageFile.byteSize)} · Modified {formatSriLankaDate(selectedStorageFile.modifiedAt)}</p>
             </div>
             <div className="flex gap-2">
               <Button variant="secondary" onClick={() => void downloadStorageFile(selectedStorageFile)}>Download</Button>

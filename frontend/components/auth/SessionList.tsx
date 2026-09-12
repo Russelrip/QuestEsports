@@ -1,5 +1,6 @@
 "use client";
 
+import { formatSriLankaDateTime } from "@/lib/date-time";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { apiFetch, apiFetchJson, UserSession, getApiErrorMessage } from "@/lib/auth";
@@ -55,7 +56,7 @@ const formatTimestamp = (value?: string | null) => {
     return "Unknown";
   }
 
-  return new Date(value).toLocaleString();
+  return formatSriLankaDateTime(value);
 };
 
 const formatRelativeTime = (value?: string | null) => {

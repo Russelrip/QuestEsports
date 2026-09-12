@@ -1,5 +1,6 @@
 "use client";
 
+import { formatSriLankaDate, formatSriLankaDateTime } from "@/lib/date-time";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
@@ -68,7 +69,7 @@ function RegistrationCards({ entries, empty }: { entries: DashboardRegistration[
           ? `/tournaments/${entry.tournament.slug}/register`
           : `/tournaments/${entry.tournament.slug}`;
     const eventDate = entry.tournament.startDateStatus === "scheduled" && entry.tournament.startDate
-      ? new Date(entry.tournament.startDate).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })
+      ? formatSriLankaDateTime(entry.tournament.startDate, { dateStyle: "medium", timeStyle: "short" })
       : entry.tournament.startDateStatus.toUpperCase();
 
     return <article key={entry.id} className="flex h-full min-w-0 flex-col overflow-hidden border border-white/10 bg-[#181a24] shadow-[0_18px_45px_rgba(0,0,0,0.2)]">
@@ -432,7 +433,7 @@ export default function ProfileView() {
                       <div className="mt-5 grid gap-3 md:grid-cols-2">
                         {dashboard.recruitmentApplications.map((application) => (
                           <div key={application.id} className="border border-white/8 bg-[#171923] p-4">
-                            <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="font-semibold capitalize text-white">{application.teamName || application.applicationType.replaceAll("_", " ")}</p><p className="mt-1 text-xs text-slate-400">{application.game} · submitted {new Date(application.createdAt).toLocaleDateString()}</p></div><Badge>{application.status}</Badge></div>
+                            <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="font-semibold capitalize text-white">{application.teamName || application.applicationType.replaceAll("_", " ")}</p><p className="mt-1 text-xs text-slate-400">{application.game} · submitted {formatSriLankaDate(application.createdAt)}</p></div><Badge>{application.status}</Badge></div>
                             <p className="mt-3 text-xs leading-5 text-slate-400">{application.status === "pending" ? "Your application is waiting for management review." : `Application status: ${application.status}.`}</p>
                           </div>
                         ))}

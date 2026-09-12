@@ -1,5 +1,6 @@
 "use client";
 
+import { formatSriLankaDateTime } from "@/lib/date-time";
 import { useState } from "react";
 import AdminShell from "@/components/admin/AdminShell";
 import EmptyState from "@/components/ui/empty-state";
@@ -103,7 +104,7 @@ export default function AdminContactMessagesManager() {
                 <div>
                   <p className="font-medium text-white">{message.subject}</p>
                   <p className="mt-3 text-sm leading-7 text-slate-300">{message.message}</p>
-                  <p className="mt-3 text-xs text-slate-500">{new Date(message.createdAt).toLocaleString()}</p>
+                  <p className="mt-3 text-xs text-slate-500">{formatSriLankaDateTime(message.createdAt)}</p>
                 </div>
                 <div className="flex flex-wrap gap-3 xl:flex-col xl:items-end">
                   <Button type="button" variant="secondary" onClick={() => updateReadStatus(message.id, !message.isRead)}>

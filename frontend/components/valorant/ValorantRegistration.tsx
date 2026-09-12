@@ -1,5 +1,6 @@
 "use client";
 
+import { SRI_LANKA_TIME_ZONE } from "@/lib/date-time";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -61,6 +62,7 @@ const formatLastPlayed = (dateString: string | null): string => {
     if (diffDays < 7) return `${diffDays} days ago`;
 
     return date.toLocaleDateString("en-US", {
+      timeZone: SRI_LANKA_TIME_ZONE,
       month: "short",
       day: "numeric",
       year: date.getFullYear() !== now.getFullYear() ? "numeric" : undefined,
