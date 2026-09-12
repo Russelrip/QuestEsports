@@ -1536,10 +1536,12 @@ returning traffic; never attempt an ad-hoc `DROP`/down migration in production.
 Quest proxies the monorepo VALORANT service server-to-server using a service token.
 Public reads require no Quest session. `GET /api/v1/valorant/leaderboard?page=&per_page=`
 returns `{ entries, total, page, perPage, totalPages }` in the standard success envelope.
-Entries contain `puuid`, `name`, `tag`, `currentTier`, `elo`, `rankInTier`, `peakRank`,
-`peakSeason`, and `lastPlayed`. Discord IDs and usernames are excluded.
-`GET /api/v1/valorant/leaderboard/search?q=` returns `{ entries, entry }` (legacy first-result alias) with ranked Riot
-name/tag matches; Discord-only searches produce no match, including legacy fallback.
+Entries contain `puuid`, `name`, `tag`, `discordUsername`, `currentTier`, `elo`,
+`rankInTier`, `peakRank`, `peakSeason`, and `lastPlayed`. The Discord username is
+public leaderboard identity and is shown beside the Riot ID; Discord IDs are never
+exposed. A player with no linked handle upstream carries an empty string.
+`GET /api/v1/valorant/leaderboard/search?q=` returns `{ entries, entry }` (legacy first-result alias) with ranked
+Discord-username and Riot name/tag matches, tolerating a pasted leading `@`.
 Reads use a 60-second cache. An unavailable upstream returns `503`.
 
 ### Authenticated VALORANT registration
@@ -1561,12 +1563,13 @@ with code `DISCORD_LINK_REQUIRED`. The server resolves `OAuthAccount` for the
 session user and provider `discord`, using `providerUserId` as the canonical ID
 and stored display data for username. Client identity fields cannot override it.
 
-Discord identity is private, read-only profile/registration data, also available
-to authorized administrators. The existing Quest account-link flow refreshes
+The Discord ID is private, read-only profile/registration data, also available
+to authorized administrators; the username is public on the leaderboard. The existing Quest account-link flow refreshes
 session state after link/unlink and retains OAuth state, nonce, PKCE, CSRF, origin,
 and session protections. Unlinking blocks new registrations without deleting
 existing entries. The browser sends credentials and only PUUID; leaderboard-specific
 Discord OAuth callbacks are retired. Existing duplicate handling remains authoritative.
 
 PUUID existence checks return only Riot name/tag for a match, even when the
-caller has linked Discord; they cannot disclose another player's Discord identity.
+caller has linked Discord; this registration probe stays narrower than the public
+leaderboard projection and never discloses another player's Discord ID.

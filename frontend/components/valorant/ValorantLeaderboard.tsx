@@ -32,7 +32,9 @@ const BASE_PATH = "/valorant-leaderboard";
 const MIN_QUERY_LENGTH = 2;
 const SEARCH_DEBOUNCE_MS = 350;
 
-const normalizeQuery = (value: string) => value.trim();
+// Discord handles are often pasted with a leading @; the backend strips it too,
+// so strip it here as well or the highlight would never line up.
+const normalizeQuery = (value: string) => value.trim().replace(/^@+/, "");
 
 const buildSearchHref = (query: string) =>
   query ? `${BASE_PATH}?q=${encodeURIComponent(query)}` : BASE_PATH;
@@ -103,6 +105,11 @@ const LeaderboardRow = ({
             <span aria-hidden="true">↗</span>
           </a>
         ) : null}
+        {entry.discordUsername ? (
+          <span className="ml-2 text-xs text-slate-500">
+            <Highlight text={entry.discordUsername} term={term} />
+          </span>
+        ) : null}
       </td>
       <td className="px-4 py-4">
         {entry.currentTier ? <Badge>{entry.currentTier}</Badge> : <span className="text-slate-500">—</span>}
@@ -157,8 +164,8 @@ const SearchForm = ({
           enterKeyHint="search"
           autoComplete="off"
           spellCheck={false}
-          placeholder="Search by Riot ID"
-          aria-label="Search by Riot ID"
+          placeholder="Search by Discord username or Riot ID"
+          aria-label="Search by Discord username or Riot ID"
           aria-describedby="leaderboard-search-hint"
           className="max-w-full pl-11 pr-10 [&::-webkit-search-cancel-button]:hidden"
         />
@@ -180,7 +187,7 @@ const SearchForm = ({
     <p id="leaderboard-search-hint" aria-live="polite" className="text-xs text-slate-500">
       {busy
         ? "Searching…"
-        : "Partial matches work — try a Riot name, a tag, or a full name#tag."}
+        : "Partial matches work — try a Discord name, a Riot name, a tag, or a full name#tag."}
     </p>
   </form>
 );
@@ -336,7 +343,7 @@ export default function ValorantLeaderboard({
         ) : (
           <EmptyState
             title="No player found"
-            description={`No player matches "${query}". Searches cover Riot IDs, including partial matches — check the spelling, or register the account to appear here.`}
+            description={`No player matches "${query}". Searches cover Discord usernames and Riot IDs, including partial matches — check the spelling, or register the account to appear here.`}
           />
         )}
         <RegisterCta />

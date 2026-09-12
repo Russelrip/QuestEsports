@@ -15,6 +15,7 @@ const mapLeaderboardEntry = (entry) => ({
   puuid: entry.puuid,
   name: entry.name,
   tag: entry.tag,
+  discordUsername: entry.discord_username ?? "",
   currentTier: entry.current_tier ?? null,
   elo: entry.elo ?? null,
   rankInTier: entry.rank_in_tier ?? null,
@@ -36,16 +37,14 @@ const listLeaderboard = async ({ page = 1, perPage = 50 } = {}) => {
 
 const searchLeaderboardPlayer = async (query) => {
   const raw = await searchLeaderboard(query);
-  const entry = raw ? mapLeaderboardEntry(raw) : null;
-  // The legacy exact lookup must never reveal a private Discord-only match.
-  return entry && scoreEntry(entry, normalize(query)) !== null ? entry : null;
+  return raw ? mapLeaderboardEntry(raw) : null;
 };
 
 // --- Ranked partial search -------------------------------------------------
 // The upstream only offers an EXACT Discord-username lookup, which makes the
 // public search box unusable unless you already know the username character for
 // character. We page the whole leaderboard into a short-lived snapshot once and
-// match against public Riot fields locally, so a Riot name, a tag, or a
+// match against it locally, so a partial Discord name, a Riot name, a tag, or a
 // full `name#tag` all find the player - and every hit keeps its real
 // leaderboard rank instead of rendering as an em dash.
 
@@ -102,11 +101,12 @@ const matchScore = (haystack, needle) => {
 };
 
 // Riot tags are 3-5 characters, so a bare substring hit on one is mostly noise -
-// it still matches, but always sorts below a name hit.
+// it still matches, but always sorts below a name or Discord hit.
 const TAG_PENALTY = 3;
 
 const scoreEntry = (entry, needle) => {
   const candidates = [
+    matchScore(normalize(entry.discordUsername), needle),
     matchScore(normalize(entry.name), needle),
     matchScore(normalize(`${entry.name}#${entry.tag}`), needle),
   ];
@@ -117,7 +117,8 @@ const scoreEntry = (entry, needle) => {
 };
 
 const searchLeaderboardPlayers = async (query, { limit = SEARCH_RESULT_LIMIT } = {}) => {
-  const needle = normalize(query);
+  // Discord handles are often pasted with a leading @.
+  const needle = normalize(query).replace(/^@+/, "");
   if (needle.length < MIN_QUERY_LENGTH) return [];
 
   let complete = false;

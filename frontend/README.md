@@ -78,7 +78,7 @@ approved, recorded reason.
 
 ## Production hardening verification
 
-Frontend browser CSP admits only the configured public API origin; internal Docker API addresses are server-only. Unit workers are bounded to one. Run `npm test -- --coverage` using the installed V8 provider, plus lint, typecheck and an HTTPS-configured build. Discord profile/registration data is private and read-only; public leaderboard display/search uses Riot identity.
+Frontend browser CSP admits only the configured public API origin; internal Docker API addresses are server-only. Unit workers are bounded to one. Run `npm test -- --coverage` using the installed V8 provider, plus lint, typecheck and an HTTPS-configured build. Discord IDs and registration data are private and read-only; the public leaderboard displays and searches the Discord username alongside Riot identity.
 
 Production uses the immutable Compose release; standalone `npm start`, Vercel and PM2 instructions apply only to development or historical deployments.
 

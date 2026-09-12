@@ -17,8 +17,8 @@ describe("VALORANT player leaderboard", () => {
     const component = read("components/valorant/ValorantLeaderboard.tsx");
     expect(component).toContain('"use client"');
     expect(component).toContain("Register your account");
-    expect(component).toContain("Search by Riot ID");
-    expect(component).not.toContain("discordUsername");
+    expect(component).toContain("Search by Discord username");
+    expect(component).toContain("entry.discordUsername");
     expect(component).toContain("isTopTen");
     expect(component).toContain("Leaderboard unavailable");
     expect(component).toContain("buildValorantTrackerProfileUrl");

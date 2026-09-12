@@ -224,6 +224,7 @@ export type ValorantPlayerLeaderboardEntry = {
   puuid: string;
   name: string;
   tag: string;
+  discordUsername: string;
   currentTier: string | null;
   elo: number | null;
   rankInTier: number | null;

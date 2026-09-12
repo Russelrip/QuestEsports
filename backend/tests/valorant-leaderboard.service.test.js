@@ -24,7 +24,7 @@ test("listLeaderboard maps the paginated upstream payload to camelCase", async (
   const { module: service } = loadService(clientMock);
   const result = await service.listLeaderboard({ page: 1, perPage: 50 });
   assert.deepEqual(result.entries[0], {
-    puuid: "p-1", name: "Sahan", tag: "QST", currentTier: "Diamond 2",
+    puuid: "p-1", name: "Sahan", tag: "QST", discordUsername: "sahan", currentTier: "Diamond 2",
     elo: 1520, rankInTier: 40, peakRank: "Ascendant 1", peakSeason: "e10a1", lastPlayed: "2026-08-10T00:00:00Z",
   });
   assert.equal(result.perPage, 50);
@@ -38,7 +38,7 @@ test("searchLeaderboardPlayer maps a found entry", async () => {
   };
   const { module: service } = loadService(clientMock);
   const result = await service.searchLeaderboardPlayer("russel");
-  assert.equal(result.discordUsername, undefined);
+  assert.equal(result.discordUsername, "russel");
   assert.equal(result.peakRank, "Diamond 1");
   assert.equal(result.lastPlayed, null);
 });
@@ -80,7 +80,19 @@ test("searchLeaderboardPlayers matches a partial Riot name and keeps the real ra
   const results = await service.searchLeaderboardPlayers("sahan");
   assert.equal(results.length, 1);
   assert.equal(results[0].name, "SahanX");
-  assert.equal(results[0].discordUsername, undefined);
+  assert.equal(results[0].discordUsername, "private-handle");
+  assert.equal(results[0].rank, 2);
+});
+
+test("searchLeaderboardPlayers matches a partial Discord username and keeps the real rank", async () => {
+  const { module: service } = loadService(snapshotClient([
+    player("Alpha", "QST", "alpha"),
+    player("Bravo", "QST", "sahanx"),
+    player("Charlie", "QST", "charlie"),
+  ]));
+  const results = await service.searchLeaderboardPlayers("sahan");
+  assert.equal(results.length, 1);
+  assert.equal(results[0].discordUsername, "sahanx");
   assert.equal(results[0].rank, 2);
 });
 
@@ -95,11 +107,12 @@ test("searchLeaderboardPlayers matches Riot name, tag, and full name#tag", async
   assert.deepEqual((await service.searchLeaderboardPlayers("Russel#QST")).map((e) => e.name), ["Russel"]);
 });
 
-test("searchLeaderboardPlayers is case-insensitive", async () => {
+test("searchLeaderboardPlayers is case-insensitive and tolerates a leading @", async () => {
   const { module: service } = loadService(snapshotClient([player("Sahan", "QST", "Sahan_G")]));
-  const results = await service.searchLeaderboardPlayers("SAHAN");
+  const results = await service.searchLeaderboardPlayers("@SAHAN_g");
   assert.equal(results.length, 1);
   assert.equal(results[0].name, "Sahan");
+  assert.equal(results[0].discordUsername, "Sahan_G");
 });
 
 test("searchLeaderboardPlayers ranks exact over prefix over substring", async () => {
@@ -227,12 +240,17 @@ test("registration rejects an authenticated user without a linked Discord accoun
   );
 });
 
- test("public search never discloses a Discord-only match, including fallback", async () => {
-  const secret = player("PublicRiot", "TAG", "private-discord");
-  for (const getLeaderboard of [async () => ({entries: [secret], total_pages: 1}), async () => { throw new Error("unavailable"); }]) {
-    const { module: service } = loadService({getLeaderboard, searchLeaderboard: async () => secret});
-    assert.deepEqual(await service.searchLeaderboardPlayers("private-discord"), []);
-    assert.equal(await service.searchLeaderboardPlayer("private-discord"), null);
+// Discord handles are public leaderboard identity again (they were hidden
+// between #113 and this change), so a handle-only query must find its player
+// through the local snapshot AND through the upstream exact-match fallback.
+test("public search finds a player by Discord username, including the fallback", async () => {
+  const target = player("PublicRiot", "TAG", "handle-only");
+  for (const getLeaderboard of [async () => ({entries: [target], total_pages: 1}), async () => { throw new Error("unavailable"); }]) {
+    const { module: service } = loadService({getLeaderboard, searchLeaderboard: async () => target});
+    const [hit] = await service.searchLeaderboardPlayers("handle-only");
+    assert.equal(hit.name, "PublicRiot");
+    assert.equal(hit.discordUsername, "handle-only");
+    assert.equal((await service.searchLeaderboardPlayer("handle-only")).discordUsername, "handle-only");
   }
 });
 
