@@ -70,7 +70,7 @@ test("createSavedTeam stores the captain and sends standalone member invites", a
   const { module: teamService, restore } = loadModuleWithMocks(servicePath, {
     [prismaModulePath]: prismaMock,
     [uploadModulePath]: {
-      persistTeamLogoUpload: async () => null,
+      persistTeamLogoUpload: async () => ({ filename: "quest-five.webp" }),
       teamLogoDirectory: "uploads/team-logos",
     },
     [noticeModulePath]: noticeMock(sentInvites),
@@ -79,7 +79,7 @@ test("createSavedTeam stores the captain and sends standalone member invites", a
   try {
     const team = await teamService.createSavedTeam({
       user,
-      file: null,
+      file: { originalname: "quest-five.webp" },
       body: {
         name: "Quest Five",
         country: "Sri Lanka",
@@ -407,7 +407,7 @@ test("updateSavedTeam propagates a replacement logo to paid and unpaid registrat
   }
 });
 
-test("updateSavedTeam removes a logo without resurrecting a stale snapshot", async () => {
+test("updateSavedTeam replaces a logo without resurrecting a stale snapshot", async () => {
   const user = {
     id: "user-1",
     firstName: "Quest",
@@ -466,7 +466,7 @@ test("updateSavedTeam removes a logo without resurrecting a stale snapshot", asy
       },
     },
     [uploadModulePath]: {
-      persistTeamLogoUpload: async () => null,
+      persistTeamLogoUpload: async () => ({ filename: "replacement-logo.png" }),
       teamLogoDirectory: "uploads/team-logos",
     },
     [uploadCleanupModulePath]: {
@@ -482,18 +482,19 @@ test("updateSavedTeam removes a logo without resurrecting a stale snapshot", asy
     await teamService.updateSavedTeam({
       teamId: existingTeam.id,
       user,
-      file: null,
+      file: { originalname: "replacement-logo.png" },
       body: {
         name: "Quest Five",
         country: "Sri Lanka",
         teamTag: "QF",
-        removeLogo: "true",
         members: "[]",
       },
     });
 
-    assert.equal(savedTeamData.logoName, null);
-    assert.equal(registrations[0].teamLogoName, null);
+    // The new logo reaches the team and every registration that points at it,
+    // and the file it replaced is scheduled for cleanup rather than orphaned.
+    assert.equal(savedTeamData.logoName, "replacement-logo.png");
+    assert.equal(registrations[0].teamLogoName, "replacement-logo.png");
     assert.equal(scheduledLogo, "current-logo.png");
     assert.notEqual(savedTeamData.logoName, existingTeam.logoName);
   } finally {
@@ -2294,7 +2295,7 @@ test("a never-logoed team with no registration upload stays logo-less", async ()
   }
 });
 
-test("removing a saved team logo records the removal so it cannot be resurrected", async () => {
+test("a captain cannot strip a team's logo by asking for a removal", async () => {
   const savedTeamUpdates = [];
   const existingTeam = {
     id: "saved-team-1",
@@ -2347,24 +2348,71 @@ test("removing a saved team logo records the removal so it cannot be resurrected
   });
 
   try {
-    await teamService.updateSavedTeam({
-      user: captain,
-      teamId: "saved-team-1",
-      body: {
-        name: "Quest Five",
-        country: "Sri Lanka",
-        teamTag: "Q5",
-        organizationRequested: "false",
-        removeLogo: "true",
-        members: JSON.stringify([]),
-      },
-      file: null,
-    });
+    // A logo is required, so a removal with nothing to put in its place is
+    // refused at the door rather than walking the team back out of the rule.
+    // Admins keep their own removal path for moderation.
+    await assert.rejects(
+      () => teamService.updateSavedTeam({
+        user: captain,
+        teamId: "saved-team-1",
+        body: {
+          name: "Quest Five",
+          country: "Sri Lanka",
+          teamTag: "Q5",
+          organizationRequested: "false",
+          removeLogo: "true",
+          members: JSON.stringify([]),
+        },
+        file: null,
+      }),
+      (error) => error.statusCode === 400 && /logo is required/i.test(error.message),
+    );
 
-    const cleared = savedTeamUpdates.find((data) => Object.prototype.hasOwnProperty.call(data, "logoName"));
-    assert.ok(cleared, "the logo removal is persisted");
-    assert.equal(cleared.logoName, null);
-    assert.ok(cleared.logoClearedAt instanceof Date, "the removal is timestamped so it reads as deliberate");
+    assert.deepEqual(savedTeamUpdates, [], "nothing is written when the removal is refused");
+  } finally {
+    restore();
+  }
+});
+
+test("createSavedTeam refuses a team with no logo", async () => {
+  const user = {
+    id: "user-1",
+    firstName: "Quest",
+    lastName: "Captain",
+    username: "captain",
+    email: "captain@example.com",
+  };
+  let transactionStarted = false;
+  const { module: teamService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: {
+      prisma: {
+        $transaction: async () => { transactionStarted = true; },
+      },
+    },
+    [uploadModulePath]: {
+      persistTeamLogoUpload: async () => null,
+      teamLogoDirectory: "uploads/team-logos",
+    },
+    [noticeModulePath]: noticeMock(),
+  });
+
+  try {
+    await assert.rejects(
+      () => teamService.createSavedTeam({
+        user,
+        file: null,
+        body: {
+          name: "Quest Five",
+          country: "Sri Lanka",
+          teamTag: "QF",
+          organizationRequested: "false",
+          members: "[]",
+        },
+      }),
+      (error) => error.statusCode === 400 && /logo is required/i.test(error.message),
+    );
+
+    assert.equal(transactionStarted, false, "the team is refused before anything is written");
   } finally {
     restore();
   }
