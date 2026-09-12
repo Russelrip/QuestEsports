@@ -1,3 +1,5 @@
+import { SRI_LANKA_TIME_ZONE } from "./date-time";
+
 export function cn(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(" ");
 }
@@ -13,6 +15,10 @@ function formatDisplayDate(value?: string | null, options?: Intl.DateTimeFormatO
   }
 
   return date.toLocaleDateString("en-US", {
+    // Pinned so SSR (UTC container) and the browser (mostly Asia/Colombo)
+    // format the same instant identically; an unpinned zone shifts the day
+    // across midnight UTC and breaks hydration.
+    timeZone: SRI_LANKA_TIME_ZONE,
     month: "short",
     day: "numeric",
     year: "numeric",

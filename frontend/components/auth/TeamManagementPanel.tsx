@@ -141,7 +141,6 @@ export default function TeamManagementPanel({
   const [country, setCountry] = useState("");
   const [teamTag, setTeamTag] = useState("");
   const [teamLogo, setTeamLogo] = useState<File | null>(null);
-  const [removeLogo, setRemoveLogo] = useState(false);
   const [members, setMembers] = useState<EditableMember[]>([]);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -156,7 +155,6 @@ export default function TeamManagementPanel({
     setCountry(selectedTeam.country || "");
     setTeamTag(selectedTeam.teamTag || "");
     setTeamLogo(null);
-    setRemoveLogo(false);
     setError("");
     setMembers(
       selectedTeam.members
@@ -200,7 +198,6 @@ export default function TeamManagementPanel({
         teamTag,
         organizationRequested: false,
         teamLogo,
-        removeLogo,
         members: members.map((member) => ({
           role: member.role,
           name: member.name,
@@ -318,8 +315,9 @@ export default function TeamManagementPanel({
           </div>
 
           <div className="grid gap-3 border border-white/8 bg-white/[0.025] p-4">
-            <FormField label="Replace team logo" htmlFor="manageTeamLogo" hint="PNG, JPG, or WebP up to 5 MB"><Input id="manageTeamLogo" type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => { setTeamLogo(event.target.files?.[0] || null); setRemoveLogo(false); }} /></FormField>
-            {selectedTeam.logoUrl ? <label className="flex items-center gap-2 text-sm text-slate-300"><input type="checkbox" checked={removeLogo} onChange={(event) => { setRemoveLogo(event.target.checked); if (event.target.checked) setTeamLogo(null); }} />Remove current logo</label> : null}
+            <FormField label="Replace team logo" htmlFor="manageTeamLogo" hint="PNG, JPG, or WebP up to 5 MB"><Input id="manageTeamLogo" type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => setTeamLogo(event.target.files?.[0] || null)} /></FormField>
+            {/* No removal control: a team must keep a logo, so the only move is
+                replacing it with the field above. */}
           </div>
 
           <section className="grid gap-4">

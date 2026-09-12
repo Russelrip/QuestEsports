@@ -1,4 +1,4 @@
-const SRI_LANKA_TIME_ZONE = "Asia/Colombo";
+export const SRI_LANKA_TIME_ZONE = "Asia/Colombo";
 const SRI_LANKA_UTC_OFFSET = "+05:30";
 
 const DATE_TIME_LOCAL_PATTERN =
@@ -44,5 +44,24 @@ export function formatSriLankaDateTime(
   return date.toLocaleString("en-US", {
     timeZone: SRI_LANKA_TIME_ZONE,
     ...options,
+  });
+}
+
+// Dates rendered during SSR must not depend on the runtime's zone: the server
+// container runs UTC while visitors are almost all in Asia/Colombo, so an
+// unpinned toLocaleDateString formats a late-evening UTC timestamp as the
+// previous day on the server and the next day in the browser. React sees two
+// different strings and bails out of hydration (error #418). Pin the zone and
+// the locale so both sides render the same text.
+export function formatSriLankaDate(value: string | Date | null | undefined) {
+  if (!value) return "—";
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+
+  return date.toLocaleDateString("en-US", {
+    timeZone: SRI_LANKA_TIME_ZONE,
+    month: "numeric",
+    day: "numeric",
+    year: "numeric",
   });
 }

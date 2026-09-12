@@ -209,7 +209,8 @@ export default function RegistrationForm() {
             <FormField
               label="Team Logo"
               htmlFor="teamLogo"
-              hint="Please upload a square image, ideally 300×300 (optional)"
+              required
+              hint="Please upload a square image, ideally 300×300"
             >
               <input
                 ref={logoInputRef}

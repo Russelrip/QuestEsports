@@ -176,6 +176,10 @@ export async function createSavedTeam(input: {
   teamLogo: File | null;
   members: CreateTeamMemberInput[];
 }) {
+  if (!input.teamLogo) {
+    throw new Error("A team logo is required. Upload a square image, ideally 300x300.");
+  }
+
   assertFileWithinUploadLimit(
     input.teamLogo,
     TEAM_LOGO_MAX_FILE_SIZE,
@@ -220,7 +224,6 @@ export async function updateSavedTeam(input: {
   teamTag: string;
   organizationRequested: boolean;
   teamLogo: File | null;
-  removeLogo: boolean;
   members: ManageTeamMemberInput[];
 }) {
   assertFileWithinUploadLimit(input.teamLogo, TEAM_LOGO_MAX_FILE_SIZE, "Team logo");
@@ -229,7 +232,6 @@ export async function updateSavedTeam(input: {
   body.append("country", input.country);
   body.append("teamTag", input.teamTag);
   body.append("organizationRequested", String(input.organizationRequested));
-  body.append("removeLogo", String(input.removeLogo));
   body.append("members", JSON.stringify(input.members));
   if (input.teamLogo) body.append("teamLogo", input.teamLogo);
 

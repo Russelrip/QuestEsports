@@ -317,6 +317,15 @@ const createSavedTeam = async ({ user, body, file }) => {
     throw new HttpError(400, "The captain is already included in the member list.");
   }
 
+  // Every team Quest holds should be able to appear on a bracket, an overlay or
+  // a match card, and that needs a logo. Requiring it at creation is the only
+  // point where no captain is stranded: there is nothing saved yet to lose.
+  // Teams created before this rule keep working, and are caught at the door by
+  // `assertTeamLogoAvailable` when they register for a tournament.
+  if (!file) {
+    throw new HttpError(400, "A team logo is required. Upload a square image, ideally 300x300.");
+  }
+
   const persistedLogo = await persistTeamLogoUpload(file);
   const inviteSentAt = new Date();
   const inviteExpiresAt = new Date(
@@ -507,6 +516,13 @@ const updateSavedTeam = async ({ teamId, user, body, file }) => {
   );
   if (!existingTeam) {
     throw new HttpError(404, "Team not found or you do not have permission to manage it.");
+  }
+
+  // A logo can be swapped, but not dropped: clearing it would walk a team back
+  // out of the rule creation enforces. Replacing counts as keeping one, so a
+  // removal paired with an upload is still fine.
+  if (removeLogo && !file) {
+    throw new HttpError(400, "A team logo is required. Upload a replacement instead of removing it.");
   }
 
   const persistedLogo = file ? await persistTeamLogoUpload(file) : null;
