@@ -7,7 +7,11 @@ import type { GameAccount } from "@/lib/game-accounts";
  * two-sources-of-truth registration status bug, and the server is the only
  * authority that also blocks the submit.
  */
-export type RequirementType = "ROSTER_SIZE" | "INVITES_ACCEPTED" | "DISCORD_CONNECTED";
+export type RequirementType =
+  | "ROSTER_SIZE"
+  | "SUBSTITUTE_LIMIT"
+  | "INVITES_ACCEPTED"
+  | "DISCORD_CONNECTED";
 
 export type Requirement = {
   type: RequirementType;
@@ -54,8 +58,27 @@ export type RosterReadiness = {
 
 export const requirementLabel = (requirement: Requirement): string => {
   switch (requirement.type) {
-    case "ROSTER_SIZE":
-      return `Roster size (${requirement.actual ?? 0} of ${requirement.minimum ?? 0} needed)`;
+    case "ROSTER_SIZE": {
+      // A roster can fail this by being too small OR too large, and the old
+      // label only ever read "N of M needed" - which told a captain holding one
+      // player too many to go and recruit another. Say which way it is wrong.
+      const actual = requirement.actual ?? 0;
+      const minimum = requirement.minimum ?? 0;
+      const maximum = requirement.maximum;
+      if (maximum !== undefined && actual > maximum) {
+        const excess = actual - maximum;
+        return `Roster size (${actual} active players, maximum ${maximum} — remove ${excess})`;
+      }
+      return `Roster size (${actual} of ${minimum} active players needed)`;
+    }
+    case "SUBSTITUTE_LIMIT": {
+      const actual = requirement.actual ?? 0;
+      const maximum = requirement.maximum ?? 0;
+      const excess = actual - maximum;
+      return excess > 0
+        ? `Substitutes (${actual} of ${maximum} allowed — remove ${excess})`
+        : `Substitutes (${actual} of ${maximum} allowed)`;
+    }
     case "INVITES_ACCEPTED":
       return "All invitations accepted";
     case "DISCORD_CONNECTED":

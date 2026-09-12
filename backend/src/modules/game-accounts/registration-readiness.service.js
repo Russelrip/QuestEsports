@@ -22,6 +22,15 @@ const FAIL = "FAIL";
 // so they do not count toward the roster minimum.
 const COMPETING_ROLES = new Set(["CAPTAIN", "PLAYER", "SUBSTITUTE"]);
 
+// The roster limits count two different things, and lumping them together is
+// what made a legal roster read as illegal. A 5v5 carrying one substitute is
+// six people, but it is five ACTIVE players plus one sub, which is exactly
+// what `maxRosterSize` + `maxSubstitutes` describe. The registration form has
+// always scored it this way (`ConfiguredTournamentRegistrationForm`: active
+// players against the roster size, substitutes against `maxSubstitutes`);
+// this is the saved-team path agreeing with it.
+const ACTIVE_ROLES = new Set(["CAPTAIN", "PLAYER"]);
+
 const memberView = (member, discordRequired) => {
   const account = member.player?.gameAccounts?.[0] ?? null;
   const inviteAccepted = member.inviteStatus === "accepted";
@@ -119,6 +128,7 @@ const getRegistrationReadiness = async ({ teamId, tournamentId, user }) => {
         game: true,
         minRosterSize: true,
         maxRosterSize: true,
+        maxSubstitutes: true,
         discordRequired: true,
       },
     });
@@ -139,16 +149,33 @@ const getRegistrationReadiness = async ({ teamId, tournamentId, user }) => {
   const requirements = [];
 
   if (tournament) {
-    // Count only accepted competing members: a pending invite is not a player,
-    // and a coach does not fill a roster slot.
-    const accepted = competing.filter((member) => member.inviteStatus === "accepted").length;
-    const withinMaximum = !tournament.maxRosterSize || accepted <= tournament.maxRosterSize;
+    // Count only accepted members: a pending invite is not a player, and a
+    // coach fills neither a playing slot nor a substitute slot.
+    const acceptedActive = competing.filter(
+      (member) => ACTIVE_ROLES.has(member.role) && member.inviteStatus === "accepted"
+    ).length;
+    const acceptedSubstitutes = competing.filter(
+      (member) => member.role === "SUBSTITUTE" && member.inviteStatus === "accepted"
+    ).length;
+
+    const withinMaximum = !tournament.maxRosterSize || acceptedActive <= tournament.maxRosterSize;
     requirements.push({
       type: "ROSTER_SIZE",
-      status: accepted >= tournament.minRosterSize && withinMaximum ? PASS : FAIL,
+      status: acceptedActive >= tournament.minRosterSize && withinMaximum ? PASS : FAIL,
       minimum: tournament.minRosterSize,
       maximum: tournament.maxRosterSize,
-      actual: accepted,
+      actual: acceptedActive,
+    });
+
+    // Reported as its own requirement so "you have a sub too many" can never be
+    // rendered as "you need another player", which is what the single lumped
+    // count did.
+    const maxSubstitutes = tournament.maxSubstitutes ?? 0;
+    requirements.push({
+      type: "SUBSTITUTE_LIMIT",
+      status: acceptedSubstitutes <= maxSubstitutes ? PASS : FAIL,
+      maximum: maxSubstitutes,
+      actual: acceptedSubstitutes,
     });
   }
 
@@ -192,4 +219,5 @@ module.exports = {
   getRegistrationReadiness,
   trackedGameFor,
   COMPETING_ROLES,
+  ACTIVE_ROLES,
 };

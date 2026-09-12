@@ -497,3 +497,91 @@ test("existing tournaments are unaffected by the new setting", async () => {
     restore();
   }
 });
+
+// --- Roster limits count active players and substitutes separately ---------
+//
+// A 5v5 carrying one substitute is six people, and the old check compared that
+// six against `maxRosterSize` and failed a legal roster. `maxRosterSize` sizes
+// the ACTIVE lineup and `maxSubstitutes` sizes the bench, which is how the
+// registration form has always scored a fresh entry. These pin the saved-team
+// path to the same rule.
+
+const fiveVFive = (overrides = {}) =>
+  valorantTournament({ minRosterSize: 5, maxRosterSize: 5, maxSubstitutes: 2, ...overrides });
+
+const roster = ({ players, substitutes = 0 }) => [
+  member({ id: "captain-member", role: "CAPTAIN", memberOrder: 0, player: withAccount().player }),
+  ...Array.from({ length: players }, (_, index) =>
+    member({ id: `player-${index}`, role: "PLAYER", memberOrder: index + 1, player: withAccount().player }),
+  ),
+  ...Array.from({ length: substitutes }, (_, index) =>
+    member({ id: `sub-${index}`, role: "SUBSTITUTE", memberOrder: players + 1 + index, player: withAccount().player }),
+  ),
+];
+
+const readiness = async (team, tournament) => {
+  const { module: service, restore } = loadService({ team: baseTeam(team), tournament });
+  try {
+    return await service.getRegistrationReadiness({
+      teamId: "team-1",
+      tournamentId: "tournament-1",
+      user: CAPTAIN,
+    });
+  } finally {
+    restore();
+  }
+};
+
+const requirement = (result, type) => result.requirements.find((item) => item.type === type);
+
+test("a 5v5 roster carrying a substitute is ready", async () => {
+  // Captain + 4 players is the five active; the substitute sits on the bench
+  // within maxSubstitutes. This is the roster that reported "1 requirement
+  // still to sort out" with every member marked Ready.
+  const result = await readiness(roster({ players: 4, substitutes: 1 }), fiveVFive());
+  assert.equal(requirement(result, "ROSTER_SIZE").actual, 5);
+  assert.equal(requirement(result, "ROSTER_SIZE").status, "PASS");
+  assert.equal(requirement(result, "SUBSTITUTE_LIMIT").actual, 1);
+  assert.equal(requirement(result, "SUBSTITUTE_LIMIT").status, "PASS");
+  assert.equal(result.ready, true);
+});
+
+test("a substitute does not fill an empty playing slot", async () => {
+  // Four active plus a sub is five people but cannot field five, so the
+  // minimum must fail. The old lumped count called this ready.
+  const result = await readiness(roster({ players: 3, substitutes: 1 }), fiveVFive());
+  const size = requirement(result, "ROSTER_SIZE");
+  assert.equal(size.actual, 4);
+  assert.equal(size.status, "FAIL");
+  assert.equal(result.ready, false);
+});
+
+test("one substitute too many fails the substitute limit, not the roster size", async () => {
+  const result = await readiness(
+    roster({ players: 4, substitutes: 2 }),
+    fiveVFive({ maxSubstitutes: 1 }),
+  );
+  assert.equal(requirement(result, "ROSTER_SIZE").status, "PASS");
+  const subs = requirement(result, "SUBSTITUTE_LIMIT");
+  assert.equal(subs.status, "FAIL");
+  assert.equal(subs.actual, 2);
+  assert.equal(subs.maximum, 1);
+});
+
+test("too many active players fails the roster maximum", async () => {
+  const result = await readiness(roster({ players: 5 }), fiveVFive());
+  const size = requirement(result, "ROSTER_SIZE");
+  assert.equal(size.status, "FAIL");
+  assert.equal(size.actual, 6);
+  assert.equal(size.maximum, 5);
+});
+
+test("a tournament with no substitute allowance rejects a bench", async () => {
+  const result = await readiness(
+    roster({ players: 4, substitutes: 1 }),
+    fiveVFive({ maxSubstitutes: 0 }),
+  );
+  assert.equal(requirement(result, "ROSTER_SIZE").status, "PASS");
+  assert.equal(requirement(result, "SUBSTITUTE_LIMIT").status, "FAIL");
+  assert.equal(result.ready, false);
+});
