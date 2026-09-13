@@ -20,6 +20,7 @@ import {
   type TeamRegistration,
   type TeamRegistrationSummary,
 } from "@/lib/admin";
+import type { TeamInviteStatus } from "@/lib/teams";
 import { getCoachValidationMessage, type CoachDraft } from "@/lib/tournament-coach";
 import {
   TEAM_LOGO_MAX_FILE_SIZE,
@@ -582,7 +583,11 @@ function RegistrationDetail({
         riotId: coachDraft.gameId.trim(),
       };
     }
-    return registration?.coach || null;
+    if (!registration?.coach) return null;
+    // The invitation is the coach's own answer, not something an admin edits,
+    // so only the contact details go back.
+    const { name, email, phone, discord, riotId } = registration.coach;
+    return { name, email, phone, discord, riotId };
   };
 
   const coachValidationMessage = () => {
@@ -1019,8 +1024,16 @@ function RegistrationDetail({
                     Coach
                   </h4>
                   <p className="mt-1 text-sm text-slate-400">
-                    Coaches are managed separately from the numbered player roster and do not require a Quest account.
+                    Coaches are managed separately from the numbered player roster. Like players, a coach accepts an invite from their Quest account, and the registration only verifies once they have.
                   </p>
+                  {registration.coach ? (
+                    <div className="mt-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                      <StatusText value={registration.coach.inviteStatus} />
+                      <p className="text-xs text-slate-400">
+                        {COACH_INVITE_STATUS_HINTS[registration.coach.inviteStatus]}
+                      </p>
+                    </div>
+                  ) : null}
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <Button
@@ -1423,6 +1436,15 @@ function RegistrationDetail({
     </div>
   );
 }
+
+// What each coach invitation state means for the registration, so an admin can
+// tell why a roster with every player accepted is still not verified.
+const COACH_INVITE_STATUS_HINTS: Record<TeamInviteStatus, string> = {
+  pending: "Waiting for the coach to accept. The registration stays unverified until they do.",
+  accepted: "The coach accepted from their Quest account.",
+  expired: "The coach's invite expired, so the registration cannot verify on its own. The captain can send it again from their team page.",
+  declined: "The coach declined, which flags the registration.",
+};
 
 // A free tournament never asked for money, so its registrations report "free"
 // rather than a payment status that would imply a fee was settled.
