@@ -1489,13 +1489,118 @@ test("getAdminSavedTeamById loads the roster only for the selected team", async 
     const team = await adminService.getAdminSavedTeamById("saved-team-1");
     assert.equal(team.captainName, "Team Captain");
     assert.deepEqual(team.members, [
-      { id: "member-1", role: "PLAYER", name: "Player One", email: "player@example.com", phone: "0770000000", discord: "player", gameId: "Player#001", gameAccountConnected: false, legacyGameId: "Player#001", inviteStatus: "accepted" },
-      { id: "member-2", role: "COACH", name: "Team Coach", email: "coach@example.com", phone: null, discord: null, gameId: null, gameAccountConnected: false, legacyGameId: null, inviteStatus: "pending" },
+      { id: "member-1", role: "PLAYER", name: "Player One", email: "player@example.com", phone: "0770000000", discord: "player", gameId: "Player#001", gameAccountConnected: false, legacyGameId: "Player#001", inviteStatus: "accepted", account: null },
+      { id: "member-2", role: "COACH", name: "Team Coach", email: "coach@example.com", phone: null, discord: null, gameId: null, gameAccountConnected: false, legacyGameId: null, inviteStatus: "pending", account: null },
       // The connected account is the answer, and the stale typed string is
       // still reported beside it so a surface can tell them apart rather than
       // having to treat a verified identity and an inherited guess alike.
-      { id: "member-3", role: "SUBSTITUTE", name: "Connected Player", email: "sub@example.com", phone: null, discord: null, gameId: "Connected#9999", gameAccountConnected: true, legacyGameId: "TypedLongAgo#000", inviteStatus: "accepted" },
+      { id: "member-3", role: "SUBSTITUTE", name: "Connected Player", email: "sub@example.com", phone: null, discord: null, gameId: "Connected#9999", gameAccountConnected: true, legacyGameId: "TypedLongAgo#000", inviteStatus: "accepted", account: null },
     ]);
+  } finally {
+    restore();
+  }
+});
+
+test("getAdminSavedTeamById shows what each member's own account has connected", async () => {
+  const userQueries = [];
+  const accounts = [
+    // The linked captain: phone and Discord on the account, nothing on the row.
+    { id: "user-captain", emailNormalized: "captain@example.com", emailVerified: true, phone: "0771111111", discordTag: "captain.discord", oauthAccounts: [{ id: "oauth-1" }], player: { gameAccounts: [] } },
+    // The linked player: a connected Riot account the row never pointed at.
+    { id: "user-player", emailNormalized: "player@example.com", emailVerified: true, phone: "0772222222", discordTag: "player.discord", oauthAccounts: [{ id: "oauth-2" }], player: { gameAccounts: [{ game: "valorant", username: "Clutch", tagline: "SL1", verificationStatus: "discord_corroborated" }] } },
+    // An invitee who has not answered, found by the address they verified. Their
+    // Discord handle is a leftover from a link that no longer exists.
+    { id: "user-invitee", emailNormalized: "invitee@example.com", emailVerified: true, phone: null, discordTag: "stale.handle", oauthAccounts: [], player: null },
+  ];
+  const blankRow = { phone: null, discord: null, riotId: null, player: null };
+  const { module: adminService, restore } = loadAdminService({
+    savedTeam: {
+      findUnique: async () => ({
+        id: "saved-team-1",
+        name: "Quest Two",
+        teamTag: "Q2",
+        logoName: null,
+        country: "Sri Lanka",
+        organizationName: null,
+        updatedAt: new Date("2026-09-14T00:00:00.000Z"),
+        captainUser: { firstName: "Team", lastName: "Captain", username: "captain" },
+        _count: { members: 4 },
+        members: [
+          { id: "m-captain", userId: "user-captain", role: "CAPTAIN", name: "Captain", email: "captain@example.com", emailNormalized: "captain@example.com", inviteStatus: "accepted", ...blankRow },
+          { id: "m-player", userId: "user-player", role: "PLAYER", name: "Player", email: "player@example.com", emailNormalized: "player@example.com", inviteStatus: "accepted", ...blankRow, riotId: "OldTyped#000" },
+          { id: "m-invitee", userId: null, role: "COACH", name: "Invitee", email: "invitee@example.com", emailNormalized: "invitee@example.com", inviteStatus: "pending", ...blankRow },
+          { id: "m-nobody", userId: null, role: "SUBSTITUTE", name: "No Account", email: "nobody@example.com", emailNormalized: "nobody@example.com", inviteStatus: "pending", ...blankRow },
+        ],
+      }),
+    },
+    user: {
+      findMany: async (args) => {
+        userQueries.push(args);
+        return accounts;
+      },
+    },
+  });
+
+  try {
+    const team = await adminService.getAdminSavedTeamById("saved-team-1");
+    const byId = Object.fromEntries(team.members.map((member) => [member.id, member]));
+
+    assert.deepEqual(byId["m-captain"].account, { phone: "0771111111", discord: "captain.discord", discordConnected: true });
+    assert.equal(byId["m-captain"].gameAccountConnected, false);
+
+    assert.deepEqual(byId["m-player"].account, { phone: "0772222222", discord: "player.discord", discordConnected: true });
+    assert.equal(byId["m-player"].gameId, "Clutch#SL1");
+    assert.equal(byId["m-player"].gameAccountConnected, true);
+    // The row keeps its own typed values, so a save never copies account data.
+    assert.equal(byId["m-player"].legacyGameId, "OldTyped#000");
+    assert.equal(byId["m-player"].phone, null);
+    assert.equal(byId["m-player"].discord, null);
+
+    assert.deepEqual(byId["m-invitee"].account, { phone: null, discord: null, discordConnected: false });
+    assert.equal(byId["m-nobody"].account, null);
+
+    // One lookup: linked users by id, unanswered invitees only by a verified address.
+    assert.equal(userQueries.length, 1);
+    assert.deepEqual(userQueries[0].where, {
+      OR: [
+        { id: { in: ["user-captain", "user-player"] } },
+        { emailNormalized: { in: ["invitee@example.com", "nobody@example.com"] }, emailVerified: true },
+      ],
+    });
+  } finally {
+    restore();
+  }
+});
+
+test("getAdminSavedTeamById does not attach an unverified account to an invitee", async () => {
+  const { module: adminService, restore } = loadAdminService({
+    savedTeam: {
+      findUnique: async () => ({
+        id: "saved-team-1",
+        name: "Quest Two",
+        teamTag: "Q2",
+        logoName: null,
+        country: null,
+        organizationName: null,
+        updatedAt: new Date("2026-09-14T00:00:00.000Z"),
+        captainUser: { username: "captain" },
+        _count: { members: 1 },
+        members: [
+          { id: "m-invitee", userId: null, role: "PLAYER", name: "Invitee", email: "invitee@example.com", emailNormalized: "invitee@example.com", inviteStatus: "pending", phone: null, discord: null, riotId: null, player: null },
+        ],
+      }),
+    },
+    // A query that ignored the verified-address condition would return this.
+    user: {
+      findMany: async () => [
+        { id: "user-squatter", emailNormalized: "invitee@example.com", emailVerified: false, phone: "0779999999", discordTag: "squatter", oauthAccounts: [{ id: "oauth-x" }], player: null },
+      ],
+    },
+  });
+
+  try {
+    const team = await adminService.getAdminSavedTeamById("saved-team-1");
+    assert.equal(team.members[0].account, null);
   } finally {
     restore();
   }

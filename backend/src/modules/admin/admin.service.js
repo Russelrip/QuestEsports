@@ -2340,9 +2340,11 @@ const SAVED_TEAM_CAPTAIN_SELECT = {
 
 const SAVED_TEAM_MEMBER_SELECT = {
   id: true,
+  userId: true,
   role: true,
   name: true,
   email: true,
+  emailNormalized: true,
   phone: true,
   discord: true,
   riotId: true,
@@ -2392,24 +2394,100 @@ const mapAdminSavedTeamSummary = (team) => ({
   updatedAt: team.updatedAt,
 });
 
-const mapAdminSavedTeamDetail = (team) => ({
+// What a roster member's own Quest account says about them.
+//
+// Discord and game ids stopped being typed into rosters: they arrive when the
+// person connects them, and new roster rows are written without them. Reading
+// only the row therefore left every newer team blank on this page even when
+// each member had connected everything. The account is found the way the
+// captain's own roster finds it: the linked user, or for an invitation nobody
+// has answered yet, an account that has proven it owns the address.
+const ACCOUNT_DETAIL_SELECT = {
+  id: true,
+  emailNormalized: true,
+  emailVerified: true,
+  phone: true,
+  discordTag: true,
+  oauthAccounts: { where: { provider: "discord" }, select: { id: true }, take: 1 },
+  player: {
+    select: {
+      gameAccounts: {
+        where: { status: { in: ["active", "locked"] } },
+        orderBy: { linkedAt: "desc" },
+        select: { game: true, username: true, tagline: true, verificationStatus: true },
+      },
+    },
+  },
+};
+
+const loadMemberAccounts = async (members = []) => {
+  const userIds = [...new Set(members.map((member) => member.userId).filter(Boolean))];
+  const emails = [
+    ...new Set(
+      members
+        .filter((member) => !member.userId)
+        .map((member) => member.emailNormalized || normalizeEmail(member.email))
+        .filter(Boolean)
+    ),
+  ];
+  if ((userIds.length === 0 && emails.length === 0) || typeof prisma.user?.findMany !== "function") {
+    return () => null;
+  }
+
+  const accounts = await prisma.user.findMany({
+    where: {
+      OR: [
+        ...(userIds.length ? [{ id: { in: userIds } }] : []),
+        ...(emails.length ? [{ emailNormalized: { in: emails }, emailVerified: true }] : []),
+      ],
+    },
+    select: ACCOUNT_DETAIL_SELECT,
+  });
+  const byId = new Map(accounts.map((account) => [account.id, account]));
+  const byVerifiedEmail = new Map(
+    accounts
+      .filter((account) => account.emailVerified && account.emailNormalized)
+      .map((account) => [account.emailNormalized, account])
+  );
+  return (member) =>
+    (member.userId ? byId.get(member.userId) : null) ||
+    (!member.userId ? byVerifiedEmail.get(member.emailNormalized || normalizeEmail(member.email)) : null) ||
+    null;
+};
+
+const mapAdminSavedTeamDetail = (team, accountFor = () => null) => ({
   ...mapAdminSavedTeamSummary(team),
-  members: (team.members || []).map((member) => ({
-    id: member.id,
-    role: member.role,
-    name: member.name,
-    email: member.email,
-    phone: member.phone ?? null,
-    discord: member.discord,
+  members: (team.members || []).map((member) => {
+    const account = accountFor(member);
     // The connected account first, the typed string only as a fallback for a
     // roster that predates game accounts. Reported separately so a surface can
     // tell a verified identity from an inherited guess rather than having to
     // treat them alike.
-    gameId: connectedGameId(member) ?? member.riotId,
-    gameAccountConnected: Boolean(connectedGameId(member)),
-    legacyGameId: member.riotId ?? null,
-    inviteStatus: member.inviteStatus,
-  })),
+    const connected = connectedGameId(member) ?? (account ? connectedGameId(account) : null);
+    return {
+      id: member.id,
+      role: member.role,
+      name: member.name,
+      email: member.email,
+      // `phone` and `discord` stay what the row itself carries, so saving the
+      // page writes back only what was typed and never copies account data
+      // onto the roster. What the account says is under `account`.
+      phone: member.phone ?? null,
+      discord: member.discord,
+      gameId: connected ?? member.riotId,
+      gameAccountConnected: Boolean(connected),
+      legacyGameId: member.riotId ?? null,
+      inviteStatus: member.inviteStatus,
+      account: account
+        ? {
+            phone: account.phone || null,
+            // A handle counts only while the Discord link that wrote it exists.
+            discord: account.oauthAccounts?.length ? account.discordTag || null : null,
+            discordConnected: Boolean(account.oauthAccounts?.length),
+          }
+        : null,
+    };
+  }),
 });
 
 const listAdminSavedTeams = async ({ page, pageSize, search } = {}) => {
@@ -2486,7 +2564,7 @@ const getAdminSavedTeamById = async (teamId) => {
     },
   });
   if (!team) throw new HttpError(404, "Team not found.");
-  return mapAdminSavedTeamDetail(team);
+  return mapAdminSavedTeamDetail(team, await loadMemberAccounts(team.members));
 };
 
 const parseAdminTeamMembers = (value) => {

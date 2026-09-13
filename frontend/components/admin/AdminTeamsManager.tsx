@@ -26,10 +26,22 @@ type TeamMember = {
   role: "CAPTAIN" | "PLAYER" | "SUBSTITUTE" | "COACH";
   name: string;
   email: string;
+  // What the roster row itself carries: values typed into older rosters. Saving
+  // writes only these back, so account data is never copied onto the roster.
   phone: string | null;
   discord: string | null;
+  legacyGameId: string | null;
+  // The connected Riot account when there is one, otherwise the typed value.
   gameId: string | null;
+  gameAccountConnected: boolean;
   inviteStatus: string;
+  // What the member's own Quest account says. Null when no account is linked
+  // or, for an unanswered invitation, none has verified this address.
+  account: {
+    phone: string | null;
+    discord: string | null;
+    discordConnected: boolean;
+  } | null;
 };
 
 type TeamSummary = {
@@ -307,7 +319,18 @@ function TeamEditor({ team, onChanged, onDeleted }: { team: TeamDetail; onChange
       body.append("teamTag", teamTag);
       body.append("country", country);
       body.append("organizationName", organization);
-      body.append("members", JSON.stringify(members));
+      body.append("members", JSON.stringify(members.map((member) => ({
+        id: member.id,
+        role: member.role,
+        name: member.name,
+        email: member.email,
+        phone: member.phone || "",
+        discord: member.discord || "",
+        // The typed value only. Sending the connected Riot ID here would copy it
+        // onto the roster row as if someone had typed it.
+        riotId: member.legacyGameId || "",
+        gameId: member.legacyGameId || "",
+      }))));
       body.append("removeLogo", String(removeLogo));
       if (teamLogo) body.append("teamLogo", teamLogo);
       await adminRequest(`/api/admin/teams/${team.id}`, {
@@ -425,9 +448,27 @@ function TeamEditor({ team, onChanged, onDeleted }: { team: TeamDetail; onChange
               <Field label="Player name"><Input value={member.name} onChange={(event) => updateMember(member.id, "name", event.target.value)} /></Field>
               <Field label="Role"><div className="flex h-12 items-center border border-white/10 bg-white/5 px-4 text-sm capitalize text-slate-300">{member.role.toLowerCase()}</div></Field>
               <Field label="Email"><Input type="email" value={member.email} onChange={(event) => updateMember(member.id, "email", event.target.value)} /></Field>
-              <Field label="Phone"><Input type="tel" value={member.phone || ""} onChange={(event) => updateMember(member.id, "phone", event.target.value)} /></Field>
-              <Field label="Game ID"><Input value={member.gameId || ""} onChange={(event) => updateMember(member.id, "gameId", event.target.value)} placeholder="Player ID / Riot ID" /></Field>
-              <Field label="Discord"><Input value={member.discord || ""} onChange={(event) => updateMember(member.id, "discord", event.target.value)} /></Field>
+              {member.account?.phone ? (
+                <Field label="Phone"><AccountValue value={member.account.phone} source="From their Quest account" /></Field>
+              ) : (
+                <Field label="Phone"><Input type="tel" value={member.phone || ""} onChange={(event) => updateMember(member.id, "phone", event.target.value)} /></Field>
+              )}
+              {member.gameAccountConnected ? (
+                <Field label="Game ID"><AccountValue value={member.gameId || ""} source="Connected Riot account" /></Field>
+              ) : (
+                <Field label="Game ID"><Input value={member.legacyGameId || ""} onChange={(event) => updateMember(member.id, "legacyGameId", event.target.value)} placeholder="Player ID / Riot ID" /></Field>
+              )}
+              <Field label="Discord">
+                {member.account?.discordConnected && member.account.discord ? (
+                  <AccountValue value={member.account.discord} source="Connected Discord" />
+                ) : (
+                  <AccountValue
+                    value={member.discord || "Not connected"}
+                    source={member.discord ? "Typed on an older roster, not verified" : member.account ? "Their account has not connected Discord" : "No Quest account for this email yet"}
+                    muted
+                  />
+                )}
+              </Field>
               <p className="break-words self-end pb-2 text-xs capitalize text-slate-500">Invite: {member.inviteStatus.replaceAll("_", " ")}</p>
             </div>
             <div className="mt-3 flex justify-end border-t border-white/10 pt-3">
@@ -455,6 +496,20 @@ function TeamEditor({ team, onChanged, onDeleted }: { team: TeamDetail; onChange
         <Button type="button" className="w-full sm:w-auto" variant="danger" disabled={busyAction !== null} onClick={() => void deleteTeam()}>{busyAction === "delete" ? "Deleting..." : "Delete team"}</Button>
       </div>
     </Card>
+  );
+}
+
+// A value that belongs to the member's account or a connection they made, so it
+// is shown rather than edited here. Discord especially: a handle only counts when
+// it came from a completed Discord link, never from someone typing it in.
+function AccountValue({ value, source, muted = false }: { value: string; source: string; muted?: boolean }) {
+  return (
+    <div className="grid gap-1">
+      <div className={`flex h-12 min-w-0 items-center border border-white/10 bg-white/5 px-4 text-sm ${muted ? "text-slate-500" : "text-slate-200"}`}>
+        <span className="truncate">{value}</span>
+      </div>
+      <span className="text-[11px] text-slate-500">{source}</span>
+    </div>
   );
 }
 
