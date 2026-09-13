@@ -56,6 +56,7 @@ type ExistingRegistrationState = {
   paymentStatus: "unpaid" | "pending" | "paid";
   verificationStatus: "pending" | "verified" | "flagged";
   pendingInviteCount: number;
+  expiredInviteCount?: number;
   reservedUntil?: string | null;
   contactLink?: string | null;
   payment?: {
@@ -73,7 +74,26 @@ type RegistrationSubmissionResponse = {
   awaitingTeamVerification?: boolean;
   readyForPayment?: boolean;
   pendingInviteCount?: number;
+  expiredInviteCount?: number;
   registration?: ExistingRegistrationState | null;
+};
+
+// What is holding an unconfirmed roster up. Waiting and expired invitations ask
+// different things of the captain, and an expired one used to be counted as
+// nothing at all, so a roster that could not verify said "0 roster invitations
+// are still pending".
+export const describeOutstandingInvites = (pending: number, expired: number) => {
+  const invitations = (count: number) => `${count} roster invitation${count === 1 ? "" : "s"}`;
+  if (pending > 0 && expired > 0) {
+    return `${invitations(pending)} ${pending === 1 ? "is" : "are"} still pending and ${expired} ${expired === 1 ? "has" : "have"} expired. Send the expired ${expired === 1 ? "one" : "ones"} again from Manage invitations.`;
+  }
+  if (expired > 0) {
+    return `${invitations(expired)} expired before ${expired === 1 ? "it was" : "they were"} accepted. Send ${expired === 1 ? "it" : "them"} again from Manage invitations.`;
+  }
+  if (pending > 0) {
+    return `${invitations(pending)} ${pending === 1 ? "is" : "are"} still pending.`;
+  }
+  return "Your roster is not confirmed yet. Open Manage invitations to see who still needs to accept.";
 };
 
 export const COACH_PLAYER_CONFLICT_BACKEND_MESSAGE =
@@ -321,6 +341,7 @@ export default function ConfiguredTournamentRegistrationForm({ tournament }: { t
           paymentStatus: "unpaid",
           verificationStatus: data.readyForPayment ? "verified" : "pending",
           pendingInviteCount: data.pendingInviteCount || 0,
+          expiredInviteCount: data.expiredInviteCount || 0,
           payment: null,
         });
         return;
@@ -445,7 +466,7 @@ export default function ConfiguredTournamentRegistrationForm({ tournament }: { t
           {existingRegistration.verificationStatus === "flagged"
             ? "A roster member declined the invitation. Open the saved team and send that roster member’s invitation again before continuing."
             : rosterPending
-              ? `${existingRegistration.pendingInviteCount} roster invitation${existingRegistration.pendingInviteCount === 1 ? " is" : "s are"} still pending. ${chargesFee ? "No payment or slot reservation will be created until the full roster is confirmed." : "Your entry is held until the full roster is confirmed."}`
+              ? `${describeOutstandingInvites(existingRegistration.pendingInviteCount, existingRegistration.expiredInviteCount || 0)} ${chargesFee ? "No payment or slot reservation will be created until the full roster is confirmed." : "Your entry is held until the full roster is confirmed."}`
               : chargesFee
                 ? "Every roster member has accepted. You can now reserve the slot and continue to payment."
                 : "Every roster member has accepted. Your entry is confirmed."}

@@ -24,6 +24,7 @@ const {
   hasAvailableCapacity,
 } = require("./registration-eligibility");
 const { maybeAutoApproveRegistration } = require("./auto-approval.service");
+const { countOutstandingInvites } = require("../teams/roster-invite-counts");
 const {
   buildPublicReference,
   getRegistrationPublicReference,
@@ -838,7 +839,7 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
       },
       include: {
         members: {
-          select: { role: true, inviteStatus: true },
+          select: { role: true, inviteStatus: true, inviteExpiresAt: true },
         },
         payments: {
           orderBy: { createdAt: "desc" },
@@ -872,9 +873,7 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
       existingMembers,
       existing.verificationStatus
     );
-    const pendingInviteCount = existingMembers.filter(
-      (member) => member.role !== "CAPTAIN" && member.inviteStatus === "pending"
-    ).length;
+    const { pendingInviteCount, expiredInviteCount } = countOutstandingInvites(existingMembers, now);
     // A free event stores its row as paid the moment it is created, because
     // capacity counts paid rows. That made "you are already registered" the only
     // answer a free captain with outstanding invitations could ever get back —
@@ -910,6 +909,7 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
           awaitingTeamVerification: true,
           readyForPayment: false,
           pendingInviteCount,
+          expiredInviteCount,
         };
       }
     }
@@ -969,6 +969,7 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
         awaitingTeamVerification: false,
         readyForPayment: true,
         pendingInviteCount: 0,
+        expiredInviteCount: 0,
       };
     }
     if (
@@ -1468,6 +1469,8 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
           (member) => member.role !== "CAPTAIN"
         ).length
       : 0,
+    // Every invitation on a roster that was just submitted is brand new.
+    expiredInviteCount: 0,
   };
 };
 

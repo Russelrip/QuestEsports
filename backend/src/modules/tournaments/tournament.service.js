@@ -42,6 +42,7 @@ const {
   isPayHereConfigured,
 } = require("../payments/payment.service");
 const { ensureTeamRegistrationSaved } = require("../teams/team.service");
+const { countOutstandingInvites } = require("../teams/roster-invite-counts");
 const {
   resolveEffectiveTeamLogoName,
   getTeamLogoUrl,
@@ -1786,7 +1787,7 @@ const getTournamentRegistrationStatus = async ({ slug, user }) => {
       reservedUntil: true,
       assignedSlotNumber: true,
       members: {
-        select: { role: true, inviteStatus: true },
+        select: { role: true, inviteStatus: true, inviteExpiresAt: true },
       },
       payments: {
         orderBy: { createdAt: "desc" },
@@ -1838,9 +1839,7 @@ const getTournamentRegistrationStatus = async ({ slug, user }) => {
           status: existingRegistration.status,
           paymentStatus: existingRegistration.paymentStatus,
           verificationStatus: effectiveVerificationStatus,
-          pendingInviteCount: registrationMembers.filter(
-            (member) => member.role !== "CAPTAIN" && member.inviteStatus === "pending"
-          ).length,
+          ...countOutstandingInvites(registrationMembers),
           reservedUntil: existingRegistration.reservedUntil,
           assignedSlotNumber: existingRegistration.assignedSlotNumber,
           contactLink: tournament.contactLink,

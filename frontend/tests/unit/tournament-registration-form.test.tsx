@@ -1,7 +1,7 @@
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import ConfiguredTournamentRegistrationForm from "../../components/tournament-registration/ConfiguredTournamentRegistrationForm";
+import ConfiguredTournamentRegistrationForm, { describeOutstandingInvites } from "../../components/tournament-registration/ConfiguredTournamentRegistrationForm";
 import type { Tournament } from "../../lib/tournaments";
 
 const mocks = vi.hoisted(() => ({
@@ -185,6 +185,30 @@ describe("ConfiguredTournamentRegistrationForm", () => {
     ));
   });
 
+  it("tells the captain an invitation expired instead of reporting nothing pending", async () => {
+    mocks.apiFetch.mockImplementation((path: string) => {
+      if (path.includes("registration-status")) {
+        return Promise.resolve(jsonResponse({
+          success: true,
+          isRegistered: true,
+          registration: {
+            paymentStatus: "paid",
+            verificationStatus: "pending",
+            pendingInviteCount: 0,
+            expiredInviteCount: 1,
+            payment: null,
+          },
+        }));
+      }
+      return Promise.resolve(jsonResponse({ success: false }, 500));
+    });
+
+    render(<ConfiguredTournamentRegistrationForm tournament={tournament} />);
+
+    expect(await screen.findByText(/1 roster invitation expired before it was accepted\. Send it again from Manage invitations\./)).toBeInTheDocument();
+    expect(screen.queryByText(/0 roster invitations/)).toBeNull();
+  });
+
   it("uses the actionable conflict mapper when continuing an existing registration to payment", async () => {
     const user = userEvent.setup();
     mocks.apiFetch.mockImplementation((path: string) => {
@@ -210,5 +234,21 @@ describe("ConfiguredTournamentRegistrationForm", () => {
 
     await user.click(await screen.findByRole("button", { name: "Reserve slot and continue to payment" }));
     expect(await screen.findByText(actionableConflictMessage)).toBeInTheDocument();
+  });
+});
+
+describe("describeOutstandingInvites", () => {
+  it("names waiting and expired invitations separately", () => {
+    expect(describeOutstandingInvites(2, 1)).toBe(
+      "2 roster invitations are still pending and 1 has expired. Send the expired one again from Manage invitations.",
+    );
+    expect(describeOutstandingInvites(0, 2)).toBe(
+      "2 roster invitations expired before they were accepted. Send them again from Manage invitations.",
+    );
+    expect(describeOutstandingInvites(1, 0)).toBe("1 roster invitation is still pending.");
+  });
+
+  it("never reports zero outstanding invitations for an unconfirmed roster", () => {
+    expect(describeOutstandingInvites(0, 0)).not.toMatch(/0/);
   });
 });

@@ -736,6 +736,7 @@ test("a free team captain can return to a roster that has not finished accepting
     members: [
       { role: "CAPTAIN", inviteStatus: "accepted" },
       { role: "PLAYER", inviteStatus: "pending" },
+      { role: "COACH", inviteStatus: "expired" },
     ],
     payments: [],
   };
@@ -788,6 +789,7 @@ test("a free team captain can return to a roster that has not finished accepting
 
     assert.equal(result.awaitingTeamVerification, true);
     assert.equal(result.pendingInviteCount, 1);
+    assert.equal(result.expiredInviteCount, 1);
     assert.equal(result.registration.verificationStatus, "pending");
     assert.equal(repaired, existing.id);
   } finally {
