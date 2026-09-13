@@ -1234,3 +1234,34 @@ cutover_type=steady-state
 EOF
 chmod 600 "$stage_dir/release-metadata.txt"
 say "Immutable Compose release admitted: $release_sha"
+
+# Every release pulls a new digest-pinned image set and nothing removed the old
+# ones, so superseded images filled the host at roughly 4 GB a day. Keep this
+# release's images and its predecessor's; remove the rest of the release
+# repositories. Rollbacks pull by digest, so nothing removed here is lost.
+# This runs past the commit point, where a non-zero exit would start
+# post-commit recovery against a healthy release, so a failure only warns.
+prune_superseded_release_images() {
+  local key image repository reference line listing status=0
+  declare -A keep=() repositories=()
+  for key in frontend_image backend_image migrator_image valorant_image; do
+    image="${manifest[$key]}"
+    keep["$image"]=1
+    repositories["${image%@*}"]=1
+  done
+  if [[ -n "$previous_release" && -f "$previous_release/.env" ]]; then
+    while IFS= read -r line; do
+      keep["${line#*=}"]=1
+    done < <(grep -E '^(QUEST_FRONTEND|QUEST_BACKEND|MIGRATOR|VALORANT)_IMAGE=' "$previous_release/.env" 2>/dev/null)
+  fi
+  for repository in "${!repositories[@]}"; do
+    listing="$("$DOCKER_BIN" image ls --digests --no-trunc --format '{{.Repository}}@{{.Digest}}' "$repository" 2>/dev/null)" || { status=1; continue; }
+    while IFS= read -r reference; do
+      [[ "$reference" =~ ^[^@]+@sha256:[0-9a-f]{64}$ && -z "${keep[$reference]+kept}" ]] || continue
+      # Without --force, Docker refuses to remove an image a container still uses.
+      "$DOCKER_BIN" image rm "$reference" >/dev/null 2>&1 || status=1
+    done <<< "$listing"
+  done
+  return "$status"
+}
+prune_superseded_release_images || say 'warning: some superseded release images could not be removed; the release itself is unaffected.' >&2
