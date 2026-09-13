@@ -166,7 +166,9 @@ export type CreateTeamMemberInput = {
   email: string;
 };
 
-export type ManageTeamMemberInput = CreateTeamMemberInput;
+// An existing member carries its saved-team id, so the server can tell an
+// edited address from a different person.
+export type ManageTeamMemberInput = CreateTeamMemberInput & { id?: string };
 
 export async function createSavedTeam(input: {
   name: string;

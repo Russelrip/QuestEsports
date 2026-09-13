@@ -139,6 +139,17 @@ roster — never by payment. A free registration is stored as `paid` the moment 
 is created, because capacity counts paid rows, so a payment-scoped propagation
 would have left every free roster stuck at pending no matter who accepted.
 
+That propagation matches rows by address, so an address has to agree on both
+sides before anyone answers. When a captain corrects an invitee's address on
+the saved team, `updateSavedTeam` recognises the edit by the member `id` the
+team editor sends back and `carryEmailChangesIntoOpenRegistrations` moves the
+matching unaccepted `RegistrationMember` rows in the team's open registrations
+to the new address with a fresh invitation window, re-checking coach/player
+conflicts and verification in the same transaction. Without an id, or when the
+old address is still on the roster, the entry counts as a different person. A
+spot that already accepted is left alone; swapping out a confirmed person is a
+roster correction, not an address edit.
+
 `registration-verification.js` holds the one implementation of the recomputation
 both sides call, which is what stops "verified" from meaning two slightly
 different things depending on who moved last.

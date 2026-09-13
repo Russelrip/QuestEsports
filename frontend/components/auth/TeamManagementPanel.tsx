@@ -200,6 +200,9 @@ export default function TeamManagementPanel({
         organizationRequested: false,
         teamLogo,
         members: members.map((member) => ({
+          // Only a member loaded from the team has a real id. Sending it is what
+          // lets a corrected address reach the team's open registrations.
+          id: member.originalEmail === undefined ? undefined : member.key,
           role: member.role,
           name: member.name,
           email: member.email,

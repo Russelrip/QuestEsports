@@ -7,6 +7,7 @@ const { notifyInvite, notifyInvites } = require("./invite-notice.service");
 const {
   refreshRegistrationVerificationStatus,
 } = require("./registration-verification");
+const { assertNoCoachPlayerRoleConflict } = require("../tournaments/role-conflict.service");
 const {
   removeUploadsQuietly,
   removeTeamLogoIfUnreferenced,
@@ -459,6 +460,10 @@ const parseManagedMembers = (value) => {
       memberOrder: roleCounts[role],
       name: normalizeText(member?.name),
       email: normalizeEmail(member?.email),
+      // The roster spot this entry was loaded from, when it was. Emails are
+      // how members are matched, so without it an edited address is
+      // indistinguishable from a different person.
+      previousId: normalizeText(member?.id) || null,
     };
   });
 
@@ -484,6 +489,78 @@ const parseManagedMembers = (value) => {
   }
 
   return normalizedMembers;
+};
+
+// Registrations still waiting on their roster. An approved one has had its
+// roster snapshotted and locked, and a rejected one is not waiting on anybody.
+const OPEN_REGISTRATION_STATUSES = ["pending", "waitlisted"];
+
+// A captain correcting an invitee's address on the saved team.
+//
+// Answering an invitation reaches a registration by matching the address, so a
+// registration still holding the old one never heard the answer: the invitee
+// accepted at the new address and the registration's copy of the spot sat
+// unanswered until it expired (QES-90RK61XD's coach). The open registrations
+// take the new address and a fresh invitation window here, in the same
+// transaction as the saved team, so the two copies cannot disagree.
+//
+// A spot that already accepted is left alone. That person is confirmed for the
+// tournament, and swapping them out is a roster correction, not an edit to an
+// address.
+const carryEmailChangesIntoOpenRegistrations = async ({
+  tx,
+  teamId,
+  emailChanges,
+  inviteSentAt,
+  inviteExpiresAt,
+}) => {
+  if (emailChanges.length === 0) return;
+
+  const registrations = await tx.teamRegistration.findMany({
+    where: { savedTeamId: teamId, status: { in: OPEN_REGISTRATION_STATUSES } },
+    select: { id: true, tournamentId: true },
+  });
+
+  for (const registration of registrations) {
+    let changed = false;
+    for (const change of emailChanges) {
+      const { count } = await tx.registrationMember.updateMany({
+        where: {
+          registrationId: registration.id,
+          emailNormalized: change.fromEmail,
+          role: { not: "CAPTAIN" },
+          inviteStatus: { not: "accepted" },
+        },
+        data: {
+          name: change.name,
+          email: change.toEmail,
+          emailNormalized: change.toEmail,
+          userId: null,
+          inviteStatus: "pending",
+          inviteTokenHash: null,
+          inviteSentAt,
+          inviteExpiresAt,
+          inviteRespondedAt: null,
+        },
+      });
+      if (count > 0) changed = true;
+    }
+    if (!changed) continue;
+
+    // The new address can belong to someone already coaching or playing
+    // elsewhere in the same tournament, which submission would have refused.
+    const members = await tx.registrationMember.findMany({
+      where: { registrationId: registration.id },
+      select: { role: true, email: true, emailNormalized: true, riotId: true },
+    });
+    await assertNoCoachPlayerRoleConflict({
+      tx,
+      tournamentId: registration.tournamentId,
+      members,
+      excludeRegistrationId: registration.id,
+    });
+    await refreshRegistrationVerificationStatus({ tx, registrationId: registration.id });
+  }
 };
 
 const updateSavedTeam = async ({ teamId, user, body, file }) => {
@@ -548,7 +625,25 @@ const updateSavedTeam = async ({ teamId, user, body, file }) => {
   );
   const inviteDispatches = [];
 
-  const memberRecords = members.map((member) => {
+  const existingMembersById = new Map(
+    existingTeam.members.map((member) => [member.id, member])
+  );
+  const emailChanges = members.flatMap((member) => {
+    const previous = member.previousId ? existingMembersById.get(member.previousId) : null;
+    if (!previous || previous.role === "CAPTAIN") return [];
+    if (previous.emailNormalized === member.email) return [];
+    // Either address still being on the roster means people were rearranged,
+    // not an address corrected, and the email match already follows them.
+    if (
+      existingMembersByEmail.has(member.email) ||
+      members.some((other) => other.email === previous.emailNormalized)
+    ) {
+      return [];
+    }
+    return [{ fromEmail: previous.emailNormalized, toEmail: member.email, name: member.name }];
+  });
+
+  const memberRecords = members.map(({ previousId: _previousId, ...member }) => {
     const existingMember = existingMembersByEmail.get(member.email);
     if (existingMember) {
       return {
@@ -623,6 +718,13 @@ const updateSavedTeam = async ({ teamId, user, body, file }) => {
       if (memberRecords.length > 0) {
         await tx.savedTeamMember.createMany({ data: memberRecords });
       }
+      await carryEmailChangesIntoOpenRegistrations({
+        tx,
+        teamId,
+        emailChanges,
+        inviteSentAt,
+        inviteExpiresAt,
+      });
 
       if (previousLogoName && previousLogoName !== nextLogoName) {
         await scheduleTeamLogoCleanup({

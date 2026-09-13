@@ -111,7 +111,7 @@ describe("TeamManagementPanel", () => {
     expect(screen.queryByText("IGN / Game ID")).not.toBeInTheDocument();
   });
 
-  it("submits only role, name and email", async () => {
+  it("submits only the member's id, role, name and email", async () => {
     renderPanel();
 
     await userEvent.click(screen.getByRole("button", { name: "Save Team Changes" }));
@@ -119,7 +119,9 @@ describe("TeamManagementPanel", () => {
     await waitFor(() => expect(mocks.update).toHaveBeenCalled());
     const [submitted] = mocks.update.mock.calls[0] as [{ members: Record<string, unknown>[] }];
     expect(submitted.members).toEqual([
-      { role: "PLAYER", name: "Waiting Player", email: "player@example.com" },
+      // The id is what lets the server tell a corrected address from a
+      // different person.
+      { id: "pending-member", role: "PLAYER", name: "Waiting Player", email: "player@example.com" },
     ]);
   });
 
