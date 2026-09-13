@@ -23,6 +23,7 @@ type ExistingRegistration = {
   paymentStatus: "unpaid" | "pending" | "paid";
   verificationStatus: "pending" | "verified" | "flagged";
   pendingInviteCount: number;
+  expiredInviteCount?: number;
   reservedUntil?: string | null;
   assignedSlotNumber?: number | null;
   payment?: {
@@ -211,7 +212,7 @@ export default function RegisterTournamentButton({
           : pendingPayHere
             ? "Retry Online Payment"
           : awaitingRoster
-            ? `Confirm Roster${registration?.pendingInviteCount ? ` · ${registration.pendingInviteCount} Pending` : ""}`
+            ? `Confirm Roster${registration?.pendingInviteCount ? ` · ${registration.pendingInviteCount} Pending` : ""}${registration?.expiredInviteCount ? ` · ${registration.expiredInviteCount} Expired` : ""}`
           : readyForPayment
             ? "Continue to Payment"
           : isRegistered

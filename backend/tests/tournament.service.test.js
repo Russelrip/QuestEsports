@@ -87,6 +87,7 @@ test("registration status includes coach invitations in verification and payment
           { role: "CAPTAIN", inviteStatus: "accepted" },
           { role: "COACH", inviteStatus: "declined" },
           { role: "COACH", inviteStatus: "pending" },
+          { role: "PLAYER", inviteStatus: "expired" },
         ],
         reservedUntil: new Date("2099-08-01T10:00:00.000Z"),
         assignedSlotNumber: 7,
@@ -116,6 +117,8 @@ test("registration status includes coach invitations in verification and payment
     assert.equal(result.isRegistered, true);
     assert.equal(result.registration.verificationStatus, "flagged");
     assert.equal(result.registration.pendingInviteCount, 1);
+    // Reported apart, so the captain is not told nothing is outstanding.
+    assert.equal(result.registration.expiredInviteCount, 1);
     assert.equal(result.registration.assignedSlotNumber, 7);
     assert.equal(repairedRegistrationId, "registration-1");
     assert.deepEqual(result.registration.payment, {
