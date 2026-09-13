@@ -248,6 +248,35 @@ export type ValorantPlayerLeaderboardPage = {
   totalPages: number;
 };
 
+// Admin view of a leaderboard registration. Unlike the public entries this
+// covers every registered player; `onLeaderboard` is false for the ones the
+// public board filters out (unranked, or no competitive match in 14 days).
+export type ValorantLeaderboardRegistration = {
+  puuid: string;
+  name: string;
+  tag: string;
+  discordUsername: string;
+  currentTier: string | null;
+  elo: number | null;
+  lastPlayed: string | null;
+  updateSource: string | null;
+  updatedAt: string;
+  onLeaderboard: boolean;
+};
+
+export type ValorantLeaderboardRegistrationPage = {
+  entries: ValorantLeaderboardRegistration[];
+  total: number;
+  page: number;
+  perPage: number;
+  totalPages: number;
+};
+
+export type ValorantLeaderboardRemoval = {
+  removed: ValorantLeaderboardRegistration;
+  rankingsCleared: number;
+};
+
 export type ValorantRegistrationPreview = {
   puuid: string;
   name: string;

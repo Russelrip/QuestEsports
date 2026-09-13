@@ -292,5 +292,9 @@ router.get("/admin/valorant/rankings", valorantController.getRankings);
 router.get("/admin/valorant/teams/:teamId/rating-history", valorantController.getRatingHistory);
 router.get("/admin/valorant/teams/:teamId/series", valorantController.getTeamSeries);
 router.get("/admin/valorant/reconciliation", valorantController.getReconciliation);
+// Leaderboard registrations, including the ones the public board hides. Removal
+// clears the cached public leaderboard so the player drops off it immediately.
+router.get("/admin/valorant/leaderboard/players", valorantLeaderboardController.listRegistrations);
+router.delete("/admin/valorant/leaderboard/players/:puuid", invalidateCache("foundation"), valorantLeaderboardController.removeRegistration);
 
 module.exports = router;

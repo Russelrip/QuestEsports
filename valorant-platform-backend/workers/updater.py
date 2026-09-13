@@ -5,8 +5,10 @@ repo's shared ``HenrikClient`` (task 3) + ``LeaderboardPlayerRepository`` (task
 1). Every ``updater_interval_minutes`` the scheduler pulls all
 ``leaderboard_players``, fetches MMR + last competitive match per player via
 ``HenrikClient`` (which ALREADY owns ``Retry-After``/429 handling and the
-transient retry budget — this worker never re-implements retries), and upserts
-name/tag/rank data with ``update_source="updater_service"``. A between-player
+transient retry budget — this worker never re-implements retries), and refreshes
+name/tag/rank data onto existing rows (never inserting, so a player an admin
+removed mid-pass stays removed) with ``update_source="updater_service"``,
+committing per player. A between-player
 ``rate_limit_delay`` and the Sunday 01:30–06:00 Asia/Colombo rank-pause window
 are honored (R30; a simple asyncio loop replaces valorantsl-new's ``schedule``
 dependency).
@@ -60,15 +62,18 @@ async def _update_player(
     *,
     affinity: str,
     platform: str,
-) -> None:
-    """Fetch one player's MMR + last competitive match and upsert the row."""
+) -> bool:
+    """Fetch one player's MMR + last competitive match and refresh the row.
+
+    ``False`` when the row was removed after the pass read it — the refresh
+    only ever updates, so a removed player stays removed.
+    """
     mmr = await client.get_player_mmr(player.puuid, affinity=affinity, platform=platform)
     last = await client.get_last_competitive_match(player.puuid, affinity=affinity, platform=platform)
-    await repo.upsert(
-        puuid=player.puuid,
+    return await repo.refresh_rank(
+        player.puuid,
         name=mmr["name"],
         tag=mmr["tag"],
-        region=affinity,
         elo=mmr["rank_details"]["elo"],
         currenttierpatched=mmr["rank_details"]["currenttierpatched"],
         rank_details=mmr["rank_details"],
@@ -89,22 +94,24 @@ async def update_all_players(
 ) -> dict[str, int]:
     """One full pass over every ``leaderboard_players`` row.
 
-    Returns ``{"total", "updated", "failed"}``. Per-player failures are caught
-    and counted as ``failed`` — one bad player never kills the pass. The
-    rollback is SCOPED: only a ``SQLAlchemyError`` (raised by the per-player
-    upsert, i.e. a genuinely aborted DB write) calls ``await repo.rollback()``
-    so the session is reset for the next player; a pure Henrik failure
-    (404/429/network — raised BEFORE any DB write for that player) does NOT
-    roll back, preserving the earlier players' flushed-but-uncommitted upserts
-    so the pass-level commit still persists the prefix. ``rate_limit_delay``
-    seconds are slept between players (skipped on the last).
+    Returns ``{"total", "updated", "removed", "failed"}``. Each player's
+    refresh commits on its own, so the site sees ranks change as the pass
+    goes and a failure never costs the players before it. Per-player failures
+    are caught and counted as ``failed`` — one bad player never kills the
+    pass. Only a ``SQLAlchemyError`` (an aborted DB write) calls
+    ``await repo.rollback()`` to reset the session for the next player; a pure
+    Henrik failure (404/429/network) happens before any write and needs none.
+    ``removed`` counts players deleted after the pass read the list.
+    ``rate_limit_delay`` seconds are slept between players (skipped on the last).
     """
     players = await repo.list_all()
-    stats = {"total": len(players), "updated": 0, "failed": 0}
+    stats = {"total": len(players), "updated": 0, "removed": 0, "failed": 0}
     for i, player in enumerate(players):
         try:
-            await _update_player(client, repo, player, affinity=affinity, platform=platform)
-            stats["updated"] += 1
+            if await _update_player(client, repo, player, affinity=affinity, platform=platform):
+                stats["updated"] += 1
+            else:
+                stats["removed"] += 1
         except SQLAlchemyError:
             logger.exception("failed to update player %s (db error)", player.puuid)
             await repo.rollback()
@@ -130,15 +137,15 @@ async def update_player_by_puuid(
     if player is None:
         logger.warning("player not found in database: %s", puuid)
         return False
-    await _update_player(client, repo, player, affinity=affinity, platform=platform)
-    return True
+    return await _update_player(client, repo, player, affinity=affinity, platform=platform)
 
 
 def _log_summary(stats: dict[str, int]) -> None:
     logger.info(
-        "update pass complete: total=%s updated=%s failed=%s",
+        "update pass complete: total=%s updated=%s removed=%s failed=%s",
         stats["total"],
         stats["updated"],
+        stats["removed"],
         stats["failed"],
     )
 
@@ -171,7 +178,6 @@ async def _cli_once(settings: Settings) -> int:
             platform=settings.leaderboard_platform,
             rate_limit_delay=settings.updater_rate_limit_delay,
         )
-        await session.commit()
         _log_summary(stats)
         return 0 if stats["updated"] > 0 else 1
     finally:
@@ -194,8 +200,6 @@ async def _cli_test(settings: Settings, puuid: str) -> int:
             affinity=settings.leaderboard_affinity,
             platform=settings.leaderboard_platform,
         )
-        if ok:
-            await session.commit()
         return 0 if ok else 1
     finally:
         await client.aclose()
@@ -217,6 +221,8 @@ async def _cli_scheduler(settings: Settings) -> None:
 
         logger.info("updater scheduler starting: running initial full pass")
         _log_summary(await update_all_players(client, repo, affinity=affinity, platform=platform, rate_limit_delay=delay))
+        # Players commit as they go; this only closes the read transaction a
+        # pass can leave open, so the sleep never holds a lock a migration needs.
         await session.commit()
 
         while True:

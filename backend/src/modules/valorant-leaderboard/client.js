@@ -14,15 +14,17 @@ const getBaseUrl = () => {
   return baseUrl.replace(/\/+$/, "");
 };
 
-const request = async ({ path, method = "GET", body = null, timeoutMs = TIMEOUT_MS }) => {
+// Public reads and self-service registration act as the system actor. Admin
+// calls pass the admin's own id so the upstream token names who acted.
+const request = async ({ path, method = "GET", body = null, timeoutMs = TIMEOUT_MS, actorUserId = null }) => {
   const baseUrl = getBaseUrl();
-  const systemActor = env.QUEST_LEADERBOARD_SYSTEM_ACTOR;
-  if (!systemActor) {
+  const actor = actorUserId || env.QUEST_LEADERBOARD_SYSTEM_ACTOR;
+  if (!actor) {
     throw new HttpError(503, "VALORANT leaderboard is not configured.");
   }
   const headers = {
     ...buildServiceAuthHeaders({
-      actorUserId: systemActor,
+      actorUserId: actor,
       operationId: crypto.randomUUID(),
     }),
     ...(body === null ? {} : { "Content-Type": "application/json" }),
@@ -80,8 +82,8 @@ const propagateUpstreamError = async (response) => {
   throw new HttpError(502, "VALORANT leaderboard is unavailable.");
 };
 
-const requestJson = async ({ path, method = "GET", body = null, timeoutMs = TIMEOUT_MS }) => {
-  const response = await request({ path, method, body, timeoutMs });
+const requestJson = async ({ path, method = "GET", body = null, timeoutMs = TIMEOUT_MS, actorUserId = null }) => {
+  const response = await request({ path, method, body, timeoutMs, actorUserId });
   if (response.ok) {
     return response.json();
   }
@@ -137,7 +139,26 @@ const repointRegistration = async (input) =>
     timeoutMs: REGISTRATION_TIMEOUT_MS,
   });
 
+// Admin: every registration, including the ones the public board filters out.
+const listRegistrations = async ({ query = "", page = 1, perPage = 50, actorUserId }) => {
+  const params = new URLSearchParams();
+  if (query) params.set("q", query);
+  params.set("page", String(page));
+  params.set("per_page", String(perPage));
+  return requestJson({ path: `/api/v1/leaderboard/players?${params.toString()}`, actorUserId });
+};
+
+// Admin: delete one registration. Resolves to the row as it was.
+const removeRegistration = async ({ puuid, actorUserId }) =>
+  requestJson({
+    path: `/api/v1/leaderboard/players/${encodeURIComponent(puuid)}`,
+    method: "DELETE",
+    actorUserId,
+  });
+
 module.exports = {
+  listRegistrations,
+  removeRegistration,
   repointRegistration,
   getLeaderboard,
   searchLeaderboard,

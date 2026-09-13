@@ -1,12 +1,13 @@
 """Updater worker tests (SDD 2026-08-14 leaderboard standardization, task 7).
 
 A fake ``HenrikClient`` (canned MMR + a last-match ISO string) and a fake repo
-(``list_all`` returning in-memory ``LeaderboardPlayer`` rows, ``upsert``
+(``list_all`` returning in-memory ``LeaderboardPlayer`` rows, ``refresh_rank``
 recording every call) prove: the ``_in_rank_pause_window`` Sunday boundaries,
-the per-player upsert field mapping (incl. tz-aware ``last_played_match`` and
+the per-player refresh field mapping (incl. tz-aware ``last_played_match`` and
 ``update_source="updater_service"``), per-player failure isolation (one bad
-player is counted ``failed`` and the loop continues), and the
-``{total, updated, failed}`` stats. ``rate_limit_delay=0`` throughout so tests
+player is counted ``failed`` and the loop continues), a player removed
+mid-pass counted ``removed`` rather than re-created, and the
+``{total, updated, removed, failed}`` stats. ``rate_limit_delay=0`` throughout so tests
 never sleep.
 """
 
@@ -84,13 +85,20 @@ class FakeHenrikClient:
 
 
 class FakeRepo:
-    """Stub repo: returns its rows and records every ``upsert`` call."""
+    """Stub repo: returns its rows and records every ``refresh_rank`` call."""
 
-    def __init__(self, players: list[LeaderboardPlayer] | None = None, *, fail_db_for: set[str] | None = None) -> None:
+    def __init__(
+        self,
+        players: list[LeaderboardPlayer] | None = None,
+        *,
+        fail_db_for: set[str] | None = None,
+        removed: set[str] | None = None,
+    ) -> None:
         self.players = players or []
-        self.upserts: list[dict] = []
+        self.refreshes: list[dict] = []
         self.rollbacks = 0
         self.fail_db_for = fail_db_for or set()
+        self.removed = removed or set()
 
     async def list_all(self) -> list[LeaderboardPlayer]:
         return list(self.players)
@@ -98,11 +106,11 @@ class FakeRepo:
     async def get_by_puuid(self, puuid: str) -> LeaderboardPlayer | None:
         return next((p for p in self.players if p.puuid == puuid), None)
 
-    async def upsert(self, **kwargs) -> str:
-        self.upserts.append(kwargs)
-        if kwargs["puuid"] in self.fail_db_for:
-            raise SQLAlchemyError(f"db boom on upsert for {kwargs['puuid']}")
-        return kwargs["puuid"]
+    async def refresh_rank(self, puuid: str, **kwargs) -> bool:
+        self.refreshes.append({"puuid": puuid, **kwargs})
+        if puuid in self.fail_db_for:
+            raise SQLAlchemyError(f"db boom on refresh for {puuid}")
+        return puuid not in self.removed
 
     async def rollback(self) -> None:
         self.rollbacks += 1
@@ -144,13 +152,12 @@ async def test_update_all_players_maps_every_field_and_stats():
         client, repo, affinity="ap", platform="pc", rate_limit_delay=0,  # type: ignore[arg-type]
     )
 
-    assert stats == {"total": 2, "updated": 2, "failed": 0}
-    assert len(repo.upserts) == 2
-    for puuid, call in zip(("p1", "p2"), repo.upserts, strict=True):
+    assert stats == {"total": 2, "updated": 2, "removed": 0, "failed": 0}
+    assert len(repo.refreshes) == 2
+    for puuid, call in zip(("p1", "p2"), repo.refreshes, strict=True):
         assert call["puuid"] == puuid
         assert call["name"] == "PlayerA"
         assert call["tag"] == "A"
-        assert call["region"] == "ap"
         assert call["elo"] == 1200
         assert call["currenttierpatched"] == "Gold 1"
         assert call["rank_details"] == MMR["rank_details"]
@@ -168,19 +175,17 @@ async def test_update_all_players_continues_after_player_failure():
         client, repo, affinity="ap", platform="pc", rate_limit_delay=0,  # type: ignore[arg-type]
     )
 
-    assert stats == {"total": 2, "updated": 1, "failed": 1}
+    assert stats == {"total": 2, "updated": 1, "removed": 0, "failed": 1}
     # The failing player was attempted and the loop moved on to the next one.
     assert ("mmr", "p1", "ap", "pc") in client.calls
-    assert [c["puuid"] for c in repo.upserts] == ["p2"]
-    # A pure Henrik failure happens BEFORE any DB write for that player, so the
-    # transaction is still healthy: it must NOT be rolled back, otherwise the
-    # earlier players' flushed-but-uncommitted upserts would be discarded and a
-    # persistently-failing player would starve the prefix of the pass.
+    assert [c["puuid"] for c in repo.refreshes] == ["p2"]
+    # A pure Henrik failure happens BEFORE any DB write for that player, so
+    # there is nothing to roll back.
     assert repo.rollbacks == 0
 
 
 async def test_db_write_failure_rolls_back_and_loop_continues():
-    # p2's upsert raises a SQLAlchemyError (aborted DB write): that IS rolled
+    # p2's refresh raises a SQLAlchemyError (aborted DB write): that IS rolled
     # back so the rest of the pass is not poisoned, and p3 is still updated.
     client = FakeHenrikClient()
     repo = FakeRepo(players=[_row("p1"), _row("p2"), _row("p3")], fail_db_for={"p2"})
@@ -188,11 +193,24 @@ async def test_db_write_failure_rolls_back_and_loop_continues():
         client, repo, affinity="ap", platform="pc", rate_limit_delay=0,  # type: ignore[arg-type]
     )
 
-    assert stats == {"total": 3, "updated": 2, "failed": 1}
-    assert [c["puuid"] for c in repo.upserts] == ["p1", "p2", "p3"]
+    assert stats == {"total": 3, "updated": 2, "removed": 0, "failed": 1}
+    assert [c["puuid"] for c in repo.refreshes] == ["p1", "p2", "p3"]
     # A DB-layer failure rolls back the session so the remaining players are not
     # poisoned by the aborted transaction.
     assert repo.rollbacks == 1
+
+
+async def test_player_removed_mid_pass_is_counted_not_recreated():
+    # p2 was deleted by an admin after the pass read the list. The refresh is
+    # update-only, so it reports the row gone instead of inserting it again.
+    client = FakeHenrikClient()
+    repo = FakeRepo(players=[_row("p1"), _row("p2"), _row("p3")], removed={"p2"})
+    stats = await update_all_players(
+        client, repo, affinity="ap", platform="pc", rate_limit_delay=0,  # type: ignore[arg-type]
+    )
+
+    assert stats == {"total": 3, "updated": 2, "removed": 1, "failed": 0}
+    assert repo.rollbacks == 0
 
 
 async def test_update_all_players_last_played_match_none_stays_none():
@@ -201,7 +219,7 @@ async def test_update_all_players_last_played_match_none_stays_none():
     await update_all_players(
         client, repo, affinity="ap", platform="pc", rate_limit_delay=0,  # type: ignore[arg-type]
     )
-    assert repo.upserts[0]["last_played_match"] is None
+    assert repo.refreshes[0]["last_played_match"] is None
 
 
 async def test_update_all_players_empty_list_is_noop():
@@ -210,8 +228,8 @@ async def test_update_all_players_empty_list_is_noop():
     stats = await update_all_players(
         client, repo, affinity="ap", platform="pc", rate_limit_delay=0,  # type: ignore[arg-type]
     )
-    assert stats == {"total": 0, "updated": 0, "failed": 0}
-    assert repo.upserts == []
+    assert stats == {"total": 0, "updated": 0, "removed": 0, "failed": 0}
+    assert repo.refreshes == []
 
 
 # ---------------------------------------------------------- single player path
@@ -223,7 +241,7 @@ async def test_update_single_player_by_puuid():
         client, repo, "p1", affinity="ap", platform="pc",  # type: ignore[arg-type]
     )
     assert ok is True
-    assert [c["puuid"] for c in repo.upserts] == ["p1"]
+    assert [c["puuid"] for c in repo.refreshes] == ["p1"]
 
 
 async def test_update_single_player_missing_puuid_returns_false():
@@ -233,4 +251,4 @@ async def test_update_single_player_missing_puuid_returns_false():
         client, repo, "nope", affinity="ap", platform="pc",  # type: ignore[arg-type]
     )
     assert ok is False
-    assert repo.upserts == []
+    assert repo.refreshes == []

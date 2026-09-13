@@ -1293,6 +1293,8 @@ Quest admin routes for the VALORANT platform integration. Every route lives unde
 | `GET` | `/api/v1/admin/valorant/teams/{teamId}/rating-history` | `GET /api/v1/teams/{team_id}/rating-history` |
 | `GET` | `/api/v1/admin/valorant/teams/{teamId}/series` | `GET /api/v1/teams/{team_id}/series` |
 | `GET` | `/api/v1/admin/valorant/reconciliation` | reconciliation queries via FastAPI reads only (§8.3) |
+| `GET` | `/api/v1/admin/valorant/leaderboard/players` | `GET /api/v1/leaderboard/players` — every player leaderboard registration, including rows the public board hides; `q`, `page`, `per_page` |
+| `DELETE` | `/api/v1/admin/valorant/leaderboard/players/{puuid}` | `DELETE /api/v1/leaderboard/players/{puuid}` — body `{ reason }` required; audited as `valorant.leaderboard_player.remove`; also clears the linked player's cached profile rank |
 
 Responses follow the standard envelope `{ success: true, data: <payload>, meta: { serverNow } }`; errors go through `errorHandler` with `body.error.code`.
 

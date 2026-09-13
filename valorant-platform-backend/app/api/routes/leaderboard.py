@@ -1,11 +1,13 @@
 """Leaderboard routes (SDD 2026-08-14 leaderboard standardization, task 4).
 
-Four service-token-gated reads over the ``leaderboard_players`` snapshot
+Service-token-gated reads over the ``leaderboard_players`` snapshot
 (spec §4-§5): the paginated leaderboard, the top-N slice, the
 case-insensitive discord-username search, and the aggregate stats. The
 out-of-range-page 404 is raised here as ``AppError``
 (``LEADERBOARD_PAGE_NOT_FOUND``); the search miss is a deliberate 200
-``null`` per spec §5.1 (``LeaderboardEntry | null``).
+``null`` per spec §5.1 (``LeaderboardEntry | null``). The ``/players`` pair
+is the admin surface: every registration regardless of the board filter, and
+removal of one.
 """
 
 from __future__ import annotations
@@ -16,7 +18,13 @@ from fastapi import APIRouter, Depends, Path, Query
 
 from app.api.dependencies import get_leaderboard_service, require_service_token
 from app.api.errors import AppError
-from app.schemas.leaderboard import LeaderboardEntry, LeaderboardPage, LeaderboardStats
+from app.schemas.leaderboard import (
+    LeaderboardEntry,
+    LeaderboardPage,
+    LeaderboardRegistration,
+    LeaderboardRegistrationPage,
+    LeaderboardStats,
+)
 from app.services.leaderboard_service import LeaderboardService
 
 router = APIRouter(prefix="/api/v1", tags=["leaderboard"])
@@ -53,3 +61,28 @@ async def find_user_in_leaderboard(svc: _ServiceDep, discord_username: str) -> L
 @router.get("/leaderboard/stats", response_model=LeaderboardStats, dependencies=[Depends(require_service_token)])
 async def get_leaderboard_stats(svc: _ServiceDep) -> LeaderboardStats:
     return await svc.stats()
+
+
+@router.get(
+    "/leaderboard/players",
+    response_model=LeaderboardRegistrationPage,
+    dependencies=[Depends(require_service_token)],
+)
+async def list_registrations(
+    svc: _ServiceDep,
+    q: str = Query("", max_length=100),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(50, ge=1, le=200),
+) -> LeaderboardRegistrationPage:
+    """Every registration, including rows the public board hides (admin view)."""
+    return await svc.registrations(q, page, per_page)
+
+
+@router.delete(
+    "/leaderboard/players/{puuid}",
+    response_model=LeaderboardRegistration,
+    dependencies=[Depends(require_service_token)],
+)
+async def remove_registration(svc: _ServiceDep, puuid: str) -> LeaderboardRegistration:
+    """Remove a registration; returns the row as it was so Quest can audit it."""
+    return await svc.remove(puuid)

@@ -179,3 +179,101 @@ async def test_upsert_inserts_then_updates_on_puuid_conflict(session_factory) ->
         assert fresh is not None
         assert fresh.elo == 1400
         assert fresh.discord_username == "alpha2"
+
+
+# ------------------------------------------------------------ admin surface
+
+async def test_list_registrations_includes_hidden_rows_and_matches_every_identity(session_factory) -> None:
+    async with session_factory() as session:
+        session.add_all([
+            _player(puuid="listed-1", name="Sahan", tag="QST", discord_username="sahan.lk"),
+            # Never refreshed since migration: no match date, hidden from the board.
+            _player(puuid="stale-1", name="Chamsy", tag="0001", discord_username="chamsy.", last_played_match=None),
+            _player(puuid="pct-1", name="100%_legit", tag="PCT", discord_username="pct"),
+        ])
+        await session.commit()
+
+        repo = LeaderboardPlayerRepository(session)
+
+        rows, total = await repo.list_registrations("", 1, 50)
+        assert total == 3
+        assert {row.puuid for row in rows} == {"listed-1", "stale-1", "pct-1"}
+
+        for query in ("chamsy", "CHAMSY#0001", "@chamsy.", "0001", "stale-"):
+            rows, total = await repo.list_registrations(query, 1, 50)
+            assert [row.puuid for row in rows] == ["stale-1"], query
+            assert total == 1, query
+
+        # LIKE wildcards in the query are literal, not "match anything".
+        rows, _ = await repo.list_registrations("%", 1, 50)
+        assert [row.puuid for row in rows] == ["pct-1"]
+        rows, _ = await repo.list_registrations("0%_l", 1, 50)
+        assert [row.puuid for row in rows] == ["pct-1"]
+        rows, _ = await repo.list_registrations("hams_", 1, 50)
+        assert rows == []
+
+
+async def test_list_registrations_puts_least_recently_refreshed_first(session_factory) -> None:
+    async with session_factory() as session:
+        session.add_all([
+            _player(puuid="fresh", updated_at=NOW),
+            _player(puuid="oldest", updated_at=NOW - timedelta(days=30)),
+            _player(puuid="older", updated_at=NOW - timedelta(days=2)),
+        ])
+        await session.commit()
+
+        rows, _ = await LeaderboardPlayerRepository(session).list_registrations("", 1, 2)
+        assert [row.puuid for row in rows] == ["oldest", "older"]
+
+
+async def test_delete_removes_the_row_and_returns_it(session_factory) -> None:
+    async with session_factory() as session:
+        session.add(_player(puuid="gone", name="Chamsy", tag="0001"))
+        await session.commit()
+
+        repo = LeaderboardPlayerRepository(session)
+        removed = await repo.delete("gone")
+        await session.commit()
+
+        assert removed is not None
+        assert (removed.name, removed.tag) == ("Chamsy", "0001")
+        assert await repo.delete("gone") is None
+
+    async with session_factory() as session:
+        assert await session.get(LeaderboardPlayer, "gone") is None
+
+
+async def test_refresh_rank_updates_existing_rows_and_never_recreates_removed_ones(session_factory) -> None:
+    async with session_factory() as session:
+        session.add(_player(puuid="kept", name="Old", tag="OLD", elo=900, discord_username="kept-user"))
+        await session.commit()
+
+        repo = LeaderboardPlayerRepository(session)
+        assert await repo.refresh_rank("kept", name="New", tag="NEW", elo=1500, update_source="updater_service") is True
+        # The updater read this player at the start of its pass; an admin removed
+        # them before it got there.
+        assert await repo.refresh_rank("removed-mid-pass", name="X", tag="X", elo=1) is False
+
+    async with session_factory() as session:
+        kept = await session.get(LeaderboardPlayer, "kept")
+        assert (kept.name, kept.tag, kept.elo, kept.update_source) == ("New", "NEW", 1500, "updater_service")
+        assert kept.discord_username == "kept-user"
+        assert await session.get(LeaderboardPlayer, "removed-mid-pass") is None
+
+
+async def test_refresh_rank_commits_so_a_concurrent_delete_is_not_blocked(session_factory) -> None:
+    async with session_factory() as updater_session, session_factory() as admin_session:
+        updater_session.add_all([_player(puuid="p1"), _player(puuid="p2")])
+        await updater_session.commit()
+
+        updater = LeaderboardPlayerRepository(updater_session)
+        await updater.list_all()
+        assert await updater.refresh_rank("p1", name="P", tag="ONE", elo=1300) is True
+
+        # With the pass mid-flight, the admin delete must not wait on p1's row lock.
+        await admin_session.execute(text("SET LOCAL lock_timeout = '2s'"))
+        admin = LeaderboardPlayerRepository(admin_session)
+        assert await admin.delete("p1") is not None
+        await admin_session.commit()
+
+        assert await updater.refresh_rank("p1", name="P", tag="ONE", elo=1400) is False
