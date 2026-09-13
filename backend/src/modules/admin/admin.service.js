@@ -289,6 +289,11 @@ const mapRegistrationCoach = (member) => member
       phone: member.phone,
       discord: member.discord,
       riotId: member.riotId,
+      // A coach confirms their spot through an invitation, exactly as a player
+      // does, and an unanswered one holds verification back. Admins need to see
+      // it to know why a registration has not verified.
+      inviteStatus: member.inviteStatus,
+      inviteRespondedAt: member.inviteRespondedAt,
     }
   : null;
 

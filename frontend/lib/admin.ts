@@ -15,6 +15,7 @@ import {
   sriLankaDateTimeLocalToIso,
 } from "@/lib/date-time";
 import type { NavIconKey } from "@/lib/icons";
+import type { TeamInviteStatus } from "@/lib/teams";
 
 export type AdminNavigationLink = {
   href: string;
@@ -237,6 +238,8 @@ export type TeamRegistration = {
     phone: string;
     discord: string;
     riotId: string;
+    inviteStatus: TeamInviteStatus;
+    inviteRespondedAt?: string | null;
   } | null;
   members: RegistrationMember[];
 };

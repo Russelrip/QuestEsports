@@ -3298,7 +3298,7 @@ test("admin registration details expose the coach separately from competing memb
         captainRiotId: "Captain#001",
         members: [
           { id: "captain-1", role: "CAPTAIN", memberOrder: 0, name: "Captain", email: "captain@example.com", phone: "0770000000", discord: "captain", riotId: "Captain#001", additionalData: {}, inviteStatus: "accepted", inviteRespondedAt: null, user: null },
-          { id: "coach-1", role: "COACH", memberOrder: 1, name: "Coach", email: "coach@example.com", phone: "0771111111", discord: "coach", riotId: "Coach#001", additionalData: {}, inviteStatus: "accepted", inviteRespondedAt: null, user: null },
+          { id: "coach-1", role: "COACH", memberOrder: 1, name: "Coach", email: "coach@example.com", phone: "0771111111", discord: "coach", riotId: "Coach#001", additionalData: {}, inviteStatus: "expired", inviteRespondedAt: null, user: null },
         ],
       }),
     },
@@ -3312,6 +3312,8 @@ test("admin registration details expose the coach separately from competing memb
       phone: "0771111111",
       discord: "coach",
       riotId: "Coach#001",
+      inviteStatus: "expired",
+      inviteRespondedAt: null,
     });
     assert.deepEqual(result.members.map(({ role }) => role), ["CAPTAIN"]);
   } finally {
