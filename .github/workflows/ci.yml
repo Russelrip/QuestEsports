@@ -50,6 +50,10 @@ jobs:
         shell: bash
         run: bash ops/tests/deploy-release.test.sh
 
+      - name: Test the tailnet-only Portainer contract
+        shell: bash
+        run: bash ops/tests/portainer-contract.test.sh
+
       - name: Assert the Compose-only production authority
         shell: bash
         run: |

@@ -1,0 +1,26 @@
+# Portainer: a Docker dashboard for the production VPS, reachable ONLY over
+# Tailscale. Installed at /opt/portainer/compose.yaml; this file mirrors it.
+#
+# It is published on host loopback and reaches the tailnet through:
+#   tailscale serve --bg --https=9443 https+insecure://127.0.0.1:9443
+#
+# The Docker socket mount makes this container root on the host. Never proxy
+# it through Nginx, open 9443 in ufw, or enable Tailscale Funnel for it.
+# ops/tests/portainer-contract.test.sh enforces the publication rules.
+# See ops/docker/portainer/README.md.
+name: portainer
+services:
+  portainer:
+    image: portainer/portainer-ce:2.45.0
+    container_name: portainer
+    command: ["--http-disabled"]
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:9443:9443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
+    security_opt:
+      - no-new-privileges:true
+volumes:
+  portainer_data:

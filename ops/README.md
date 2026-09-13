@@ -23,6 +23,7 @@ These scripts support encrypted backup and recovery for Quest Esports production
 | `systemd/quest-esports-backup-freshness.service` | Restricted freshness probe that alerts through the same failure notifier |
 | `systemd/quest-esports-backup-freshness.timer` | Persistent daily freshness check at 05:00 UTC plus randomized delay |
 | `systemd/quest-esports-release-lock.tmpfiles` | Creates the shared root-owned release lock at boot |
+| `docker/portainer/` | Docker dashboard for the VPS, reachable only over Tailscale; install, first login, upgrade and removal are in its [README](docker/portainer/README.md) |
 
 Never commit a filled environment file, archive, checksum, database dump, rclone configuration, OAuth credential, or private `age` identity. Never use the production database or live upload paths for a restore drill.
 
