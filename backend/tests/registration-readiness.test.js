@@ -144,6 +144,25 @@ test("an unlinked player does not block the roster", async () => {
   }
 });
 
+test("a member's connected account is found through their Quest account", async () => {
+  // Roster rows are never given a player link, so this is how every production
+  // roster arrives: the account is on the member's user, not on the row.
+  const team = baseTeam([
+    member({
+      id: "through-user",
+      player: null,
+      user: { oauthAccounts: [{ id: "oauth-1" }], player: withAccount().player },
+    }),
+  ]);
+  const { module: service, restore } = loadService({ team });
+  try {
+    const result = await service.getRegistrationReadiness({ teamId: "team-1", user: CAPTAIN });
+    assert.deepEqual(result.members[0].gameAccount, { id: "account-1", status: "active" });
+  } finally {
+    restore();
+  }
+});
+
 test("a pending invite is not a player", async () => {
   const members = [
     ...Array.from({ length: 4 }, (_, index) =>

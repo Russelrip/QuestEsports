@@ -32,7 +32,10 @@ const COMPETING_ROLES = new Set(["CAPTAIN", "PLAYER", "SUBSTITUTE"]);
 const ACTIVE_ROLES = new Set(["CAPTAIN", "PLAYER"]);
 
 const memberView = (member, discordRequired) => {
-  const account = member.player?.gameAccounts?.[0] ?? null;
+  // Through the member's own account: roster rows are never given a `playerId`,
+  // so reading only the row reported every connected player as unconnected.
+  const account =
+    member.player?.gameAccounts?.[0] ?? member.user?.player?.gameAccounts?.[0] ?? null;
   const inviteAccepted = member.inviteStatus === "accepted";
   // Discord is a connected identity on `OAuthAccount`, never the mutable
   // `User.discordTag`, which is display text anyone can change.
@@ -91,6 +94,14 @@ const getRegistrationReadiness = async ({ teamId, tournamentId, user }) => {
               oauthAccounts: {
                 where: { provider: "discord" },
                 select: { id: true },
+              },
+              player: {
+                select: {
+                  gameAccounts: {
+                    where: { status: { in: ["active", "locked"] } },
+                    orderBy: { linkedAt: "desc" },
+                  },
+                },
               },
             },
           },
