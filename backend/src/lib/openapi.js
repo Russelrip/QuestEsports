@@ -1849,6 +1849,16 @@ const additionalPaths = {
       parameters: idParameter("registrationId"),
     }),
   },
+  "/api/admin/team-registrations/{registrationId}/members/{memberId}/resend-invite": {
+    post: createOperation(
+      "Admin",
+      "Send a registration roster member's unanswered invitation again",
+      {
+        authenticated: true,
+        parameters: [...idParameter("registrationId"), ...idParameter("memberId")],
+      },
+    ),
+  },
   "/api/admin/team-registrations/{registrationId}": {
     get: createOperation("Admin", "Get a tournament registration", {
       authenticated: true,
@@ -1925,6 +1935,16 @@ const additionalPaths = {
       "Admin",
       "Transfer saved-team captain and remove the former captain",
       { authenticated: true, parameters: idParameter("teamId") },
+    ),
+  },
+  "/api/admin/teams/{teamId}/members/{memberId}/resend-invite": {
+    post: createOperation(
+      "Admin",
+      "Send a saved-team member's unanswered invitation again",
+      {
+        authenticated: true,
+        parameters: [...idParameter("teamId"), ...idParameter("memberId")],
+      },
     ),
   },
   "/api/admin/teams/{teamId}/organization": {

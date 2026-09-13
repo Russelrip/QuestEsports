@@ -6,6 +6,7 @@ const {
   deleteSavedTeam,
   nudgeTeamInvite,
 } = require("./team.service");
+const { describeInviteDelivery } = require("./invite-delivery-message");
 const {
   listInvitationsForUser,
   respondToInvitation,
@@ -56,25 +57,6 @@ const deleteProfileTeam = asyncHandler(async (req, res) => {
   res.status(200).json({ success: true, message: "Team deleted successfully." });
 });
 
-// The message names the channels that actually carried it. A captain deciding
-// whether to go and message someone needs to know that nothing reached them,
-// not a reassuring "invitation sent".
-const buildNudgeMessage = (delivery) => {
-  if (!delivery?.hasQuestAccount) {
-    return "This player does not have a Quest account yet. Copy their onboarding link and send it to them.";
-  }
-  if (delivery.inApp && delivery.discord) {
-    return "Reminded in Quest and on Discord.";
-  }
-  if (delivery.discord) {
-    return "Reminded on Discord.";
-  }
-  if (delivery.inApp) {
-    return "Reminded in Quest. They will see it next time they sign in.";
-  }
-  return "The invitation is waiting in their Quest account, but we could not reach them. Send them the link.";
-};
-
 const nudgeProfileTeamInvite = asyncHandler(async (req, res) => {
   const result = await nudgeTeamInvite({
     teamId: req.params.teamId,
@@ -83,7 +65,7 @@ const nudgeProfileTeamInvite = asyncHandler(async (req, res) => {
   });
   res.status(200).json({
     success: true,
-    message: buildNudgeMessage(result.delivery),
+    message: describeInviteDelivery(result.delivery),
     ...result,
   });
 });

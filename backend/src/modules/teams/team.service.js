@@ -822,6 +822,17 @@ const deleteSavedTeam = async ({ teamId, user }) => {
 //
 // A captain who cannot be reached any of those ways is told to send the link
 // themselves. They are teammates; they already have a way to talk.
+const INVITE_MEMBER_INCLUDE = {
+  team: {
+    select: {
+      name: true,
+      captainUser: {
+        select: { firstName: true, lastName: true, username: true },
+      },
+    },
+  },
+};
+
 const nudgeTeamInvite = async ({ teamId, memberId, user, now = new Date() }) => {
   const member = await prisma.savedTeamMember.findFirst({
     where: {
@@ -829,21 +840,80 @@ const nudgeTeamInvite = async ({ teamId, memberId, user, now = new Date() }) => 
       teamId,
       team: { captainUserId: user.id },
     },
-    include: {
-      team: {
-        select: {
-          name: true,
-          captainUser: {
-            select: { firstName: true, lastName: true, username: true },
-          },
-        },
-      },
-    },
+    include: INVITE_MEMBER_INCLUDE,
   });
 
   if (!member) {
     throw new HttpError(404, "Team member not found or you do not have permission to manage this invite.");
   }
+  return reopenTeamInvite({ member, teamId, now });
+};
+
+// An admin sending an invitation again, from the team directory.
+//
+// The same reopening a captain gets, without the ownership check: an admin is
+// who a stuck roster gets escalated to, and "ask your captain to press the
+// button" is not an answer they can give. The controller records who did it.
+const adminResendTeamInvite = async ({ teamId, memberId, now = new Date() }) => {
+  const member = await prisma.savedTeamMember.findFirst({
+    where: { id: memberId, teamId },
+    include: INVITE_MEMBER_INCLUDE,
+  });
+  if (!member) {
+    throw new HttpError(404, "Team member not found.");
+  }
+  return reopenTeamInvite({ member, teamId, now });
+};
+
+// An admin sending an invitation again from a registration's roster.
+//
+// A registration row is not what an invitee answers: they accept the saved
+// team's copy, and that answer propagates to the registration by address. So
+// this reopens the saved team's invitation for the same person and points the
+// reopening at this registration's row specifically. A registration with no
+// such copy has nothing anyone could accept, and saying so is more useful than
+// reopening a row that can never be answered.
+const adminResendRegistrationInvite = async ({ registrationId, memberId, now = new Date() }) => {
+  const registrationMember = await prisma.registrationMember.findFirst({
+    where: { id: memberId, registrationId },
+    select: {
+      id: true,
+      role: true,
+      emailNormalized: true,
+      inviteStatus: true,
+      registration: { select: { id: true, savedTeamId: true } },
+    },
+  });
+  if (!registrationMember) {
+    throw new HttpError(404, "Roster member not found on this registration.");
+  }
+  if (registrationMember.role === "CAPTAIN") {
+    throw new HttpError(409, "The captain does not have an invitation to send.");
+  }
+  if (!NUDGEABLE_INVITE_STATUSES.includes(registrationMember.inviteStatus)) {
+    throw new HttpError(409, "Only an unanswered invitation can be sent again.");
+  }
+
+  const teamId = registrationMember.registration.savedTeamId;
+  const member = teamId && registrationMember.emailNormalized
+    ? await prisma.savedTeamMember.findFirst({
+        where: { teamId, emailNormalized: registrationMember.emailNormalized },
+        include: INVITE_MEMBER_INCLUDE,
+      })
+    : null;
+  if (!member) {
+    throw new HttpError(
+      409,
+      "This person has no team invitation to send again. Correct the roster so their details match the team, or ask the captain to add them."
+    );
+  }
+  return reopenTeamInvite({ member, teamId, now, registrationMemberId: registrationMember.id });
+};
+
+// Reopen one saved-team invitation and the registration row it stands for, then
+// tell the invitee again. Shared by the captain and admin paths, so a resend
+// means exactly the same thing whoever pressed it.
+const reopenTeamInvite = async ({ member, teamId, now, registrationMemberId = null }) => {
   if (member.role === "CAPTAIN" || !NUDGEABLE_INVITE_STATUSES.includes(member.inviteStatus)) {
     throw new HttpError(409, "Only an unanswered invitation can be sent again.");
   }
@@ -864,6 +934,7 @@ const nudgeTeamInvite = async ({ teamId, memberId, user, now = new Date() }) => 
   const relatedRegistrationMember = prisma.registrationMember?.findFirst
     ? await prisma.registrationMember.findFirst({
         where: {
+          ...(registrationMemberId ? { id: registrationMemberId } : {}),
           emailNormalized: member.emailNormalized,
           inviteStatus: { in: NUDGEABLE_INVITE_STATUSES },
           registration: { savedTeamId: teamId },
@@ -926,7 +997,7 @@ const nudgeTeamInvite = async ({ teamId, memberId, user, now = new Date() }) => 
 
   logger.info("Team invite nudge sent.", {
     teamId,
-    memberId,
+    memberId: member.id,
     inApp: delivery.inApp,
     discord: delivery.discord,
     hasQuestAccount: delivery.hasQuestAccount,
@@ -1369,6 +1440,8 @@ module.exports = {
   updateSavedTeam,
   deleteSavedTeam,
   nudgeTeamInvite,
+  adminResendTeamInvite,
+  adminResendRegistrationInvite,
   syncSavedTeamFromRegistration,
   sendTeamInvites,
   ensureTeamRegistrationSaved,

@@ -34,6 +34,8 @@ const {
   updateSavedTeam,
   updateSavedTeamOrganization,
   transferSavedTeamCaptain,
+  resendSavedTeamInvite,
+  resendRegistrationInvite,
   removeSavedTeam,
 } = require("./admin.controller");
 
@@ -63,6 +65,11 @@ router.patch(
   updateRegistrationLogo
 );
 router.patch("/admin/team-registrations/:registrationId/roster", invalidateCache("tournaments", "foundation"), correctRegistrationRoster);
+router.post(
+  "/admin/team-registrations/:registrationId/members/:memberId/resend-invite",
+  invalidateCache("tournaments", "foundation"),
+  resendRegistrationInvite
+);
 router.delete("/admin/team-registrations/:registrationId", invalidateCache("tournaments", "foundation"), removeRegistration);
 router.post("/admin/team-registrations/:registrationId/slot-reservation", invalidateCache("tournaments", "foundation"), reserveRegistrationSlot);
 router.delete("/admin/team-registrations/:registrationId/slot-reservation", invalidateCache("tournaments", "foundation"), releaseRegistrationSlot);
@@ -85,6 +92,11 @@ router.post(
   "/admin/teams/:teamId/captain-transfer",
   invalidateCache("tournaments", "foundation"),
   transferSavedTeamCaptain
+);
+router.post(
+  "/admin/teams/:teamId/members/:memberId/resend-invite",
+  invalidateCache("tournaments", "foundation"),
+  resendSavedTeamInvite
 );
 router.delete("/admin/teams/:teamId", invalidateCache("tournaments", "foundation"), removeSavedTeam);
 

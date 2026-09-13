@@ -1215,6 +1215,168 @@ test("nudgeTeamInvite reopens an unanswered invitation and enforces its cooldown
   }
 });
 
+// An admin can send an invitation again without being the team's captain, from
+// the team directory or from a registration's roster.
+const adminResendHarness = ({ savedMember, registrationMember = null } = {}) => {
+  const now = new Date("2026-09-14T10:00:00.000Z");
+  const calls = { savedLookups: [], registrationLookups: [], relatedLookups: [], registrationUpdates: [], invites: [] };
+  const member = {
+    id: "coach-saved",
+    teamId: "saved-team-1",
+    userId: "user-coach",
+    role: "COACH",
+    memberOrder: 1,
+    name: "Coach",
+    email: "coach@example.com",
+    emailNormalized: "coach@example.com",
+    inviteStatus: "expired",
+    inviteSentAt: new Date("2026-09-10T06:00:00.000Z"),
+    inviteExpiresAt: new Date("2026-09-13T06:00:00.000Z"),
+    inviteRespondedAt: null,
+    team: { name: "Quest Five", captainUser: { firstName: "Quest", lastName: "Captain", username: "captain" } },
+    ...savedMember,
+  };
+  const tx = {
+    savedTeamMember: { update: async ({ data }) => ({ ...member, ...data }) },
+    registrationMember: {
+      updateMany: async (args) => { calls.registrationUpdates.push(args); return { count: 1 }; },
+      findMany: async () => [{ inviteStatus: "pending" }],
+    },
+    teamRegistration: {
+      update: async () => undefined,
+      findUnique: async () => null,
+    },
+  };
+  const prisma = {
+    savedTeamMember: {
+      findFirst: async (args) => {
+        calls.savedLookups.push(args);
+        return savedMember === null ? null : member;
+      },
+    },
+    registrationMember: {
+      findFirst: async (args) => {
+        if (args.select) {
+          calls.registrationLookups.push(args);
+          return registrationMember;
+        }
+        calls.relatedLookups.push(args);
+        return { id: registrationMember?.id || "reg-member", registration: { id: "registration-1", tournament: { title: "Quest Cup" } } };
+      },
+    },
+    $transaction: async (callback) => callback(tx),
+  };
+  const loaded = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: { prisma },
+    [uploadModulePath]: {},
+    [noticeModulePath]: noticeMock(calls.invites),
+  });
+  return { ...loaded, calls, now, member };
+};
+
+test("adminResendTeamInvite reopens any team's invitation without a captain check", async () => {
+  const { module: teamService, restore, calls, now } = adminResendHarness();
+  try {
+    const result = await teamService.adminResendTeamInvite({ teamId: "saved-team-1", memberId: "coach-saved", now });
+
+    assert.deepEqual(calls.savedLookups[0].where, { id: "coach-saved", teamId: "saved-team-1" });
+    assert.equal(result.member.inviteStatus, "pending");
+    assert.equal(result.member.inviteSentAt.getTime(), now.getTime());
+    assert.equal(calls.invites.length, 1);
+    assert.equal(calls.invites[0].tournamentTitle, "Quest Cup");
+    // The matching registration spot reopens with it.
+    assert.equal(calls.registrationUpdates.length, 1);
+    assert.equal(calls.registrationUpdates[0].data.inviteStatus, "pending");
+  } finally {
+    restore();
+  }
+});
+
+test("adminResendTeamInvite still refuses an accepted invitation and honours the cooldown", async () => {
+  const accepted = adminResendHarness({ savedMember: { inviteStatus: "accepted" } });
+  try {
+    await assert.rejects(
+      accepted.module.adminResendTeamInvite({ teamId: "saved-team-1", memberId: "coach-saved", now: accepted.now }),
+      (error) => error.statusCode === 409,
+    );
+  } finally {
+    accepted.restore();
+  }
+
+  const recent = adminResendHarness({ savedMember: { inviteStatus: "pending", inviteSentAt: new Date("2026-09-14T09:59:30.000Z") } });
+  try {
+    await assert.rejects(
+      recent.module.adminResendTeamInvite({ teamId: "saved-team-1", memberId: "coach-saved", now: recent.now }),
+      (error) => error.statusCode === 429,
+    );
+  } finally {
+    recent.restore();
+  }
+});
+
+test("adminResendRegistrationInvite reopens the team's copy and targets this registration's row", async () => {
+  const { module: teamService, restore, calls, now } = adminResendHarness({
+    registrationMember: {
+      id: "reg-coach",
+      role: "COACH",
+      emailNormalized: "coach@example.com",
+      inviteStatus: "expired",
+      registration: { id: "registration-1", savedTeamId: "saved-team-1" },
+    },
+  });
+  try {
+    const result = await teamService.adminResendRegistrationInvite({ registrationId: "registration-1", memberId: "reg-coach", now });
+
+    assert.deepEqual(calls.registrationLookups[0].where, { id: "reg-coach", registrationId: "registration-1" });
+    assert.deepEqual(calls.savedLookups[0].where, { teamId: "saved-team-1", emailNormalized: "coach@example.com" });
+    assert.equal(calls.relatedLookups[0].where.id, "reg-coach");
+    assert.equal(result.member.inviteStatus, "pending");
+    assert.equal(calls.invites.length, 1);
+  } finally {
+    restore();
+  }
+});
+
+test("adminResendRegistrationInvite explains when there is no team invitation to send", async () => {
+  const { module: teamService, restore, calls, now } = adminResendHarness({
+    savedMember: null,
+    registrationMember: {
+      id: "reg-coach",
+      role: "COACH",
+      emailNormalized: "old-coach@example.com",
+      inviteStatus: "expired",
+      registration: { id: "registration-1", savedTeamId: "saved-team-1" },
+    },
+  });
+  try {
+    await assert.rejects(
+      teamService.adminResendRegistrationInvite({ registrationId: "registration-1", memberId: "reg-coach", now }),
+      (error) => error.statusCode === 409 && /no team invitation/.test(error.message),
+    );
+    assert.equal(calls.invites.length, 0);
+  } finally {
+    restore();
+  }
+});
+
+test("adminResendRegistrationInvite refuses the captain and an accepted spot", async () => {
+  for (const [registrationMember, pattern] of [
+    [{ id: "reg-captain", role: "CAPTAIN", emailNormalized: "cap@example.com", inviteStatus: "accepted", registration: { id: "registration-1", savedTeamId: "saved-team-1" } }, /captain/],
+    [{ id: "reg-player", role: "PLAYER", emailNormalized: "p@example.com", inviteStatus: "accepted", registration: { id: "registration-1", savedTeamId: "saved-team-1" } }, /unanswered/],
+  ]) {
+    const { module: teamService, restore, calls, now } = adminResendHarness({ registrationMember });
+    try {
+      await assert.rejects(
+        teamService.adminResendRegistrationInvite({ registrationId: "registration-1", memberId: registrationMember.id, now }),
+        (error) => error.statusCode === 409 && pattern.test(error.message),
+      );
+      assert.equal(calls.invites.length, 0);
+    } finally {
+      restore();
+    }
+  }
+});
+
 test("deleteSavedTeam refuses members who are not the captain", async () => {
   let deleteCalls = 0;
   const { module: teamService, restore } = loadModuleWithMocks(servicePath, {

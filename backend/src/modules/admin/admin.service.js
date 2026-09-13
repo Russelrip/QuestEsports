@@ -284,6 +284,7 @@ const mapRegistrationMember = (member) => ({
 
 const mapRegistrationCoach = (member) => member
   ? {
+      id: member.id,
       name: member.name,
       email: member.email,
       phone: member.phone,
