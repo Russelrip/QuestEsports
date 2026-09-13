@@ -339,7 +339,7 @@ export default function AdminRegistrationsManager({ eventId, eventTitle }: { eve
                         <div className="min-w-0">
                           <h4 className="break-words font-semibold text-white">{registration.teamName}</h4>
                           <p className="mt-1 text-xs text-slate-500">{formatAdminCompactDateTime(registration.createdAt)}</p>
-                          <p className="mt-1 text-xs text-purple-200">{eventTitle || "Event not assigned"} · {registration.tournament.game || "Game not set"}</p>
+                          <p className="mt-1 text-xs text-purple-200">{registration.event?.title || eventTitle || "Event not assigned"} · {registration.tournament.game || "Game not set"}</p>
                         </div>
                         <div className="mt-4 min-w-0 text-sm">
                           <p className="break-words text-slate-300">{registration.captain.name}</p>
@@ -413,7 +413,7 @@ export default function AdminRegistrationsManager({ eventId, eventTitle }: { eve
                               </p>
                             </td>
                             <td className="px-5 py-4 text-sm text-slate-300">
-                              <p>{eventTitle || "Event not assigned"}</p>
+                              <p>{registration.event?.title || eventTitle || "Event not assigned"}</p>
                               <p className="mt-1 text-xs text-slate-500">{registration.tournament.game || "Game not set"}</p>
                             </td>
                             <td className="px-5 py-4 text-sm text-slate-300">

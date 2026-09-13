@@ -234,7 +234,14 @@ const TEAM_REGISTRATION_SUMMARY_SELECT = {
   createdAt: true,
   captainName: true,
   captainEmail: true,
-  tournament: { select: TOURNAMENT_SUMMARY_SELECT },
+  tournament: {
+    select: {
+      ...TOURNAMENT_SUMMARY_SELECT,
+      // The list spans every event, so each row has to say which one it
+      // belongs to. Only the event dashboard knew that before, from its route.
+      series: { select: { id: true, title: true } },
+    },
+  },
   members: {
     where: { role: "COACH" },
     select: { name: true, riotId: true },
@@ -325,7 +332,7 @@ const mapTeamRegistration = (registration) => ({
     .map(mapRegistrationMember),
 });
 
-const mapTeamRegistrationSummary = (registration) => ({
+const mapTeamRegistrationSummary = ({ tournament: { series, ...tournament }, ...registration }) => ({
   id: registration.id,
   entryType: registration.entryType || "team",
   teamName: registration.teamName,
@@ -335,7 +342,8 @@ const mapTeamRegistrationSummary = (registration) => ({
   waitlistPosition: registration.waitlistPosition || null,
   publicReference: getRegistrationPublicReference(registration),
   createdAt: registration.createdAt,
-  tournament: registration.tournament,
+  tournament,
+  event: series ? { id: series.id, title: series.title } : null,
   captain: {
     name: registration.captainName,
     email: registration.captainEmail,

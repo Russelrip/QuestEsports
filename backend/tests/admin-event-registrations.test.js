@@ -108,7 +108,10 @@ test("event registration summaries map only safe fields and isolate returned ite
         const eventFilter = where.tournament?.seriesId || where.tournament?.AND?.find((filter) => filter.seriesId)?.seriesId;
         return registrations
           .filter((registration) => registration.tournament.seriesId === eventFilter)
-          .map((registration) => ({ ...registration, tournament: eventTournaments[0] }));
+          .map((registration) => ({
+            ...registration,
+            tournament: { ...eventTournaments[0], series: { id: "event-1", title: "Event One" } },
+          }));
       },
     },
     tournament: { findMany: async ({ where }) => where.seriesId === "event-1" ? eventTournaments : [] },
@@ -131,6 +134,7 @@ test("event registration summaries map only safe fields and isolate returned ite
       publicReference: "QES-EVENT1",
       createdAt: new Date("2026-08-17T10:00:00.000Z"),
       tournament: eventTournaments[0],
+      event: { id: "event-1", title: "Event One" },
       captain: { name: "Captain One", email: "one@example.com" },
       coachName: "Coach One",
       coachRiotId: "Coach#001",
