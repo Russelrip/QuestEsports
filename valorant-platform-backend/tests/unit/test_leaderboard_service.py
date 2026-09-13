@@ -12,6 +12,9 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+import pytest
+
+from app.api.errors import AppError
 from app.db.models import LeaderboardPlayer
 from app.schemas.leaderboard import LeaderboardEntry, LeaderboardPage, LeaderboardStats
 from app.services.leaderboard_service import LeaderboardService
@@ -209,3 +212,73 @@ async def test_total_pages_larger_total():
     service = _service(FakeLeaderboardRepo(rows=[], total=151))
     page = await service.leaderboard(1, 50)
     assert page.total_pages == 4
+
+
+# ------------------------------------------------------------ admin surface
+
+class FakeAdminRepo:
+    """Stub repo for the admin paths: a registration listing and a delete."""
+
+    def __init__(self, rows: list[LeaderboardPlayer] | None = None, total: int = 0) -> None:
+        self.rows = rows or []
+        self.total = total
+        self.deleted: list[str] = []
+
+    async def list_registrations(self, query: str, page: int, per_page: int) -> tuple[list[LeaderboardPlayer], int]:
+        return self.rows, self.total
+
+    async def delete(self, puuid: str) -> LeaderboardPlayer | None:
+        self.deleted.append(puuid)
+        return next((row for row in self.rows if row.puuid == puuid), None)
+
+
+class FakeSession:
+    def __init__(self) -> None:
+        self.commits = 0
+
+    async def commit(self) -> None:
+        self.commits += 1
+
+
+async def test_registrations_flag_rows_the_public_board_hides() -> None:
+    recent = datetime.now(UTC)
+    rows = [
+        _row(puuid="listed", last_played_match=recent, updated_at=recent),
+        # The row the updater cannot refresh: migrated rank, never a match date.
+        _row(puuid="stale", last_played_match=None, updated_at=recent),
+        _row(puuid="unrated", currenttierpatched="Unrated", last_played_match=recent, updated_at=recent),
+    ]
+    page = await _service(FakeAdminRepo(rows=rows, total=3)).registrations("", 1, 50)  # type: ignore[arg-type]
+
+    assert [(entry.puuid, entry.on_leaderboard) for entry in page.entries] == [
+        ("listed", True),
+        ("stale", False),
+        ("unrated", False),
+    ]
+    assert page.total_pages == 1
+
+
+async def test_remove_commits_and_returns_the_removed_row() -> None:
+    row = _row(puuid="gone", update_source="migration", last_played_match=None, updated_at=NOW)
+    repo = FakeAdminRepo(rows=[row])
+    session = FakeSession()
+    service = LeaderboardService(session=session, repo=repo)  # type: ignore[arg-type]
+
+    removed = await service.remove("gone")
+
+    assert removed.puuid == "gone"
+    assert removed.update_source == "migration"
+    assert removed.on_leaderboard is False
+    assert session.commits == 1
+
+
+async def test_remove_unknown_player_is_404_and_commits_nothing() -> None:
+    session = FakeSession()
+    service = LeaderboardService(session=session, repo=FakeAdminRepo())  # type: ignore[arg-type]
+
+    with pytest.raises(AppError) as excinfo:
+        await service.remove("ghost")
+
+    assert excinfo.value.code == "LEADERBOARD_PLAYER_NOT_FOUND"
+    assert excinfo.value.status == 404
+    assert session.commits == 0

@@ -355,3 +355,42 @@ test("registration requests use the 60s timeout; leaderboard GETs keep the 5s ti
     mock.timers.reset();
   }
 });
+
+test("admin registration calls sign as the acting admin, not the system actor", async () => {
+  const originalFetch = globalThis.fetch;
+  const captured = [];
+  globalThis.fetch = async (url, options) => {
+    captured.push({ url, options });
+    return jsonResponse(200, { entries: [], total: 0, page: 1, per_page: 50, total_pages: 1 });
+  };
+  try {
+    const { module: client } = loadClient(envWithConfig);
+    await client.listRegistrations({ query: "cham sy", page: 2, perPage: 25, actorUserId: "admin-1" });
+    await client.removeRegistration({ puuid: "p/1", actorUserId: "admin-1" });
+
+    assert.equal(captured[0].url, `${INTERNAL_BASE_URL}/api/v1/leaderboard/players?q=cham+sy&page=2&per_page=25`);
+    assert.equal(captured[1].url, `${INTERNAL_BASE_URL}/api/v1/leaderboard/players/p%2F1`);
+    assert.equal(captured[1].options.method, "DELETE");
+    for (const { options } of captured) {
+      const token = options.headers.Authorization.replace(/^Bearer /, "");
+      assert.equal(decodeJwtPayload(token).sub, "admin-1");
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("removeRegistration surfaces the upstream not-found message and status", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () =>
+    jsonResponse(404, { error: { code: "LEADERBOARD_PLAYER_NOT_FOUND", message: "leaderboard player not found" } });
+  try {
+    const { module: client } = loadClient(envWithConfig);
+    await assert.rejects(
+      client.removeRegistration({ puuid: "ghost", actorUserId: "admin-1" }),
+      (error) => error.statusCode === 404 && error.message === "leaderboard player not found"
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

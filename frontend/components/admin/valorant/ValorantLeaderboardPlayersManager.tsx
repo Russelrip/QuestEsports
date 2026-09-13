@@ -1,0 +1,276 @@
+"use client";
+
+import { Fragment, useState, type FormEvent } from "react";
+import ValorantEmptyState from "@/components/admin/valorant/ValorantEmptyState";
+import ValorantErrorAlert from "@/components/admin/valorant/ValorantErrorAlert";
+import ValorantLoadingState from "@/components/admin/valorant/ValorantLoadingState";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { useValorantLeaderboardRegistrations } from "@/hooks/api/useValorant";
+import { useToastStore } from "@/hooks/useToastStore";
+import { formatAdminCompactDateTime } from "@/lib/admin";
+import { formatSriLankaDate } from "@/lib/date-time";
+import { cn } from "@/lib/utils";
+import type { ValorantLeaderboardRegistration } from "@/lib/valorant";
+import { removeValorantLeaderboardRegistration } from "@/lib/valorant-api";
+
+const REASON_MAX_LENGTH = 500;
+// The updater refreshes every player roughly hourly, so a row untouched for a
+// day is one it keeps failing on — usually the account a removal is for.
+const STALE_AFTER_MS = 24 * 60 * 60 * 1000;
+
+const isStale = (entry: ValorantLeaderboardRegistration) =>
+  Date.now() - new Date(entry.updatedAt).getTime() > STALE_AFTER_MS;
+
+export default function ValorantLeaderboardPlayersManager() {
+  const showToast = useToastStore((state) => state.showToast);
+  const [search, setSearch] = useState("");
+  const [query, setQuery] = useState("");
+  const [page, setPage] = useState(1);
+  const [removingPuuid, setRemovingPuuid] = useState<string | null>(null);
+  const [reason, setReason] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const registrationsQuery = useValorantLeaderboardRegistrations(query, page);
+  const entries = registrationsQuery.data?.entries ?? [];
+  const total = registrationsQuery.data?.total ?? 0;
+  const totalPages = registrationsQuery.data?.totalPages ?? 1;
+
+  const closeRemoval = () => {
+    setRemovingPuuid(null);
+    setReason("");
+  };
+
+  const handleSearch = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    closeRemoval();
+    setPage(1);
+    setQuery(search.trim());
+  };
+
+  const handleRemove = async (entry: ValorantLeaderboardRegistration) => {
+    const trimmed = reason.trim();
+    if (!trimmed) return;
+    setSubmitting(true);
+    try {
+      await removeValorantLeaderboardRegistration(entry.puuid, trimmed);
+      showToast({ title: `${entry.name}#${entry.tag} removed from the leaderboard`, tone: "success" });
+      closeRemoval();
+      if (entries.length === 1 && page > 1) {
+        setPage(page - 1);
+      } else {
+        await registrationsQuery.refetch();
+      }
+    } catch (removeError) {
+      const message = removeError instanceof Error ? removeError.message : "Could not remove this player.";
+      showToast({ title: message, tone: "error" });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="grid min-w-0 gap-4 sm:gap-6">
+      <div>
+        <h3 className="text-lg font-semibold text-white">Leaderboard Players</h3>
+        <p className="text-sm text-slate-400">
+          Every player registered for the public VALORANT leaderboard, including the ones it currently hides. Players the
+          rank updater has not refreshed for longest are listed first.
+        </p>
+      </div>
+
+      <form onSubmit={handleSearch} role="search" className="flex min-w-0 flex-col gap-2 sm:flex-row">
+        <Input
+          type="search"
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          placeholder="Riot ID, tag, Discord username or PUUID"
+          aria-label="Search leaderboard players"
+          maxLength={100}
+        />
+        <Button type="submit" variant="secondary" className="shrink-0">
+          Search
+        </Button>
+      </form>
+
+      {registrationsQuery.error ? (
+        <ValorantErrorAlert message={registrationsQuery.error} onRetry={() => void registrationsQuery.refetch()} />
+      ) : registrationsQuery.loading && !registrationsQuery.data ? (
+        <ValorantLoadingState />
+      ) : entries.length === 0 ? (
+        <ValorantEmptyState
+          title={query ? "No players match" : "No registered players"}
+          description={query ? `Nobody registered matches “${query}”.` : "Players appear here once they register for the leaderboard."}
+        />
+      ) : (
+        <>
+          <p className="text-sm text-slate-500" aria-live="polite">
+            {total} {total === 1 ? "player" : "players"}
+            {query ? ` matching “${query}”` : " registered"}
+          </p>
+          <Card className="min-w-0 overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[860px] text-left text-sm">
+                <thead>
+                  <tr className="border-b border-white/10 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                    <th scope="col" className="px-4 py-3">Player</th>
+                    <th scope="col" className="px-4 py-3">Rank</th>
+                    <th scope="col" className="px-4 py-3">Last match</th>
+                    <th scope="col" className="px-4 py-3">Last refreshed</th>
+                    <th scope="col" className="px-4 py-3">Board</th>
+                    <th scope="col" className="px-4 py-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {entries.map((entry) => {
+                    const confirming = removingPuuid === entry.puuid;
+                    const stale = isStale(entry);
+                    return (
+                      <Fragment key={entry.puuid}>
+                        <tr className={cn("border-b border-white/5", confirming && "bg-red-500/5")}>
+                          <td className="px-4 py-4">
+                            <p className="font-semibold text-white">
+                              {entry.name}
+                              <span className="text-slate-500">#{entry.tag}</span>
+                            </p>
+                            <p className="mt-0.5 text-xs text-slate-400">
+                              {entry.discordUsername ? `@${entry.discordUsername}` : "No Discord linked"}
+                            </p>
+                          </td>
+                          <td className="px-4 py-4 whitespace-nowrap text-slate-300">
+                            {entry.currentTier ?? "—"}
+                            {entry.elo !== null ? <span className="ml-2 text-xs text-slate-500">{entry.elo} ELO</span> : null}
+                          </td>
+                          <td className="px-4 py-4 whitespace-nowrap text-slate-300">
+                            {entry.lastPlayed ? formatSriLankaDate(entry.lastPlayed) : "None recorded"}
+                          </td>
+                          <td className="px-4 py-4 whitespace-nowrap">
+                            <p className={stale ? "text-amber-300" : "text-slate-300"}>
+                              {formatAdminCompactDateTime(entry.updatedAt)}
+                            </p>
+                            <p className="mt-0.5 text-xs text-slate-500">
+                              {stale ? "Updater is not refreshing this player" : entry.updateSource ?? "—"}
+                            </p>
+                          </td>
+                          <td className="px-4 py-4 whitespace-nowrap">
+                            <span
+                              className={cn(
+                                "inline-flex rounded-full border px-2.5 py-0.5 text-xs",
+                                entry.onLeaderboard
+                                  ? "border-emerald-400/25 bg-emerald-400/10 text-emerald-200"
+                                  : "border-white/10 bg-white/5 text-slate-400"
+                              )}
+                            >
+                              {entry.onLeaderboard ? "Listed" : "Hidden"}
+                            </span>
+                          </td>
+                          <td className="px-4 py-4 text-right">
+                            {confirming ? null : (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                disabled={submitting}
+                                onClick={() => {
+                                  setRemovingPuuid(entry.puuid);
+                                  setReason("");
+                                }}
+                              >
+                                Remove
+                              </Button>
+                            )}
+                          </td>
+                        </tr>
+                        {confirming ? (
+                          <tr className="border-b border-white/5 bg-red-500/5">
+                            <td colSpan={6} className="px-4 pb-5">
+                              <form
+                                className="grid gap-3"
+                                onSubmit={(event) => {
+                                  event.preventDefault();
+                                  void handleRemove(entry);
+                                }}
+                              >
+                                <div className="text-sm text-slate-300">
+                                  <p className="font-semibold text-white">
+                                    Remove {entry.name}#{entry.tag} from the leaderboard?
+                                  </p>
+                                  <ul className="mt-2 list-disc space-y-1 pl-5 text-slate-400">
+                                    <li>They disappear from the public leaderboard and the rank updater stops refreshing them.</li>
+                                    <li>
+                                      If they are in the Quest Discord, the bot drops their rank roles and marks them Unverified on
+                                      its next pass, unless they have the Manual role.
+                                    </li>
+                                    <li>The rank shown on their Quest profile is cleared. Their linked game account stays.</li>
+                                    <li>They can register again at any time.</li>
+                                  </ul>
+                                </div>
+                                <label className="grid gap-1.5 text-sm text-slate-300">
+                                  Reason (kept in the audit log)
+                                  <Textarea
+                                    value={reason}
+                                    onChange={(event) => setReason(event.target.value)}
+                                    maxLength={REASON_MAX_LENGTH}
+                                    required
+                                    autoFocus
+                                    className="min-h-20"
+                                    placeholder="e.g. Account no longer exists; the updater has failed on it since the migration."
+                                  />
+                                </label>
+                                <div className="flex flex-wrap justify-end gap-2">
+                                  <Button type="button" variant="ghost" size="sm" disabled={submitting} onClick={closeRemoval}>
+                                    Cancel
+                                  </Button>
+                                  <Button type="submit" variant="danger" size="sm" disabled={submitting || !reason.trim()}>
+                                    {submitting ? "Removing…" : "Remove player"}
+                                  </Button>
+                                </div>
+                              </form>
+                            </td>
+                          </tr>
+                        ) : null}
+                      </Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+          {totalPages > 1 ? (
+            <div className="flex items-center justify-between gap-3 text-sm text-slate-400">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={page <= 1 || registrationsQuery.loading}
+                onClick={() => {
+                  closeRemoval();
+                  setPage(page - 1);
+                }}
+              >
+                Previous
+              </Button>
+              <span>
+                Page {page} of {totalPages}
+              </span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={page >= totalPages || registrationsQuery.loading}
+                onClick={() => {
+                  closeRemoval();
+                  setPage(page + 1);
+                }}
+              >
+                Next
+              </Button>
+            </div>
+          ) : null}
+        </>
+      )}
+    </div>
+  );
+}

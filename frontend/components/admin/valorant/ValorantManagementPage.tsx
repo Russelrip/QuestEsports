@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import AdminShell from "@/components/admin/AdminShell";
+import ValorantLeaderboardPlayersManager from "@/components/admin/valorant/ValorantLeaderboardPlayersManager";
 import ValorantRankingsManager from "@/components/admin/valorant/ValorantRankingsManager";
 import ValorantReconciliationManager from "@/components/admin/valorant/ValorantReconciliationManager";
 import ValorantSeriesDetail from "@/components/admin/valorant/ValorantSeriesDetail";
@@ -10,7 +11,7 @@ import ValorantSeriesManager from "@/components/admin/valorant/ValorantSeriesMan
 import ValorantTeamsManager from "@/components/admin/valorant/ValorantTeamsManager";
 import { cn } from "@/lib/utils";
 
-type Tab = "teams" | "series" | "rankings" | "reconciliation";
+type Tab = "teams" | "series" | "rankings" | "leaderboard" | "reconciliation";
 
 type SeriesSubView =
   | { kind: "list" }
@@ -21,6 +22,7 @@ const tabs: Array<{ id: Tab; label: string }> = [
   { id: "teams", label: "Team Bindings" },
   { id: "series", label: "Series" },
   { id: "rankings", label: "Rankings" },
+  { id: "leaderboard", label: "Leaderboard Players" },
   { id: "reconciliation", label: "Reconciliation" },
 ];
 
@@ -81,6 +83,8 @@ export default function ValorantManagementPage() {
         }
       case "rankings":
         return <ValorantRankingsManager />;
+      case "leaderboard":
+        return <ValorantLeaderboardPlayersManager />;
       case "reconciliation":
         return <ValorantReconciliationManager />;
     }

@@ -13,12 +13,20 @@ and the dual-shape ``rank_details`` read).
 from __future__ import annotations
 
 import math
+from datetime import UTC, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.errors import AppError
 from app.db.models import LeaderboardPlayer
-from app.db.repositories.leaderboard_player_repository import LeaderboardPlayerRepository
-from app.schemas.leaderboard import LeaderboardEntry, LeaderboardPage, LeaderboardStats
+from app.db.repositories.leaderboard_player_repository import LeaderboardPlayerRepository, is_listed
+from app.schemas.leaderboard import (
+    LeaderboardEntry,
+    LeaderboardPage,
+    LeaderboardRegistration,
+    LeaderboardRegistrationPage,
+    LeaderboardStats,
+)
 from app.services.rank_field import get_rank_field
 
 
@@ -64,7 +72,49 @@ class LeaderboardService:
             rank_distribution=stats["rank_distribution"],
         )
 
+    async def registrations(self, query: str, page: int, per_page: int) -> LeaderboardRegistrationPage:
+        """Every registration matching ``query``, listed on the board or not."""
+        rows, total = await self._repo.list_registrations(query, page, per_page)
+        now = datetime.now(UTC)
+        return LeaderboardRegistrationPage(
+            entries=[self._to_registration(player, now) for player in rows],
+            total=total,
+            page=page,
+            per_page=per_page,
+            total_pages=math.ceil(total / per_page) if total > 0 else 1,
+        )
+
+    async def remove(self, puuid: str) -> LeaderboardRegistration:
+        """Delete a registration and return what it was.
+
+        The player drops off the board and out of the updater and Discord bot
+        passes; they can register again later. Whether the removal is justified
+        is decided and audited by Quest, which is the only caller.
+        """
+        player = await self._repo.delete(puuid)
+        if player is None:
+            raise AppError("LEADERBOARD_PLAYER_NOT_FOUND", 404, "leaderboard player not found")
+        await self._session.commit()
+        return self._to_registration(player, datetime.now(UTC))
+
     # ------------------------------------------------------------ internals
+
+    @staticmethod
+    def _to_registration(player: LeaderboardPlayer, now: datetime) -> LeaderboardRegistration:
+        return LeaderboardRegistration(
+            puuid=player.puuid,
+            name=player.name,
+            tag=player.tag,
+            discord_username=player.discord_username,
+            current_tier=player.currenttierpatched,
+            elo=player.elo,
+            last_played_match=player.last_played_match.isoformat()
+            if player.last_played_match
+            else None,
+            update_source=player.update_source,
+            updated_at=player.updated_at.isoformat(),
+            on_leaderboard=is_listed(player, now),
+        )
 
     @staticmethod
     def _to_entry(player: LeaderboardPlayer) -> LeaderboardEntry:

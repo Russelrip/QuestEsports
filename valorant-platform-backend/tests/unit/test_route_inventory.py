@@ -39,7 +39,13 @@ from app.schemas.auth import (
     DiscordCallbackResponse,
     DiscordLoginResponse,
 )
-from app.schemas.leaderboard import LeaderboardEntry, LeaderboardPage, LeaderboardStats
+from app.schemas.leaderboard import (
+    LeaderboardEntry,
+    LeaderboardPage,
+    LeaderboardRegistration,
+    LeaderboardRegistrationPage,
+    LeaderboardStats,
+)
 from app.schemas.match_search import TwoPlayerSearchRequest, TwoPlayerSearchResult
 from app.schemas.matches import (
     MatchDetailResponse,
@@ -82,6 +88,8 @@ DOCUMENTED_SURFACE: dict[str, dict[str, tuple[type | None, type | None]]] = {
     "/api/v1/leaderboard/top/{count}": {"get": (None, list[LeaderboardEntry])},
     "/api/v1/leaderboard/search/{discord_username}": {"get": (None, LeaderboardEntry)},
     "/api/v1/leaderboard/stats": {"get": (None, LeaderboardStats)},
+    "/api/v1/leaderboard/players": {"get": (None, LeaderboardRegistrationPage)},
+    "/api/v1/leaderboard/players/{puuid}": {"delete": (None, LeaderboardRegistration)},
     "/api/v1/players/resolve": {"post": (PlayerResolveRequest, PlayerResponse)},
     "/api/v1/players/{player_id}": {"get": (None, PlayerResponse)},
     "/api/v1/players/by-puuid/{puuid}": {"get": (None, PlayerResponse)},

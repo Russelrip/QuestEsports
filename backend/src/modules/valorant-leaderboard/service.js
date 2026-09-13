@@ -6,8 +6,12 @@ const {
   previewRegistration: fetchPreviewRegistration,
   submitRegistration: fetchSubmitRegistration,
   repointRegistration: fetchRepointRegistration,
+  listRegistrations: fetchRegistrations,
+  removeRegistration: fetchRemoveRegistration,
 } = require("./client");
 const { requireLinkedDiscord } = require("../auth/discord-link.service");
+const { prisma } = require("../../lib/prisma");
+const { logger } = require("../../lib/logger");
 
 // valorantsl-new LeaderboardEntry (snake_case) -> Quest projection (camelCase).
 // Field names come from valorantsl-new backend/app/models/user.py LeaderboardEntry.
@@ -206,7 +210,66 @@ const repointRegistration = async ({ userId, puuid }) => {
   });
 };
 
+// --- Admin: registrations ---------------------------------------------------
+
+const mapRegistration = (entry) => ({
+  puuid: entry.puuid,
+  name: entry.name,
+  tag: entry.tag,
+  discordUsername: entry.discord_username ?? "",
+  currentTier: entry.current_tier ?? null,
+  elo: entry.elo ?? null,
+  lastPlayed: entry.last_played_match ?? null,
+  updateSource: entry.update_source ?? null,
+  updatedAt: entry.updated_at,
+  onLeaderboard: Boolean(entry.on_leaderboard),
+});
+
+const listAdminRegistrations = async ({ query, page, perPage, actorUserId }) => {
+  const raw = await fetchRegistrations({ query, page, perPage, actorUserId });
+  return {
+    entries: (raw.entries || []).map(mapRegistration),
+    total: raw.total ?? 0,
+    page: raw.page ?? page,
+    perPage: raw.per_page ?? perPage,
+    totalPages: raw.total_pages ?? 1,
+  };
+};
+
+// Remove a registration from the leaderboard.
+//
+// The upstream row is the registration; deleting it takes the player off the
+// board and out of the rank updater and Discord bot passes. Two copies of it
+// live in Quest and are cleared here so they do not outlast it: the search
+// snapshot, and the rank shown on a linked player's profile. The Quest game
+// account itself is left alone — it is the player's identity, not their
+// leaderboard entry, and they can register again from it.
+//
+// Once the upstream delete has happened the removal is real, so clearing the
+// profile rank must not be able to fail the request: a thrown error here would
+// skip the audit record for a removal that did take effect. A rank left behind
+// is cosmetic and the next ranking sync can no longer match it anyway.
+const removeAdminRegistration = async ({ puuid, actorUserId }) => {
+  const removed = mapRegistration(await fetchRemoveRegistration({ puuid, actorUserId }));
+  snapshot = null;
+  let rankingsCleared = 0;
+  try {
+    ({ count: rankingsCleared } = await prisma.playerRanking.deleteMany({
+      where: {
+        game: "valorant",
+        player: { gameAccounts: { some: { game: "valorant", externalId: puuid } } },
+      },
+    }));
+  } catch (error) {
+    rankingsCleared = null;
+    logger.warn("Leaderboard removal could not clear the cached profile rank", { error });
+  }
+  return { removed, rankingsCleared };
+};
+
 module.exports = {
+  listAdminRegistrations,
+  removeAdminRegistration,
   repointRegistration,
   listLeaderboard,
   searchLeaderboardPlayer,

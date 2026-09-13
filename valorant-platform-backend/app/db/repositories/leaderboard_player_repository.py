@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,6 +20,27 @@ _LEADERBOARD_FILTERS = (
     LeaderboardPlayer.elo.is_not(None),
     LeaderboardPlayer.currenttierpatched != "Unrated",
 )
+_LEADERBOARD_WINDOW = timedelta(weeks=2)
+
+
+def is_listed(player: LeaderboardPlayer, now: datetime | None = None) -> bool:
+    """Whether ``list_page`` would show this row — the same three filters, in Python.
+
+    ``currenttierpatched != 'Unrated'`` is NULL (so false) in SQL for a NULL
+    tier, which is why a missing tier counts as unlisted here too.
+    """
+    cutoff = (now or datetime.now(UTC)) - _LEADERBOARD_WINDOW
+    return (
+        player.elo is not None
+        and player.currenttierpatched is not None
+        and player.currenttierpatched != "Unrated"
+        and player.last_played_match is not None
+        and player.last_played_match >= cutoff
+    )
+
+
+def _escape_like(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 class LeaderboardPlayerRepository:
@@ -27,7 +48,7 @@ class LeaderboardPlayerRepository:
         self._session = session
 
     async def list_page(self, page: int, per_page: int) -> tuple[list[LeaderboardPlayer], int]:
-        cutoff = datetime.now(UTC) - timedelta(weeks=2)
+        cutoff = datetime.now(UTC) - _LEADERBOARD_WINDOW
         filters = (*_LEADERBOARD_FILTERS, LeaderboardPlayer.last_played_match >= cutoff)
         rows = (await self._session.execute(
             select(LeaderboardPlayer).where(*filters)
@@ -44,6 +65,73 @@ class LeaderboardPlayerRepository:
         return list((await self._session.execute(
             select(LeaderboardPlayer).order_by(LeaderboardPlayer.puuid)
         )).scalars().all())
+
+    async def list_registrations(
+        self, query: str, page: int, per_page: int
+    ) -> tuple[list[LeaderboardPlayer], int]:
+        """Every registration, listed or not, for the admin view.
+
+        Unlike ``list_page`` nothing is filtered out: the rows an admin most
+        needs to find are exactly the ones the public board hides. ``query``
+        matches a Riot name, tag, ``name#tag``, Discord username or PUUID as a
+        case-insensitive substring. Least recently refreshed first, so rows the
+        updater keeps failing on sit at the top.
+        """
+        filters = []
+        needle = query.strip().lstrip("@")
+        if needle:
+            pattern = f"%{_escape_like(needle)}%"
+            filters.append(
+                or_(
+                    LeaderboardPlayer.name.ilike(pattern, escape="\\"),
+                    LeaderboardPlayer.tag.ilike(pattern, escape="\\"),
+                    (LeaderboardPlayer.name + "#" + LeaderboardPlayer.tag).ilike(pattern, escape="\\"),
+                    LeaderboardPlayer.discord_username.ilike(pattern, escape="\\"),
+                    LeaderboardPlayer.puuid.ilike(pattern, escape="\\"),
+                )
+            )
+        rows = (await self._session.execute(
+            select(LeaderboardPlayer).where(*filters)
+            .order_by(LeaderboardPlayer.updated_at.asc(), LeaderboardPlayer.puuid)
+            .offset((page - 1) * per_page).limit(per_page)
+        )).scalars().all()
+        total = (await self._session.execute(
+            select(func.count()).select_from(LeaderboardPlayer).where(*filters)
+        )).scalar_one()
+        return list(rows), total
+
+    async def delete(self, puuid: str) -> LeaderboardPlayer | None:
+        """Delete one registration and return the row as it was, or ``None``.
+
+        The caller commits. Nothing references ``leaderboard_players`` by key,
+        so the delete cannot cascade into match, series or rating data.
+        """
+        return (await self._session.execute(
+            delete(LeaderboardPlayer)
+            .where(LeaderboardPlayer.puuid == puuid)
+            .returning(LeaderboardPlayer)
+            .execution_options(synchronize_session=False)
+        )).scalar_one_or_none()
+
+    async def refresh_rank(self, puuid: str, *, name: str, tag: str, **fields) -> bool:
+        """Write the updater's fresh Riot data onto an EXISTING row and commit.
+
+        ``False`` when the row is gone. The updater walks a list it read at the
+        start of a pass that runs for most of an hour, so an admin can remove a
+        player it has not reached yet; ``upsert`` would quietly re-insert them.
+
+        Commits per player for the same reason ``update_name_tag`` does, and one
+        more: a pass-long transaction held every refreshed row locked until the
+        pass ended, so a removal would have waited the better part of an hour.
+        """
+        result = await self._session.execute(
+            update(LeaderboardPlayer)
+            .where(LeaderboardPlayer.puuid == puuid)
+            .values(name=name, tag=tag, updated_at=func.now(), **fields)
+            .execution_options(synchronize_session=False)
+        )
+        await self._session.commit()
+        return result.rowcount > 0
 
     async def get_by_discord_username(self, discord_username: str) -> LeaderboardPlayer | None:
         return (await self._session.execute(

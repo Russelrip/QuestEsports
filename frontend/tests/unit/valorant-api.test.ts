@@ -24,6 +24,23 @@ describe("VALORANT admin API client", () => {
     expect(mockedRequest).toHaveBeenCalledWith("/api/v1/admin/valorant/teams");
   });
 
+  it("lists leaderboard registrations with the search query and page", async () => {
+    mockedRequest.mockResolvedValueOnce(unwrap({ entries: [], total: 0, page: 2, perPage: 50, totalPages: 1 }));
+    const { fetchValorantLeaderboardRegistrations } = await import("../../lib/valorant-api");
+    await fetchValorantLeaderboardRegistrations({ query: "cham sy", page: 2 });
+    expect(mockedRequest).toHaveBeenCalledWith("/api/v1/admin/valorant/leaderboard/players?q=cham+sy&page=2");
+  });
+
+  it("removes a leaderboard registration with the reason in the body", async () => {
+    mockedRequest.mockResolvedValueOnce(unwrap({ removed: { puuid: "p/1" }, rankingsCleared: 0 }));
+    const { removeValorantLeaderboardRegistration } = await import("../../lib/valorant-api");
+    await removeValorantLeaderboardRegistration("p/1", "Account no longer exists");
+    expect(mockedRequest).toHaveBeenCalledWith("/api/v1/admin/valorant/leaderboard/players/p%2F1", {
+      method: "DELETE",
+      json: { reason: "Account no longer exists" },
+    });
+  });
+
   it("sends the exact bind body", async () => {
     mockedRequest.mockResolvedValueOnce(unwrap({ binding: { id: "b-1" } }));
     const { bindValorantTeam } = await import("../../lib/valorant-api");

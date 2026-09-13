@@ -17,6 +17,8 @@ import type {
   SeriesViewLite,
   ValorantCheckPuuidResult,
   ValorantFormat,
+  ValorantLeaderboardRegistrationPage,
+  ValorantLeaderboardRemoval,
   ValorantMatchSummary,
   ValorantPlayerLeaderboardPage,
   ValorantPlayerLeaderboardSearchEntry,
@@ -202,6 +204,21 @@ export const fetchValorantTeamSeries = (teamId: string) =>
 
 export const fetchValorantReconciliation = () =>
   valorantAdminRequest<{ report: ReconciliationReport }>("/api/v1/admin/valorant/reconciliation");
+
+export const fetchValorantLeaderboardRegistrations = ({ query = "", page = 1 }: { query?: string; page?: number } = {}) => {
+  const params = new URLSearchParams();
+  if (query) params.set("q", query);
+  params.set("page", String(page));
+  return valorantAdminRequest<ValorantLeaderboardRegistrationPage>(
+    `/api/v1/admin/valorant/leaderboard/players?${params.toString()}`
+  );
+};
+
+export const removeValorantLeaderboardRegistration = (puuid: string, reason: string) =>
+  valorantAdminRequest<ValorantLeaderboardRemoval>(
+    `/api/v1/admin/valorant/leaderboard/players/${encodeURIComponent(puuid)}`,
+    { method: "DELETE", json: { reason } }
+  );
 
 export const fetchPublicValorantLeaderboard = async (
   page = 1,

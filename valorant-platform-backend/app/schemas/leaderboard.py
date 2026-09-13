@@ -48,3 +48,32 @@ class LeaderboardStats(BaseModel):
     lowest_elo: int
     average_elo: float
     rank_distribution: dict[str, int]
+
+
+class LeaderboardRegistration(BaseModel):
+    """One ``leaderboard_players`` row as an admin sees it.
+
+    Covers every registration, including the ones the public board filters
+    out; ``on_leaderboard`` says which side of that filter the row is on.
+    """
+
+    puuid: str
+    name: str
+    tag: str
+    discord_username: str
+    current_tier: str | None = None
+    elo: int | None = None
+    last_played_match: str | None = None
+    update_source: str | None = None
+    updated_at: str
+    on_leaderboard: bool
+
+
+class LeaderboardRegistrationPage(BaseModel):
+    """A paginated page of registrations for the admin view."""
+
+    entries: list[LeaderboardRegistration]
+    total: int
+    page: int
+    per_page: int
+    total_pages: int

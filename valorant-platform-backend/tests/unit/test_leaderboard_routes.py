@@ -16,9 +16,16 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.api.dependencies import get_leaderboard_service
+from app.api.errors import AppError
 from app.config import Settings
 from app.main import create_app
-from app.schemas.leaderboard import LeaderboardEntry, LeaderboardPage, LeaderboardStats
+from app.schemas.leaderboard import (
+    LeaderboardEntry,
+    LeaderboardPage,
+    LeaderboardRegistration,
+    LeaderboardRegistrationPage,
+    LeaderboardStats,
+)
 
 
 class _FakeLeaderboardService:
@@ -31,11 +38,16 @@ class _FakeLeaderboardService:
         top: list[LeaderboardEntry] | None = None,
         search_result: LeaderboardEntry | None = None,
         stats: LeaderboardStats | None = None,
+        registrations: LeaderboardRegistrationPage | None = None,
+        removed: LeaderboardRegistration | None = None,
     ) -> None:
         self._page = page
         self._top = top
         self._search_result = search_result
         self._stats = stats
+        self._registrations = registrations
+        self._removed = removed
+        self.calls: list[tuple] = []
 
     async def leaderboard(self, page: int, per_page: int) -> LeaderboardPage:
         assert self._page is not None, "leaderboard() not stubbed"
@@ -51,6 +63,17 @@ class _FakeLeaderboardService:
     async def stats(self) -> LeaderboardStats:
         assert self._stats is not None, "stats() not stubbed"
         return self._stats
+
+    async def registrations(self, query: str, page: int, per_page: int) -> LeaderboardRegistrationPage:
+        assert self._registrations is not None, "registrations() not stubbed"
+        self.calls.append(("registrations", query, page, per_page))
+        return self._registrations
+
+    async def remove(self, puuid: str) -> LeaderboardRegistration:
+        self.calls.append(("remove", puuid))
+        if self._removed is None:
+            raise AppError("LEADERBOARD_PLAYER_NOT_FOUND", 404, "leaderboard player not found")
+        return self._removed
 
 
 ENTRY_DICT = {
@@ -69,6 +92,20 @@ ENTRY_DICT = {
 
 def _entry(**overrides: object) -> LeaderboardEntry:
     return LeaderboardEntry(**{**ENTRY_DICT, **overrides})
+
+
+REGISTRATION = LeaderboardRegistration(
+    puuid="p1",
+    name="Player One",
+    tag="ONE",
+    discord_username="playerone",
+    current_tier="Gold 3",
+    elo=1128,
+    last_played_match=None,
+    update_source="migration",
+    updated_at="2026-08-15T14:09:35+00:00",
+    on_leaderboard=False,
+)
 
 
 def _app(
@@ -160,3 +197,45 @@ def test_leaderboard_route_requires_service_token(monkeypatch: pytest.MonkeyPatc
     garbage = client.get("/api/v1/leaderboard", headers={"Authorization": "Bearer garbage"})
     assert garbage.status_code == 401
     assert garbage.json()["error"]["code"] == "ADMIN_AUTH_REQUIRED"
+
+
+def test_registrations_route_passes_query_and_paging(monkeypatch: pytest.MonkeyPatch) -> None:
+    page = LeaderboardRegistrationPage(entries=[REGISTRATION], total=1, page=2, per_page=25, total_pages=1)
+    fake = _FakeLeaderboardService(registrations=page)
+    client = TestClient(_app(monkeypatch, fake))
+    resp = client.get("/api/v1/leaderboard/players", params={"q": "chamsy", "page": 2, "per_page": 25})
+    assert resp.status_code == 200
+    assert resp.json() == page.model_dump()
+    assert fake.calls == [("registrations", "chamsy", 2, 25)]
+
+
+def test_remove_route_returns_the_removed_registration(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = _FakeLeaderboardService(removed=REGISTRATION)
+    client = TestClient(_app(monkeypatch, fake))
+    resp = client.delete("/api/v1/leaderboard/players/p1")
+    assert resp.status_code == 200
+    assert resp.json() == REGISTRATION.model_dump()
+    assert fake.calls == [("remove", "p1")]
+
+
+def test_remove_route_404s_for_an_unknown_player(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = TestClient(_app(monkeypatch, _FakeLeaderboardService()))
+    resp = client.delete("/api/v1/leaderboard/players/ghost")
+    assert resp.status_code == 404
+    assert resp.json()["error"]["code"] == "LEADERBOARD_PLAYER_NOT_FOUND"
+
+
+def test_admin_player_routes_require_service_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = _FakeLeaderboardService(
+        registrations=LeaderboardRegistrationPage(entries=[], total=0, page=1, per_page=50, total_pages=1),
+        removed=REGISTRATION,
+    )
+    app = _app(
+        monkeypatch,
+        fake,
+        settings=Settings(app_env="production", quest_service_shared_secrets="kid=secret"),
+    )
+    client = TestClient(app)
+    assert client.get("/api/v1/leaderboard/players").status_code == 401
+    assert client.delete("/api/v1/leaderboard/players/p1").status_code == 401
+    assert fake.calls == []
