@@ -117,7 +117,7 @@ const detail = {
 
 beforeEach(() => {
   mocks.toasts = [];
-  mocks.adminRequest.mockImplementation(async (path: string, init?: { method?: string }) => {
+  mocks.adminRequest.mockImplementation(async (_path: string, init?: { method?: string }) => {
     if (init?.method === "POST") return { success: true, message: "Reminded in Quest and on Discord." };
     return { registration: detail };
   });
