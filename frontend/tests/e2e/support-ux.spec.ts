@@ -1,4 +1,17 @@
-import { expect, test, type Page } from "./test-fixture";
+import { expect, openPage, test, type Page } from "./test-fixture";
+
+// Navigations here wait for the document, not the "load" event, like every other
+// spec (see openPage). "load" also waits on /_next/image optimizations, the page
+// background and a web font, none of which these assertions depend on. A single
+// one of them stalling on a busy CI runner hung page.goto on mobile-safari until
+// the test timed out, on both the attempt and its retry.
+
+// A visual record for whoever runs this locally, never an assertion, and CI does
+// not upload test output. WebKit will not finish a full-page capture while an
+// image is still loading, so capture is bounded rather than allowed to fail a
+// journey whose assertions have already passed.
+const captureForReview = (page: Page, path: string) =>
+  page.screenshot({ path, fullPage: true, timeout: 5_000 }).catch(() => undefined);
 
 const user = { id: "support-user", firstName: "Quest", lastName: "Player", username: "questplayer", email: "player@example.com", emailVerified: true, role: "user", discordId: null };
 const timestamp = "2026-09-10T04:00:00.000Z";
@@ -36,7 +49,7 @@ async function supportApi(page: Page) {
 
 test("support remains accessible without Discord and preserves drafts through the mobile/desktop journey", async ({ page }, testInfo) => {
   await supportApi(page);
-  await page.goto("/support");
+  await openPage(page, "/support");
   await expect(page.getByRole("heading", { name: "Support inbox", exact: true })).toBeVisible();
   await expect(page.getByText("New reply", { exact: true })).toBeVisible();
   const mobile = (page.viewportSize()?.width || 1280) < 1024;
@@ -66,17 +79,17 @@ test("support remains accessible without Discord and preserves drafts through th
   await page.getByRole("button", { name: "Reopen conversation" }).click();
   await expect(page.getByRole("textbox", { name: /Reply/ })).toBeVisible();
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-  await page.screenshot({ path: testInfo.outputPath("support-thread.png"), fullPage: true });
+  await captureForReview(page, testInfo.outputPath("support-thread.png"));
   await page.getByRole("link", { name: /Back to support inbox/ }).click();
   await expect(page).toHaveURL(/\/support$/);
-  await page.goBack();
+  await page.goBack({ waitUntil: "domcontentloaded" });
   await expect(page).toHaveURL(/\/support\/thread-1\?sent=1$/);
   await expect(page.getByRole("heading", { name: "Payment question", level: 2 })).toBeVisible();
 });
 
 test("support notifications and Contact choices have distinct destinations", async ({ page }, testInfo) => {
   await supportApi(page);
-  await page.goto("/contact");
+  await openPage(page, "/contact");
   await expect(page.getByRole("heading", { name: "How can we help?" })).toBeVisible();
   await expect(page.getByRole("link", { name: /Open support inbox/ })).toHaveAttribute("href", "/support");
   await page.getByRole("link", { name: /General enquiries/ }).click();
@@ -88,5 +101,5 @@ test("support notifications and Contact choices have distinct destinations", asy
   await expect(page.getByText("Private message content must not appear in the feed")).toHaveCount(0);
   await group.getByRole("link", { name: /Quest Support replied/ }).click();
   await expect(page.getByRole("heading", { name: "Registration issue", level: 2 })).toBeVisible();
-  await page.screenshot({ path: testInfo.outputPath("support-reply.png"), fullPage: true });
+  await captureForReview(page, testInfo.outputPath("support-reply.png"));
 });
