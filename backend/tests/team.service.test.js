@@ -304,6 +304,221 @@ test("updateSavedTeam lets the captain replace roster details and preserves acce
   }
 });
 
+// A saved team with one unanswered coach invite, linked to one open
+// registration whose coach spot holds the same address.
+const emailChangeHarness = ({ registrationCoachStatus = "expired", conflictingRegistration = null } = {}) => {
+  const user = {
+    id: "user-1",
+    firstName: "Quest",
+    lastName: "Captain",
+    username: "captain",
+    email: "captain@example.com",
+  };
+  const existingTeam = {
+    id: "saved-team-1",
+    captainUserId: user.id,
+    name: "Quest Five",
+    logoName: null,
+    members: [
+      { id: "captain-member", role: "CAPTAIN", emailNormalized: user.email },
+      { id: "player-member", userId: "user-2", role: "PLAYER", memberOrder: 1, emailNormalized: "player@example.com", inviteStatus: "accepted" },
+      { id: "coach-member", userId: null, role: "COACH", memberOrder: 1, emailNormalized: "old-coach@example.com", inviteStatus: "expired" },
+    ],
+  };
+  const registrationMembers = [
+    { registrationId: "registration-1", role: "CAPTAIN", email: user.email, emailNormalized: user.email, riotId: "Cap#001", inviteStatus: "accepted" },
+    { registrationId: "registration-1", role: "PLAYER", email: "player@example.com", emailNormalized: "player@example.com", riotId: "Play#001", inviteStatus: "accepted" },
+    { registrationId: "registration-1", role: "COACH", email: "old-coach@example.com", emailNormalized: "old-coach@example.com", riotId: "Coach#001", inviteStatus: registrationCoachStatus },
+  ];
+  const calls = { memberUpdates: [], registrationQueries: [], registrationUpdates: [], invites: [] };
+  const matches = (member, where) =>
+    member.registrationId === where.registrationId &&
+    member.emailNormalized === where.emailNormalized &&
+    member.role !== where.role.not &&
+    member.inviteStatus !== where.inviteStatus.not;
+  const tx = {
+    savedTeam: {
+      update: async () => existingTeam,
+      findUnique: async () => ({
+        ...existingTeam,
+        country: "Sri Lanka",
+        teamTag: "Q5",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        captainUser: user,
+        members: [],
+      }),
+    },
+    savedTeamMember: {
+      deleteMany: async () => ({ count: 2 }),
+      createMany: async ({ data }) => ({ count: data.length }),
+    },
+    teamRegistration: {
+      findMany: async (args) => {
+        calls.registrationQueries.push(args);
+        if (args.where.savedTeamId) return [{ id: "registration-1", tournamentId: "tournament-1" }];
+        return conflictingRegistration ? [conflictingRegistration] : [];
+      },
+      findUnique: async () => ({
+        id: "registration-1",
+        status: "pending",
+        entryType: "team",
+        paymentStatus: "paid",
+        verificationStatus: "pending",
+        tournament: { game: "Chess", autoApproveRegistrations: false },
+      }),
+      update: async (args) => calls.registrationUpdates.push(args.data),
+    },
+    registrationMember: {
+      updateMany: async ({ where, data }) => {
+        let count = 0;
+        for (const member of registrationMembers) {
+          if (!matches(member, where)) continue;
+          Object.assign(member, data);
+          count += 1;
+        }
+        calls.memberUpdates.push({ where, data, count });
+        return { count };
+      },
+      findMany: async ({ where }) =>
+        registrationMembers.filter((member) =>
+          member.registrationId === where.registrationId &&
+          (!where.role || member.role !== where.role.not)
+        ),
+    },
+  };
+  const loaded = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: {
+      prisma: {
+        savedTeam: { findFirst: async () => existingTeam },
+        $transaction: async (callback) => callback(tx),
+      },
+    },
+    [uploadModulePath]: {
+      persistTeamLogoUpload: async () => null,
+      teamLogoDirectory: "uploads/team-logos",
+    },
+    [noticeModulePath]: noticeMock(calls.invites),
+  });
+  const save = (members) =>
+    loaded.module.updateSavedTeam({
+      teamId: existingTeam.id,
+      user,
+      file: null,
+      body: {
+        name: "Quest Five",
+        country: "Sri Lanka",
+        teamTag: "Q5",
+        organizationRequested: "false",
+        members: JSON.stringify(members),
+      },
+    });
+  return { ...loaded, save, calls, registrationMembers };
+};
+
+test("updateSavedTeam carries a corrected invitee address into the team's open registrations", async () => {
+  const { restore, save, calls, registrationMembers } = emailChangeHarness();
+
+  try {
+    await save([
+      { id: "player-member", role: "PLAYER", name: "Player", email: "player@example.com" },
+      { id: "coach-member", role: "COACH", name: "Coach", email: "New-Coach@Example.com" },
+    ]);
+
+    const coach = registrationMembers.find((member) => member.role === "COACH");
+    assert.equal(coach.emailNormalized, "new-coach@example.com");
+    assert.equal(coach.email, "new-coach@example.com");
+    assert.equal(coach.name, "Coach");
+    assert.equal(coach.inviteStatus, "pending");
+    assert.equal(coach.userId, null);
+    assert.ok(coach.inviteExpiresAt > new Date());
+    // Only the open registrations of this team are touched.
+    assert.deepEqual(calls.registrationQueries[0].where, {
+      savedTeamId: "saved-team-1",
+      status: { in: ["pending", "waitlisted"] },
+    });
+    // The role-conflict check looked at the rest of the tournament.
+    assert.equal(calls.registrationQueries[1].where.tournamentId, "tournament-1");
+    assert.deepEqual(calls.registrationUpdates, [{ verificationStatus: "pending" }]);
+    assert.deepEqual(calls.invites.map((invite) => invite.emailNormalized), ["new-coach@example.com"]);
+  } finally {
+    restore();
+  }
+});
+
+test("updateSavedTeam leaves a registration spot that already accepted", async () => {
+  const { restore, save, calls, registrationMembers } = emailChangeHarness({ registrationCoachStatus: "accepted" });
+
+  try {
+    await save([
+      { id: "player-member", role: "PLAYER", name: "Player", email: "player@example.com" },
+      { id: "coach-member", role: "COACH", name: "Coach", email: "new-coach@example.com" },
+    ]);
+
+    const coach = registrationMembers.find((member) => member.role === "COACH");
+    assert.equal(coach.emailNormalized, "old-coach@example.com");
+    assert.equal(calls.memberUpdates[0].count, 0);
+    assert.deepEqual(calls.registrationUpdates, []);
+  } finally {
+    restore();
+  }
+});
+
+test("updateSavedTeam treats a member without an id as a different person", async () => {
+  const { restore, save, calls, registrationMembers } = emailChangeHarness();
+
+  try {
+    await save([
+      { id: "player-member", role: "PLAYER", name: "Player", email: "player@example.com" },
+      { role: "COACH", name: "Coach", email: "new-coach@example.com" },
+    ]);
+
+    assert.equal(registrationMembers.find((member) => member.role === "COACH").emailNormalized, "old-coach@example.com");
+    assert.deepEqual(calls.memberUpdates, []);
+    assert.deepEqual(calls.registrationQueries, []);
+  } finally {
+    restore();
+  }
+});
+
+test("updateSavedTeam does not rewrite registrations when addresses were only rearranged", async () => {
+  const { restore, save, calls } = emailChangeHarness();
+
+  try {
+    // The coach spot takes the player's address and the player spot takes the
+    // coach's. Both addresses are still on the roster, so nothing was corrected.
+    await save([
+      { id: "player-member", role: "PLAYER", name: "Player", email: "old-coach@example.com" },
+      { id: "coach-member", role: "COACH", name: "Coach", email: "player@example.com" },
+    ]);
+
+    assert.deepEqual(calls.memberUpdates, []);
+  } finally {
+    restore();
+  }
+});
+
+test("updateSavedTeam refuses a corrected address that already plays elsewhere in the tournament", async () => {
+  const { restore, save, calls } = emailChangeHarness({
+    conflictingRegistration: {
+      members: [{ role: "PLAYER", email: "new-coach@example.com", emailNormalized: "new-coach@example.com", riotId: "Other#001" }],
+    },
+  });
+
+  try {
+    await assert.rejects(
+      save([
+        { id: "player-member", role: "PLAYER", name: "Player", email: "player@example.com" },
+        { id: "coach-member", role: "COACH", name: "Coach", email: "new-coach@example.com" },
+      ]),
+      (error) => error.statusCode === 409 && /both a coach and a player/.test(error.message)
+    );
+    assert.deepEqual(calls.invites, []);
+  } finally {
+    restore();
+  }
+});
+
 test("updateSavedTeam propagates a replacement logo to paid and unpaid registrations", async () => {
   const user = {
     id: "user-1",
