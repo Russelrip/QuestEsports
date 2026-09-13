@@ -86,6 +86,22 @@ const memberCard = (name: string) =>
   screen.getByDisplayValue(name).closest("div.border") as HTMLElement;
 
 describe("AdminTeamsManager roster", () => {
+  it("lets an admin send an unanswered invite again, and only an unanswered one", async () => {
+    const user = await openTeam();
+
+    // Accepted members and the captain have nothing to send.
+    expect(within(memberCard("Team Captain")).queryByRole("button", { name: "Send invite again" })).toBeNull();
+    expect(within(memberCard("Connected Player")).queryByRole("button", { name: "Send invite again" })).toBeNull();
+
+    const legacy = within(memberCard("Legacy Sub"));
+    await user.click(legacy.getByRole("button", { name: "Send invite again" }));
+
+    expect(mocks.adminRequest).toHaveBeenCalledWith(
+      "/api/admin/teams/team-1/members/m-legacy/resend-invite",
+      { method: "POST" },
+    );
+  });
+
   it("shows each member's connected Discord, Riot ID and account phone", async () => {
     await openTeam();
 

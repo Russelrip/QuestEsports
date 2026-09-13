@@ -696,6 +696,29 @@ function RegistrationDetail({
     await patchRoster(coachPayload(), "coach", "Registration coach updated");
   };
 
+  // Sent through the team's copy of the invitation, which is what the person
+  // actually accepts; the server reopens this registration's spot with it.
+  const resendInvite = async (memberId: string, name: string) => {
+    if (!registration) return;
+    setBusyAction(`resend:${memberId}`);
+    try {
+      const data = await adminRequest<{ message?: string }>(
+        `/api/admin/team-registrations/${registration.id}/members/${memberId}/resend-invite`,
+        { method: "POST" },
+      );
+      showToast({ tone: "success", title: `Invite sent again to ${name}`, description: data.message });
+      await onChanged();
+    } catch (nextError) {
+      showToast({
+        tone: "error",
+        title: "Unable to send the invite again",
+        description: nextError instanceof Error ? nextError.message : "Request failed.",
+      });
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
   const removeCoach = async () => {
     if (!registration || !window.confirm(`Remove the coach from ${registration.teamName}?`)) return;
     setCoachRemoved(true);
@@ -1032,6 +1055,16 @@ function RegistrationDetail({
                       <p className="text-xs text-slate-400">
                         {COACH_INVITE_STATUS_HINTS[registration.coach.inviteStatus]}
                       </p>
+                      {RESENDABLE_INVITE_STATUSES.has(registration.coach.inviteStatus) ? (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          disabled={busyAction !== null}
+                          onClick={() => void resendInvite(registration.coach!.id, registration.coach!.name)}
+                        >
+                          {busyAction === `resend:${registration.coach.id}` ? "Sending..." : "Send invite again"}
+                        </Button>
+                      ) : null}
                     </div>
                   ) : null}
                 </div>
@@ -1409,7 +1442,19 @@ function RegistrationDetail({
                         {member.discord ? ` · Discord ${member.discord}` : ""}
                       </p>
                     </div>
-                    <StatusText value={member.inviteStatus} />
+                    <div className="flex flex-col items-start gap-2 sm:items-end">
+                      <StatusText value={member.inviteStatus} />
+                      {member.role !== "CAPTAIN" && RESENDABLE_INVITE_STATUSES.has(member.inviteStatus) ? (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          disabled={busyAction !== null}
+                          onClick={() => void resendInvite(member.id, member.name)}
+                        >
+                          {busyAction === `resend:${member.id}` ? "Sending..." : "Send invite again"}
+                        </Button>
+                      ) : null}
+                    </div>
                   </div>
                   <DataFields
                     title="Player fields"
@@ -1436,6 +1481,10 @@ function RegistrationDetail({
     </div>
   );
 }
+
+// An invitation nobody has said yes to. Accepted is absent: reopening it would
+// unseat someone who already joined.
+const RESENDABLE_INVITE_STATUSES = new Set<string>(["pending", "declined", "expired"]);
 
 // What each coach invitation state means for the registration, so an admin can
 // tell why a roster with every player accepted is still not verified.

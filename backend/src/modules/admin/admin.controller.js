@@ -34,6 +34,11 @@ const {
   reserveAdminRegistrationSlot,
   releaseAdminRegistrationSlot,
 } = require("./admin.service");
+const {
+  adminResendTeamInvite,
+  adminResendRegistrationInvite,
+} = require("../teams/team.service");
+const { describeInviteDelivery } = require("../teams/invite-delivery-message");
 
 const sendExcelExport = (res, exportFile) => {
   res.setHeader("Content-Type", exportFile.contentType);
@@ -388,6 +393,45 @@ const transferSavedTeamCaptain = asyncHandler(async (req, res) => {
   });
 });
 
+const respondWithResentInvite = async (req, res, result, target) => {
+  await recordAudit({
+    ...requestAuditContext(req),
+    action: "team_invite.resent",
+    ...target,
+    afterData: {
+      savedTeamMemberId: result.member.id,
+      role: result.member.role,
+      inviteStatus: result.member.inviteStatus,
+      inviteExpiresAt: result.member.inviteExpiresAt ?? null,
+      delivery: result.delivery,
+    },
+  });
+  res.status(200).json({
+    success: true,
+    message: describeInviteDelivery(result.delivery),
+    ...result,
+  });
+};
+
+const resendSavedTeamInvite = asyncHandler(async (req, res) => {
+  const result = await adminResendTeamInvite({
+    teamId: req.params.teamId,
+    memberId: req.params.memberId,
+  });
+  await respondWithResentInvite(req, res, result, { targetType: "SavedTeam", targetId: req.params.teamId });
+});
+
+const resendRegistrationInvite = asyncHandler(async (req, res) => {
+  const result = await adminResendRegistrationInvite({
+    registrationId: req.params.registrationId,
+    memberId: req.params.memberId,
+  });
+  await respondWithResentInvite(req, res, result, {
+    targetType: "TeamRegistration",
+    targetId: req.params.registrationId,
+  });
+});
+
 const removeSavedTeam = asyncHandler(async (req, res) => {
   await deleteAdminSavedTeam(req.params.teamId);
   await recordAudit({
@@ -431,5 +475,7 @@ module.exports = {
   updateSavedTeam,
   updateSavedTeamOrganization,
   transferSavedTeamCaptain,
+  resendSavedTeamInvite,
+  resendRegistrationInvite,
   removeSavedTeam,
 };

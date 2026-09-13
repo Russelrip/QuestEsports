@@ -76,7 +76,7 @@ test("team and admin team mutations invalidate both local projection tags", () =
       ["tournaments", "foundation"],
       ["tournaments", "foundation"],
     ]);
-    assert.deepEqual(adminInvalidations, Array.from({ length: 11 }, () => ["tournaments", "foundation"]));
+    assert.deepEqual(adminInvalidations, Array.from({ length: 13 }, () => ["tournaments", "foundation"]));
     assert.ok(captainPatch.includes(teamInvalidationMiddleware));
     assert.ok(adminPatch.includes(adminInvalidationMiddleware));
     for (const route of [
@@ -87,9 +87,13 @@ test("team and admin team mutations invalidate both local projection tags", () =
       "DELETE /admin/team-registrations/:registrationId",
       "POST /admin/team-registrations/:registrationId/slot-reservation",
       "DELETE /admin/team-registrations/:registrationId/slot-reservation",
+      // A resend reopens the registration's roster spot and recomputes its
+      // verification, which public tournament projections read.
+      "POST /admin/team-registrations/:registrationId/members/:memberId/resend-invite",
       "PATCH /admin/teams/:teamId",
       "PATCH /admin/teams/:teamId/organization",
       "POST /admin/teams/:teamId/captain-transfer",
+      "POST /admin/teams/:teamId/members/:memberId/resend-invite",
       "DELETE /admin/teams/:teamId",
     ]) {
       assert.ok(adminRoutes.get(route)?.includes(adminInvalidationMiddleware), `${route} should invalidate foundation`);

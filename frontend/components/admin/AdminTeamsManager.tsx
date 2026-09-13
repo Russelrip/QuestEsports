@@ -293,7 +293,7 @@ function TeamEditor({ team, onChanged, onDeleted }: { team: TeamDetail; onChange
   const [members, setMembers] = useState(team.members);
   const [teamLogo, setTeamLogo] = useState<File | null>(null);
   const [removeLogo, setRemoveLogo] = useState(false);
-  const [busyAction, setBusyAction] = useState<"save" | "delete" | `transfer:${string}` | null>(null);
+  const [busyAction, setBusyAction] = useState<"save" | "delete" | `transfer:${string}` | `resend:${string}` | null>(null);
   const showToast = useToastStore((state) => state.showToast);
 
   useEffect(() => {
@@ -305,6 +305,25 @@ function TeamEditor({ team, onChanged, onDeleted }: { team: TeamDetail; onChange
     setTeamLogo(null);
     setRemoveLogo(false);
   }, [team]);
+
+  // Reopens the invitation for another 72 hours and tells the person again. The
+  // local row is updated in place rather than reloading the team, so unsaved
+  // edits elsewhere on the page survive.
+  const resendInvite = async (member: TeamMember) => {
+    setBusyAction(`resend:${member.id}`);
+    try {
+      const data = await adminRequest<{ message?: string }>(
+        `/api/admin/teams/${team.id}/members/${member.id}/resend-invite`,
+        { method: "POST" },
+      );
+      setMembers((current) => current.map((item) => item.id === member.id ? { ...item, inviteStatus: "pending" } : item));
+      showToast({ tone: "success", title: `Invite sent again to ${member.name}`, description: data.message });
+    } catch (error) {
+      showToast({ tone: "error", title: "Unable to send the invite again", description: error instanceof Error ? error.message : "Request failed." });
+    } finally {
+      setBusyAction(null);
+    }
+  };
 
   const updateMember = (id: string, field: keyof TeamMember, value: string) => {
     setMembers((current) => current.map((member) => member.id === id ? { ...member, [field]: value } : member));
@@ -484,7 +503,19 @@ function TeamEditor({ team, onChanged, onDeleted }: { team: TeamDetail; onChange
                   {busyAction === `transfer:${member.id}` ? "Transferring..." : "Make captain & remove current captain"}
                 </Button>
               ) : (
-                <span className="text-xs text-slate-500">This member must accept their invitation before becoming captain.</span>
+                <div className="flex flex-wrap items-center justify-end gap-3">
+                  <span className="text-xs text-slate-500">This member must accept their invitation before becoming captain.</span>
+                  {RESENDABLE_INVITE_STATUSES.has(member.inviteStatus) ? (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      disabled={busyAction !== null}
+                      onClick={() => void resendInvite(member)}
+                    >
+                      {busyAction === `resend:${member.id}` ? "Sending..." : "Send invite again"}
+                    </Button>
+                  ) : null}
+                </div>
               )}
             </div>
           </div>
@@ -498,6 +529,10 @@ function TeamEditor({ team, onChanged, onDeleted }: { team: TeamDetail; onChange
     </Card>
   );
 }
+
+// An invitation nobody has said yes to. Accepted is absent: reopening it would
+// unseat someone who already joined.
+const RESENDABLE_INVITE_STATUSES = new Set(["pending", "declined", "expired"]);
 
 // A value that belongs to the member's account or a connection they made, so it
 // is shown rather than edited here. Discord especially: a handle only counts when

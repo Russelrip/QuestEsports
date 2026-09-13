@@ -3412,6 +3412,8 @@ test("admin registration details expose the coach separately from competing memb
   try {
     const result = await adminService.getAdminTeamRegistrationById("registration-1");
     assert.deepEqual(result.coach, {
+      // The row id, so an admin can send the coach's invitation again.
+      id: "coach-1",
       name: "Coach",
       email: "coach@example.com",
       phone: "0771111111",
