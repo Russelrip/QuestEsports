@@ -35,10 +35,13 @@ const ACCOUNT = {
 };
 
 const loadService = ({ members = [] } = {}) => {
-  const state = { memberUpdates: [], accountUpdates: [], audits: [] };
+  const state = { memberUpdates: [], accountUpdates: [], audits: [], memberQueries: [] };
   const tx = {
     registrationMember: {
-      findMany: async () => members,
+      findMany: async (args) => {
+        state.memberQueries.push(args);
+        return members;
+      },
       update: async (args) => {
         state.memberUpdates.push(args);
         return args;
@@ -94,6 +97,89 @@ test("approval records what was actually committed to the tournament", async () 
     assert.equal(update.data.verificationStatusSnapshot, "user_confirmed");
     assert.equal(update.data.gameAccountId, "account-1");
     assert.ok(update.data.snapshotAt instanceof Date);
+  } finally {
+    restore();
+  }
+});
+
+// Nothing writes `playerId` onto a roster row when someone joins or accepts, so
+// production rosters reach approval with it empty on every member. The player is
+// found through the account that accepted the invitation.
+const acceptedMemberWithoutPlayerLink = (overrides = {}) => ({
+  id: "member-1",
+  playerId: null,
+  snapshotAt: null,
+  player: null,
+  user: { player: { id: "player-7", gameAccounts: [{ ...ACCOUNT }] } },
+  ...overrides,
+});
+
+test("a member linked only through their account is snapshotted and linked to their player", async () => {
+  const { module: service, state, tx, restore } = loadService({
+    members: [acceptedMemberWithoutPlayerLink()],
+  });
+  try {
+    const result = await service.snapshotAndLockRoster({ tx, registrationId: "reg-1", tournamentGame: "valorant" });
+
+    assert.equal(result.snapshotted, 1);
+    assert.equal(result.locked, 1);
+    const [update] = state.memberUpdates;
+    assert.equal(update.data.playerId, "player-7");
+    assert.equal(update.data.gameAccountId, "account-1");
+    assert.equal(update.data.externalIdSnapshot, "puuid-abc");
+    assert.deepEqual(state.accountUpdates[0].data, { status: "locked" });
+  } finally {
+    restore();
+  }
+});
+
+test("the roster query reaches members through their account, not only a stored player link", async () => {
+  const { module: service, state, tx, restore } = loadService({ members: [] });
+  try {
+    await service.snapshotAndLockRoster({ tx, registrationId: "reg-1", tournamentGame: "valorant" });
+
+    const [query] = state.memberQueries;
+    assert.deepEqual(query.where, {
+      registrationId: "reg-1",
+      OR: [{ playerId: { not: null } }, { userId: { not: null } }],
+    });
+    assert.ok(query.select.user.select.player, "the account's player must be selected");
+  } finally {
+    restore();
+  }
+});
+
+test("a stored player link is kept rather than overwritten", async () => {
+  const member = acceptedMemberWithoutPlayerLink({
+    playerId: "player-1",
+    player: { id: "player-1", gameAccounts: [{ ...ACCOUNT }] },
+    user: { player: { id: "player-7", gameAccounts: [{ ...ACCOUNT, id: "account-other" }] } },
+  });
+  const { module: service, state, tx, restore } = loadService({ members: [member] });
+  try {
+    await service.snapshotAndLockRoster({ tx, registrationId: "reg-1", tournamentGame: "valorant" });
+
+    const [update] = state.memberUpdates;
+    assert.equal("playerId" in update.data, false);
+    assert.equal(update.data.gameAccountId, "account-1");
+  } finally {
+    restore();
+  }
+});
+
+test("an account with no player profile or no connected game account is skipped", async () => {
+  const { module: service, state, tx, restore } = loadService({
+    members: [
+      acceptedMemberWithoutPlayerLink({ id: "no-player", user: { player: null } }),
+      acceptedMemberWithoutPlayerLink({ id: "no-account", user: { player: { id: "player-8", gameAccounts: [] } } }),
+    ],
+  });
+  try {
+    const result = await service.snapshotAndLockRoster({ tx, registrationId: "reg-1", tournamentGame: "valorant" });
+
+    assert.equal(result.snapshotted, 0);
+    assert.equal(state.memberUpdates.length, 0);
+    assert.equal(state.audits.length, 0);
   } finally {
     restore();
   }

@@ -25,20 +25,35 @@ const snapshotAndLockRoster = async ({
     return { snapshotted: 0, locked: 0, skipped: "no_adapter" };
   }
 
+  const trackedAccounts = {
+    select: {
+      id: true,
+      gameAccounts: {
+        where: { game: trackedGame, status: { in: ["active", "locked"] } },
+        orderBy: { linkedAt: "desc" },
+      },
+    },
+  };
+
+  // The player is found through the member's own Quest account. Nothing writes
+  // `playerId` onto a roster row when someone joins or accepts, so selecting
+  // only rows that already carried one matched nobody, and every approval
+  // recorded an empty roster. A row that does carry one is still honoured.
+  //
+  // Only a linked account counts. Accepting an invitation is what links it, so
+  // an unanswered invite, or one an admin accepted on someone's behalf, has no
+  // account to commit and is skipped rather than guessed at by email.
   const members = await tx.registrationMember.findMany({
-    where: { registrationId, playerId: { not: null } },
+    where: {
+      registrationId,
+      OR: [{ playerId: { not: null } }, { userId: { not: null } }],
+    },
     select: {
       id: true,
       playerId: true,
       snapshotAt: true,
-      player: {
-        select: {
-          gameAccounts: {
-            where: { game: trackedGame, status: { in: ["active", "locked"] } },
-            orderBy: { linkedAt: "desc" },
-          },
-        },
-      },
+      player: trackedAccounts,
+      user: { select: { player: trackedAccounts } },
     },
   });
 
@@ -51,12 +66,16 @@ const snapshotAndLockRoster = async ({
     // goes through the admin account-change process, not through re-approval.
     if (member.snapshotAt) continue;
 
-    const account = member.player?.gameAccounts?.[0];
+    const player = member.player ?? member.user?.player ?? null;
+    const account = player?.gameAccounts?.[0];
     if (!account) continue;
 
     await tx.registrationMember.update({
       where: { id: member.id },
       data: {
+        // Recorded with the snapshot so the committed row names its player
+        // directly, rather than through an account link that can change later.
+        ...(member.playerId ? {} : { playerId: player.id }),
         gameAccountId: account.id,
         externalIdSnapshot: account.externalId,
         usernameSnapshot: account.username,
