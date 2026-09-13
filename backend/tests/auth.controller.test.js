@@ -34,6 +34,8 @@ const middlewarePath = path.join(
   "../src/modules/auth/auth.middleware.js"
 );
 const rateLimitPath = path.join(__dirname, "../src/middleware/rate-limit.js");
+const staffPermissionServicePath = path.join(__dirname, "../src/modules/permissions/staff-permission.service.js");
+const noStaffPermissions = { listEffectivePermissions: async () => [] };
 const validationPath = path.join(__dirname, "../src/lib/validation.js");
 
 const buildResponse = () => {
@@ -513,6 +515,7 @@ test("current-session responses retain the private Discord ID projection", async
     [authServicePath]: {
       mapUserForResponse: (value) => ({ ...value }),
     },
+    [staffPermissionServicePath]: noStaffPermissions,
   });
 
   try {
@@ -536,6 +539,36 @@ test("current-session responses retain the private Discord ID projection", async
   }
 });
 
+test("current-session responses report the areas the user can open", async () => {
+  const seen = [];
+  const { module: controller, restore } = loadModuleWithMocks(controllerPath, {
+    [envPath]: { env: {} },
+    [loggerPath]: { logger: { info: () => {}, error: () => {} } },
+    [oauthPath]: {},
+    [sessionPath]: {},
+    [authServicePath]: { mapUserForResponse: (value) => ({ id: value.id, role: value.role }) },
+    [staffPermissionServicePath]: {
+      listEffectivePermissions: async (user) => {
+        seen.push(user.id);
+        return user.id === "staff-1" ? ["valorant_leaderboard"] : [];
+      },
+    },
+  });
+
+  try {
+    const staffResponse = buildResponse();
+    await invoke(controller.getCurrentSession, { user: { id: "staff-1", role: "user" } }, staffResponse);
+    assert.deepEqual(staffResponse.body.user, { id: "staff-1", role: "user", permissions: ["valorant_leaderboard"] });
+
+    const anonymousResponse = buildResponse();
+    await invoke(controller.getCurrentSession, { user: null }, anonymousResponse);
+    assert.equal(anonymousResponse.body.user, null);
+    assert.deepEqual(seen, ["staff-1"]);
+  } finally {
+    restore();
+  }
+});
+
 test("mounted /api/me and /api/mobile/auth/me responses expose private Discord ID", async () => {
   const { module: controller, restore: restoreController } = loadModuleWithMocks(controllerPath, {
     [envPath]: { env: {} },
@@ -545,6 +578,7 @@ test("mounted /api/me and /api/mobile/auth/me responses expose private Discord I
     [authServicePath]: {
       mapUserForResponse: (value) => ({ ...value }),
     },
+    [staffPermissionServicePath]: noStaffPermissions,
   });
   const { module: routes, restore: restoreRoutes } = loadModuleWithMocks(authRoutesPath, {
     [controllerPath]: controller,

@@ -30,6 +30,14 @@ const passMiddleware = (_req, _res, next) => next();
 // preserves the intent ("a router.use('/admin/valorant', requireAdmin) guard
 // must exist") on Express 5.2.
 const requireAdminMock = (_req, _res, next) => next();
+// One distinct handle per area, so a test can tell which area guards a route.
+const staffPermissionGuards = new Map();
+const staffPermissionMock = (permission) => {
+  if (!staffPermissionGuards.has(permission)) {
+    staffPermissionGuards.set(permission, (_req, _res, next) => next());
+  }
+  return staffPermissionGuards.get(permission);
+};
 const permissionScopesMock = {
   TOURNAMENT_READ: "tournament.read",
   TOURNAMENT_ADMINISTRATION: "tournament.administration",
@@ -54,6 +62,7 @@ test("v1 router guards /admin/valorant with requireAdmin and declares every prox
     [realtimeControllerPath]: { getRealtimeEvents: controllerHandler },
     [permissionMiddlewarePath]: {
       requireSuperAdmin: () => passMiddleware,
+      requireStaffPermission: staffPermissionMock,
       requirePermission: requirePermissionMock,
       requireVetoRoomCode: passMiddleware,
       requireVetoRoomCredential: passMiddleware,
@@ -74,16 +83,33 @@ test("v1 router guards /admin/valorant with requireAdmin and declares every prox
       guard && guard.match("/admin/valorant/teams"),
       "a router.use('/admin/valorant', requireAdmin) guard must exist",
     );
-    // Ordering guarantee: the guard must sit BEFORE the first /admin/valorant
-    // route layer, otherwise the routes would be reachable unguarded.
-    const firstValorantRouteLayer = router.stack.find(
+    // Ordering guarantee: the guard must sit BEFORE every admin-only
+    // /admin/valorant route layer, otherwise those routes would be reachable
+    // unguarded. The leaderboard routes are the deliberate exception: they are
+    // a delegated area, declared before the guard and gated by their own staff
+    // permission instead.
+    const isDelegatedLeaderboardRoute = (layer) => layer.route.path.startsWith("/admin/valorant/leaderboard/");
+    const valorantRouteLayers = router.stack.filter(
       (layer) => layer.route && layer.route.path.startsWith("/admin/valorant"),
     );
-    assert.ok(
-      firstValorantRouteLayer &&
-        router.stack.indexOf(guard) < router.stack.indexOf(firstValorantRouteLayer),
-      "the /admin/valorant guard must be mounted before the first /admin/valorant route",
-    );
+    const adminOnlyLayers = valorantRouteLayers.filter((layer) => !isDelegatedLeaderboardRoute(layer));
+    assert.ok(adminOnlyLayers.length > 0);
+    for (const layer of adminOnlyLayers) {
+      assert.ok(
+        router.stack.indexOf(guard) < router.stack.indexOf(layer),
+        `${layer.route.path} must be mounted after the /admin/valorant admin guard`,
+      );
+    }
+    const leaderboardGuard = staffPermissionGuards.get("valorant_leaderboard");
+    const leaderboardLayers = valorantRouteLayers.filter(isDelegatedLeaderboardRoute);
+    assert.equal(leaderboardLayers.length, 2);
+    for (const layer of leaderboardLayers) {
+      assert.ok(
+        leaderboardGuard && layer.route.stack.some((routeLayer) => routeLayer.handle === leaderboardGuard),
+        `${layer.route.path} must be gated by the valorant_leaderboard staff permission`,
+      );
+    }
+    assert.deepEqual([...staffPermissionGuards.keys()], ["valorant_leaderboard"]);
 
     const routes = new Set(
       router.stack
@@ -144,6 +170,7 @@ test("v1 tournament detail mutations invalidate both foundation and tournament c
     [realtimeControllerPath]: { getRealtimeEvents: controllerHandler },
     [permissionMiddlewarePath]: {
       requireSuperAdmin: () => passMiddleware,
+      requireStaffPermission: staffPermissionMock,
       requirePermission: requirePermissionMock,
       requireVetoRoomCode: passMiddleware,
       requireVetoRoomCredential: passMiddleware,
@@ -197,6 +224,7 @@ test("v1 authenticates and rate limits every VALORANT leaderboard registration r
     [realtimeControllerPath]: { getRealtimeEvents: controllerHandler },
     [permissionMiddlewarePath]: {
       requireSuperAdmin: () => passMiddleware,
+      requireStaffPermission: staffPermissionMock,
       requirePermission: requirePermissionMock,
       requireVetoRoomCode: passMiddleware,
       requireVetoRoomCredential: passMiddleware,
@@ -290,6 +318,7 @@ test("v1 puts Riot ID resolution behind a session and a limiter", () => {
     [realtimeControllerPath]: { getRealtimeEvents: controllerHandler },
     [permissionMiddlewarePath]: {
       requireSuperAdmin: () => passMiddleware,
+      requireStaffPermission: staffPermissionMock,
       requirePermission: requirePermissionMock,
       requireVetoRoomCode: passMiddleware,
       requireVetoRoomCredential: passMiddleware,

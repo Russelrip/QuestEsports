@@ -19,9 +19,11 @@ const supportRoutes = require("../modules/support/support.routes");
 const authRoutes = require("../modules/auth/auth.routes");
 const challongeController = require("../modules/challonge/challonge.controller");
 const staffController = require("../modules/permissions/staff.controller");
+const staffPermissionController = require("../modules/permissions/staff-permission.controller");
 const { getRealtimeEvents } = require("../modules/realtime/realtime.controller");
 const {
   requireSuperAdmin,
+  requireStaffPermission,
   requirePermission,
   requireVetoRoomCode,
   requireVetoRoomCredential,
@@ -259,6 +261,20 @@ router.delete(
 router.get("/admin/game-accounts/change-requests", requireAuth, requireAdmin, gameAccountController.listAdminChangeRequests);
 router.post("/admin/game-accounts/change-requests/:requestId/review", requireAuth, requireAdmin, gameAccountController.reviewAdminChangeRequest);
 
+// Delegated admin areas. Declared before the blanket admin guard below so a
+// user granted only `valorant_leaderboard` reaches these and nothing else under
+// /admin/valorant.
+//
+// Leaderboard registrations, including the ones the public board hides. Removal
+// clears the cached public leaderboard so the player drops off it immediately.
+const leaderboardStaff = requireStaffPermission("valorant_leaderboard");
+router.get("/admin/valorant/leaderboard/players", requireAuth, leaderboardStaff, valorantLeaderboardController.listRegistrations);
+router.delete("/admin/valorant/leaderboard/players/:puuid", requireAuth, leaderboardStaff, invalidateCache("foundation"), valorantLeaderboardController.removeRegistration);
+
+// Granting delegated areas is itself admin-only.
+router.get("/admin/users/:userId/staff-permissions", requireAuth, requireAdmin, staffPermissionController.getUserStaffPermissions);
+router.put("/admin/users/:userId/staff-permissions", requireAuth, requireAdmin, staffPermissionController.updateUserStaffPermissions);
+
 router.use("/admin/valorant", requireAdmin);
 router.get("/admin/valorant/teams", valorantController.listTeams);
 // These admin writes change what /api/v1/tournaments/:slug/results and the
@@ -292,9 +308,5 @@ router.get("/admin/valorant/rankings", valorantController.getRankings);
 router.get("/admin/valorant/teams/:teamId/rating-history", valorantController.getRatingHistory);
 router.get("/admin/valorant/teams/:teamId/series", valorantController.getTeamSeries);
 router.get("/admin/valorant/reconciliation", valorantController.getReconciliation);
-// Leaderboard registrations, including the ones the public board hides. Removal
-// clears the cached public leaderboard so the player drops off it immediately.
-router.get("/admin/valorant/leaderboard/players", valorantLeaderboardController.listRegistrations);
-router.delete("/admin/valorant/leaderboard/players/:puuid", invalidateCache("foundation"), valorantLeaderboardController.removeRegistration);
 
 module.exports = router;

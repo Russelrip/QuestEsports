@@ -1293,10 +1293,21 @@ Quest admin routes for the VALORANT platform integration. Every route lives unde
 | `GET` | `/api/v1/admin/valorant/teams/{teamId}/rating-history` | `GET /api/v1/teams/{team_id}/rating-history` |
 | `GET` | `/api/v1/admin/valorant/teams/{teamId}/series` | `GET /api/v1/teams/{team_id}/series` |
 | `GET` | `/api/v1/admin/valorant/reconciliation` | reconciliation queries via FastAPI reads only (§8.3) |
-| `GET` | `/api/v1/admin/valorant/leaderboard/players` | `GET /api/v1/leaderboard/players` — every player leaderboard registration, including rows the public board hides; `q`, `page`, `per_page` |
-| `DELETE` | `/api/v1/admin/valorant/leaderboard/players/{puuid}` | `DELETE /api/v1/leaderboard/players/{puuid}` — body `{ reason }` required; audited as `valorant.leaderboard_player.remove`; also clears the linked player's cached profile rank |
+| `GET` | `/api/v1/admin/valorant/leaderboard/players` | `GET /api/v1/leaderboard/players` — every player leaderboard registration, including rows the public board hides; `q`, `page`, `per_page`. Open to admins and to users with the `valorant_leaderboard` staff permission |
+| `DELETE` | `/api/v1/admin/valorant/leaderboard/players/{puuid}` | `DELETE /api/v1/leaderboard/players/{puuid}` — body `{ reason }` required; audited as `valorant.leaderboard_player.remove`; also clears the linked player's cached profile rank. Open to admins and to users with the `valorant_leaderboard` staff permission |
 
 Responses follow the standard envelope `{ success: true, data: <payload>, meta: { serverNow } }`; errors go through `errorHandler` with `body.error.code`.
+
+The two leaderboard routes are the only `/api/v1/admin/valorant/*` routes that are not admin-only: they are declared before the `requireAdmin` guard and use `requireStaffPermission("valorant_leaderboard")` instead.
+
+### Staff permissions
+
+| Method | Route | Notes |
+|---|---|---|
+| `GET` | `/api/v1/admin/users/{userId}/staff-permissions` | Admin only. `{ catalog: [{ key, label, description }], permissions: [key] }` |
+| `PUT` | `/api/v1/admin/users/{userId}/staff-permissions` | Admin only. Body `{ permissions: [key] }` replaces the user's grants; unknown keys are 400. Audited as `admin.user.staff_permissions.updated` when anything changes |
+
+`GET /api/me` (and `/api/mobile/auth/me`) include `user.permissions`: every area for an admin, the granted areas otherwise.
 
 ### Request/response shapes (spec §6.4)
 

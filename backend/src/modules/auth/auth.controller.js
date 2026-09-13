@@ -4,6 +4,7 @@ const { HttpError } = require("../../lib/http-error");
 const { logger } = require("../../lib/logger");
 const { recordAudit, requestAuditContext } = require("../../lib/audit");
 const { normalizeSafeRedirectPath } = require("../../lib/validation");
+const { listEffectivePermissions } = require("../permissions/staff-permission.service");
 const {
   buildExpiredOAuthFlowCookie,
   buildExpiredOAuthLinkFlowCookie,
@@ -476,7 +477,9 @@ const logout = asyncHandler(async (req, res) => {
 const getCurrentSession = asyncHandler(async (req, res) => {
   res.status(200).json({
     success: true,
-    user: req.user ? mapUserForResponse(req.user) : null,
+    user: req.user
+      ? { ...mapUserForResponse(req.user), permissions: await listEffectivePermissions(req.user) }
+      : null,
   });
 });
 

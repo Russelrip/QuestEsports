@@ -3,6 +3,7 @@
 import { formatSriLankaDateTime } from "@/lib/date-time";
 import { useEffect, useState } from "react";
 import AdminShell from "@/components/admin/AdminShell";
+import AdminUserStaffAccess from "@/components/admin/AdminUserStaffAccess";
 import EmptyState from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -174,6 +175,14 @@ export default function AdminUsersManager() {
           </div>
         </form>
       </Card>
+
+      {editingUserId ? (
+        <AdminUserStaffAccess
+          userId={editingUserId}
+          username={formValues.username}
+          isAdmin={users.find((user) => user.id === editingUserId)?.role === "admin"}
+        />
+      ) : null}
 
       <Card className="p-6 sm:p-8">
         <div className="mb-6 flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">

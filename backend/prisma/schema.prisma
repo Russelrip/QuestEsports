@@ -283,6 +283,14 @@ enum TournamentStaffRole {
   referee
 }
 
+// One area of the admin panel that can be delegated to a non-admin. Admins hold
+// every area implicitly; a user holds only the ones granted to them. Adding an
+// area is a new value here plus an entry in the permission catalog in
+// backend/src/modules/permissions/staff-permission.service.js.
+enum StaffPermission {
+  valorant_leaderboard
+}
+
 enum MatchSource {
   quest
   challonge
@@ -451,6 +459,8 @@ model User {
   player                       Player?
   gameAccountChangesRequested  GameAccountChangeRequest[]  @relation("GameAccountChangeRequester")
   gameAccountChangesReviewed   GameAccountChangeRequest[]  @relation("GameAccountChangeReviewer")
+  staffPermissions             UserStaffPermission[]       @relation("StaffPermissionHolder")
+  staffPermissionsGranted      UserStaffPermission[]       @relation("StaffPermissionGranter")
 
   @@index([role])
   @@index([createdAt])
@@ -989,6 +999,21 @@ model TournamentBracket {
 
   @@index([status])
   @@map("tournament_brackets")
+}
+
+// A site-wide grant of one admin area to a user who is not an admin.
+model UserStaffPermission {
+  id              String          @id @default(uuid()) @db.Uuid
+  userId          String          @map("user_id") @db.Uuid
+  permission      StaffPermission
+  grantedByUserId String?         @map("granted_by_user_id") @db.Uuid
+  createdAt       DateTime        @default(now()) @map("created_at")
+  user            User            @relation("StaffPermissionHolder", fields: [userId], references: [id], onDelete: Cascade)
+  grantedBy       User?           @relation("StaffPermissionGranter", fields: [grantedByUserId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, permission])
+  @@index([permission])
+  @@map("user_staff_permissions")
 }
 
 model TournamentStaffAssignment {

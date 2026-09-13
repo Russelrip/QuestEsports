@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import AdminShell from "@/components/admin/AdminShell";
+import { useAuth } from "@/components/auth/AuthProvider";
 import ValorantLeaderboardPlayersManager from "@/components/admin/valorant/ValorantLeaderboardPlayersManager";
 import ValorantRankingsManager from "@/components/admin/valorant/ValorantRankingsManager";
 import ValorantReconciliationManager from "@/components/admin/valorant/ValorantReconciliationManager";
@@ -9,6 +10,7 @@ import ValorantSeriesDetail from "@/components/admin/valorant/ValorantSeriesDeta
 import ValorantSeriesForm from "@/components/admin/valorant/ValorantSeriesForm";
 import ValorantSeriesManager from "@/components/admin/valorant/ValorantSeriesManager";
 import ValorantTeamsManager from "@/components/admin/valorant/ValorantTeamsManager";
+import { hasStaffPermission, type StaffPermission } from "@/lib/staff-permissions";
 import { cn } from "@/lib/utils";
 
 type Tab = "teams" | "series" | "rankings" | "leaderboard" | "reconciliation";
@@ -18,20 +20,29 @@ type SeriesSubView =
   | { kind: "new" }
   | { kind: "detail"; seriesId: string };
 
-const tabs: Array<{ id: Tab; label: string }> = [
+// A tab with a permission is also open to staff granted that area; the rest are
+// admin-only. The backend enforces the same split on every route.
+const tabs: Array<{ id: Tab; label: string; permission?: StaffPermission }> = [
   { id: "teams", label: "Team Bindings" },
   { id: "series", label: "Series" },
   { id: "rankings", label: "Rankings" },
-  { id: "leaderboard", label: "Leaderboard Players" },
+  { id: "leaderboard", label: "Leaderboard Players", permission: "valorant_leaderboard" },
   { id: "reconciliation", label: "Reconciliation" },
 ];
 
 export default function ValorantManagementPage() {
-  const [activeTab, setActiveTab] = useState<Tab>("series");
+  const { user } = useAuth();
+  const visibleTabs = tabs.filter((tab) =>
+    user?.role === "admin" || (tab.permission ? hasStaffPermission(user, tab.permission) : false)
+  );
+  const [selectedTab, setSelectedTab] = useState<Tab>("series");
+  const activeTab = visibleTabs.some((tab) => tab.id === selectedTab)
+    ? selectedTab
+    : (visibleTabs[0]?.id ?? selectedTab);
   const [seriesSubView, setSeriesSubView] = useState<SeriesSubView>({ kind: "list" });
 
   const handleTabChange = (tab: Tab) => {
-    setActiveTab(tab);
+    setSelectedTab(tab);
     if (tab === "series") {
       setSeriesSubView({ kind: "list" });
     }
@@ -100,7 +111,7 @@ export default function ValorantManagementPage() {
         aria-label="Valorant Management sections"
         className="flex flex-wrap gap-2 border-b border-white/10 pb-3"
       >
-        {tabs.map((tab) => {
+        {visibleTabs.map((tab) => {
           const isActive = activeTab === tab.id;
           return (
             <button

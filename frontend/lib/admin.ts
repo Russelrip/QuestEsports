@@ -15,12 +15,16 @@ import {
   sriLankaDateTimeLocalToIso,
 } from "@/lib/date-time";
 import type { NavIconKey } from "@/lib/icons";
+import type { StaffPermission } from "@/lib/staff-permissions";
 import type { TeamInviteStatus } from "@/lib/teams";
 
 export type AdminNavigationLink = {
   href: string;
   label: string;
   icon: NavIconKey;
+  // The delegated area that also opens this link for a non-admin. Links
+  // without one are admin-only.
+  permission?: StaffPermission;
 };
 
 export const adminNavigationGroups: ReadonlyArray<{
@@ -71,7 +75,7 @@ export const adminNavigationGroups: ReadonlyArray<{
       { href: "/admin/games", label: "Games", icon: "gamepad" },
       { href: "/admin/match-rooms", label: "Match Rooms", icon: "monitor" },
       { href: "/admin/veto-rooms", label: "Veto Rooms", icon: "swords" },
-      { href: "/admin/valorant", label: "Valorant", icon: "crosshair" },
+      { href: "/admin/valorant", label: "Valorant", icon: "crosshair", permission: "valorant_leaderboard" },
       { href: "/admin/game-accounts", label: "Account Changes", icon: "user-plus" },
     ],
   },

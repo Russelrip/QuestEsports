@@ -1,6 +1,7 @@
 "use client";
 
 import { buildApiUrl, fetchWithTimeout, readApiResponse } from "@/lib/api";
+import type { StaffPermission } from "@/lib/staff-permissions";
 
 export type AuthUser = {
   id: string;
@@ -12,6 +13,9 @@ export type AuthUser = {
   discordId?: string | null;
   discordTag?: string | null;
   role: "admin" | "user";
+  // Admin areas this user can open. Every area for an admin; granted areas only
+  // for anyone else. Reported by /api/me.
+  permissions?: StaffPermission[];
   pendingEmail?: string | null;
   emailVerified: boolean;
   emailVerifiedAt?: string | null;

@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
 import EmptyState from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
+import { adminHomeFor, canOpenAdminPath } from "@/lib/staff-permissions";
 
 export default function AdminGuard({
   children,
@@ -12,7 +13,11 @@ export default function AdminGuard({
   children: React.ReactNode;
 }) {
   const router = useRouter();
+  const pathname = usePathname();
   const { user, isLoading, sessionError, refreshSession } = useAuth();
+  // Admins open everything. Staff open only the areas they were granted; any
+  // other admin page sends them to the first area they do have.
+  const allowed = Boolean(user) && canOpenAdminPath(user, pathname);
 
   useEffect(() => {
     if (isLoading) {
@@ -24,10 +29,10 @@ export default function AdminGuard({
       return;
     }
 
-    if (user.role !== "admin") {
-      router.replace("/");
+    if (!allowed) {
+      router.replace(adminHomeFor(user) ?? "/");
     }
-  }, [isLoading, router, sessionError, user]);
+  }, [allowed, isLoading, router, sessionError, user]);
 
   if (!isLoading && sessionError && !user) {
     return (
@@ -42,7 +47,7 @@ export default function AdminGuard({
     );
   }
 
-  if (isLoading || !user || user.role !== "admin") {
+  if (isLoading || !user || !allowed) {
     return <EmptyState description="Checking admin access..." />;
   }
 
