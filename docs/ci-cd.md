@@ -204,6 +204,20 @@ sudo install -o root -g root -m 0755 ops/deploy/host-hooks.sh /usr/local/sbin/qu
 grep -oE '^quest-release-[a-z0-9-]+' ops/deploy/host-hooks.aliases | xargs -I{} sudo ln -f /usr/local/sbin/quest-release-hooks /usr/local/sbin/{}
 ```
 
+### Superseded images
+
+Every release pulls a new digest-pinned image set. Once a release is admitted,
+the controller removes images in the four release repositories (frontend,
+backend, migrator, VALORANT) that neither the new release nor its predecessor
+references, so the host keeps two release sets instead of every one ever
+deployed. Before this, 55 releases had filled 83 GB by 2026-09-13. A rollback
+to an older SHA still works: the release pulls its images by digest again.
+
+The prune runs after the commit point, so it can only warn. A failure prints
+`warning: some superseded release images could not be removed` and the release
+still succeeds; clear the backlog by hand with
+`sudo docker image prune -a --filter "until=72h"`.
+
 ## VALORANT E2E
 
 The protected E2E workflow accepts the exact current `main` SHA and uses the

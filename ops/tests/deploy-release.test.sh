@@ -40,7 +40,7 @@ setup_fixture() {
   local case_name="$1"
   unset BAD_VALORANT_ALIASES QUEST_DEPLOY_FIXTURE_ENFORCE_BACKUP_CA_CHAIN || true
   unset BACKUP_CLIENT_DIR_MODE || true
-  unset WRONG_PROJECT DUPLICATE_ALIASES BAD_ALIAS_BINDING FAIL_SERVICE_OWNERSHIP FAIL_CAPTURE STALE_BACKUP INCOMPLETE_BACKUP FAIL_FREEZE FAIL_QUEST_FREEZE FAIL_VALORANT_FREEZE FAIL_SECURITY_VERIFY MIGRATION_PENDING FAIL_QUEST_HEALTH FAIL_VALORANT_HEALTH BAD_VALORANT_HEALTH DB_ONLY_VALORANT_HEALTH MALFORMED_VALORANT_HEALTH BAD_VALORANT_DIGEST BAD_MIGRATOR FAIL_REGISTRY FAIL_QUEST_WRITER_ENABLE FAIL_VALORANT_WRITER_ENABLE FAIL_WRITER_ENABLE FAIL_START FAIL_QUEST_CANDIDATE_START FAIL_VALORANT_CANDIDATE_START FAIL_QUEST_WRITER_STOP FAIL_VALORANT_WRITER_STOP FAIL_OLD_QUEST_STOP FAIL_OLD_VALORANT_STOP FAIL_REBOOT_PERSISTENCE BAD_LEGACY_STATE DATABASE_AUTHORITY REQUIRE_ARTIFACT_TRUST_POLICY REQUIRE_MIGRATION_RECHECK TARGET_ACK_MODE TARGET_ACK_LIES TOPOLOGY_STRUCTURED TOPOLOGY_STALE TOPOLOGY_MISSING BACKUP_APPROVAL QUEST_MIGRATION_OWNER_APPROVAL_SHA VALORANT_MIGRATION_OWNER_APPROVAL_SHA OLD_VALORANT_WAS_STOPPED ROLLBACK_RELEASE_DIR EXPECTED_LOSS_RPO INCIDENT_OWNER_APPROVAL SUPABASE_RECONCILIATION_DECISION SUPABASE_URL_ROLLBACK_COMMAND TRY_SUPABASE_URL_ROLLBACK DATABASE_URL DIRECT_URL SENTINEL_FAIL SENTINEL_MALFORMED SENTINEL_MISMATCH SENTINEL_WRITABLE TLS_KEY_WORLD_READABLE QUEST_DEPLOY_FIXTURE_ENFORCE_TLS_OWNERSHIP FAIL_QUEST_URL_SWITCH FAIL_VALORANT_URL_SWITCH NOOP_VALORANT_URL_SWITCH FAIL_QUEST_SERVICE_RESTART FAIL_VALORANT_SERVICE_RESTART FAIL_QUEST_READINESS_ACK FAIL_VALORANT_READINESS_ACK FAIL_QUEST_FROZEN_ACK FAIL_VALORANT_FROZEN_ACK FAIL_QUEST_URL_EFFECTIVE FAIL_VALORANT_URL_EFFECTIVE || true
+  unset WRONG_PROJECT DUPLICATE_ALIASES BAD_ALIAS_BINDING FAIL_SERVICE_OWNERSHIP FAIL_CAPTURE STALE_BACKUP INCOMPLETE_BACKUP FAIL_FREEZE FAIL_QUEST_FREEZE FAIL_VALORANT_FREEZE FAIL_SECURITY_VERIFY MIGRATION_PENDING FAIL_QUEST_HEALTH FAIL_VALORANT_HEALTH BAD_VALORANT_HEALTH DB_ONLY_VALORANT_HEALTH MALFORMED_VALORANT_HEALTH BAD_VALORANT_DIGEST BAD_MIGRATOR FAIL_REGISTRY FAIL_QUEST_WRITER_ENABLE FAIL_VALORANT_WRITER_ENABLE FAIL_WRITER_ENABLE FAIL_START FAIL_QUEST_CANDIDATE_START FAIL_VALORANT_CANDIDATE_START FAIL_QUEST_WRITER_STOP FAIL_VALORANT_WRITER_STOP FAIL_OLD_QUEST_STOP FAIL_OLD_VALORANT_STOP FAIL_REBOOT_PERSISTENCE BAD_LEGACY_STATE DATABASE_AUTHORITY REQUIRE_ARTIFACT_TRUST_POLICY REQUIRE_MIGRATION_RECHECK TARGET_ACK_MODE TARGET_ACK_LIES TOPOLOGY_STRUCTURED TOPOLOGY_STALE TOPOLOGY_MISSING BACKUP_APPROVAL QUEST_MIGRATION_OWNER_APPROVAL_SHA VALORANT_MIGRATION_OWNER_APPROVAL_SHA OLD_VALORANT_WAS_STOPPED ROLLBACK_RELEASE_DIR EXPECTED_LOSS_RPO INCIDENT_OWNER_APPROVAL SUPABASE_RECONCILIATION_DECISION SUPABASE_URL_ROLLBACK_COMMAND TRY_SUPABASE_URL_ROLLBACK DATABASE_URL DIRECT_URL SENTINEL_FAIL SENTINEL_MALFORMED SENTINEL_MISMATCH SENTINEL_WRITABLE TLS_KEY_WORLD_READABLE QUEST_DEPLOY_FIXTURE_ENFORCE_TLS_OWNERSHIP FAIL_QUEST_URL_SWITCH FAIL_VALORANT_URL_SWITCH NOOP_VALORANT_URL_SWITCH FAIL_QUEST_SERVICE_RESTART FAIL_VALORANT_SERVICE_RESTART FAIL_QUEST_READINESS_ACK FAIL_VALORANT_READINESS_ACK FAIL_QUEST_FROZEN_ACK FAIL_VALORANT_FROZEN_ACK FAIL_QUEST_URL_EFFECTIVE FAIL_VALORANT_URL_EFFECTIVE FAIL_IMAGE_REMOVE FAIL_IMAGE_LIST || true
   fixture="$work_directory/$case_name"
   previous_sha=0000000000000000000000000000000000000000
   mkdir -p "$fixture/bin" "$fixture/releases/$previous_sha" "$fixture/uploads" "$fixture/private" "$fixture/postgres/17/data"
@@ -174,6 +174,30 @@ set -euo pipefail
 log="${TEST_LOG:?}"
 if [[ "$1" == pull ]]; then printf 'pull %s\n' "$2" >> "$log"; exit 0; fi
 if [[ "$1" == info ]]; then exit 0; fi
+# Each release repository holds the new release's image, the previous
+# release's, and one superseded image that only the post-admission prune may remove.
+if [[ "$1" == image && "$2" == ls ]]; then
+  repository="${!#}"
+  printf 'image-ls %s\n' "$repository" >> "$log"
+  [[ "${FAIL_IMAGE_LIST:-0}" == 1 ]] && exit 1
+  case "$repository" in
+    ghcr.io/quest/frontend) digests='1111111111111111111111111111111111111111111111111111111111111111 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' ;;
+    ghcr.io/quest/backend) digests='2222222222222222222222222222222222222222222222222222222222222222 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' ;;
+    ghcr.io/quest/migrator) digests='4444444444444444444444444444444444444444444444444444444444444444' ;;
+    ghcr.io/quest/valorant) digests='5555555555555555555555555555555555555555555555555555555555555555 dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd' ;;
+    *) exit 1 ;;
+  esac
+  for digest in $digests 7777777777777777777777777777777777777777777777777777777777777777; do
+    printf '%s@sha256:%s\n' "$repository" "$digest"
+  done
+  printf '%s@<none>\n' "$repository"
+  exit 0
+fi
+if [[ "$1" == image && "$2" == rm ]]; then
+  printf 'image-rm %s\n' "$3" >> "$log"
+  [[ "${FAIL_IMAGE_REMOVE:-0}" == 1 ]] && exit 1
+  exit 0
+fi
 VALORANT_IMAGE_DIGEST=ghcr.io/quest/valorant@sha256:5555555555555555555555555555555555555555555555555555555555555555
 QUEST_BACKEND_DIGEST=ghcr.io/quest/backend@sha256:2222222222222222222222222222222222222222222222222222222222222222
 POSTGRES_DIGEST=postgres:17-bookworm@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0
@@ -854,6 +878,31 @@ assert_contains "$TEST_LOG" "backup lock=$fixture/release.lock held=1 inherited=
 assert_contains "$TEST_LOG" 'old-mask'
 [[ "$(grep -nm1 'freeze-enable' "$TEST_LOG" | cut -d: -f1)" -lt "$(grep -nm1 'old-stop' "$TEST_LOG" | cut -d: -f1)" ]] || { printf 'FAIL: freeze did not precede old VALORANT stop\n' >&2; exit 1; }
 [[ "$(grep -nm1 'old-stop' "$TEST_LOG" | cut -d: -f1)" -lt "$(grep -nm1 'candidate-start' "$TEST_LOG" | cut -d: -f1)" ]] || { printf 'FAIL: old VALORANT stop did not precede candidate start\n' >&2; exit 1; }
+# Only the superseded image in each release repository is removed; the new
+# release's and the previous release's images stay for a fast rollback.
+for repository in frontend backend migrator valorant; do
+  assert_exact_line "$TEST_LOG" "image-rm ghcr.io/quest/$repository@sha256:7777777777777777777777777777777777777777777777777777777777777777"
+done
+[[ "$(grep -c '^image-rm ' "$TEST_LOG")" == 4 ]] || { printf 'FAIL: prune removed an image the new or previous release still references\n' >&2; grep '^image-rm ' "$TEST_LOG" >&2; exit 1; }
+[[ "$(grep -n '^image-rm ' "$TEST_LOG" | head -n1 | cut -d: -f1)" -gt "$(grep -nm1 'old-mask' "$TEST_LOG" | cut -d: -f1)" ]] || { printf 'FAIL: images were pruned before the release was admitted\n' >&2; exit 1; }
+
+# The prune runs past the commit point, so its failure must never fail the
+# release: a non-zero exit there would start post-commit recovery.
+for prune_failure in FAIL_IMAGE_REMOVE FAIL_IMAGE_LIST; do
+  setup_fixture "prune-failure-${prune_failure,,}"
+  export MIGRATION_PENDING=1 REQUIRE_MIGRATION_RECHECK=1 BACKUP_APPROVAL=BACKUP_QUEST_PRODUCTION
+  export QUEST_MIGRATION_OWNER_APPROVAL_SHA=1111111111111111111111111111111111111111
+  export VALORANT_MIGRATION_OWNER_APPROVAL_SHA=1111111111111111111111111111111111111111
+  export "$prune_failure=1"
+  prune_output="$work_directory/prune-failure-${prune_failure,,}.out"
+  run_release >"$prune_output" 2>&1 \
+    ||{ printf 'FAIL: %s failed an admitted release\n' "$prune_failure" >&2; sed -n '1,40p' "$prune_output" >&2; exit 1; }
+  grep -Fq 'warning: some superseded release images could not be removed' "$prune_output" \
+    || { printf 'FAIL: %s did not warn\n' "$prune_failure" >&2; exit 1; }
+  if grep -Fq 'writer-stop' "$TEST_LOG"; then
+    printf 'FAIL: %s started post-commit recovery\n' "$prune_failure" >&2; exit 1
+  fi
+done
 
 setup_fixture empty-candidate-before-start
 export FAIL_START=1
