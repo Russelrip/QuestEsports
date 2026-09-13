@@ -2185,7 +2185,14 @@ test("listTeamRegistrations returns paginated summaries without loading rosters"
           createdAt: new Date("2026-07-20T10:00:00.000Z"),
           captainName: "Team Captain",
           captainEmail: "captain@example.com",
-          tournament: { id: "tournament-1", slug: "quest-cup", title: "Quest Cup", status: "registration_open", isPublished: true },
+          tournament: {
+            id: "tournament-1",
+            slug: "quest-cup",
+            title: "Quest Cup",
+            status: "registration_open",
+            isPublished: true,
+            series: { id: "event-1", title: "Quest Ascension 2026" },
+          },
           members: [{ name: "Team Coach", riotId: "Coach#001" }],
           _count: { members: 5 },
         }, {
@@ -2222,6 +2229,12 @@ test("listTeamRegistrations returns paginated summaries without loading rosters"
     assert.equal(result.items[1].coachName, null);
     assert.equal(result.items[1].coachRiotId, null);
     assert.equal(result.items[0].members, undefined);
+    assert.deepEqual(findManyCalls[0].select.tournament.select.series, {
+      select: { id: true, title: true },
+    });
+    assert.deepEqual(result.items[0].event, { id: "event-1", title: "Quest Ascension 2026" });
+    assert.equal(result.items[0].tournament.series, undefined);
+    assert.equal(result.items[1].event, null);
   } finally {
     restore();
   }

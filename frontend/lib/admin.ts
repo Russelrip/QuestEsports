@@ -253,6 +253,8 @@ export type TeamRegistrationSummary = Pick<
   | "tournament"
 > & {
   publicReference: string;
+  // Null when the tournament is not part of any event.
+  event: { id: string; title: string } | null;
   captain: Pick<TeamRegistration["captain"], "name" | "email">;
   coachName: string | null;
   coachRiotId: string | null;
