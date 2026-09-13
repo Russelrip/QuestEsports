@@ -111,6 +111,7 @@ const recordRegistrationStatusAudit = async ({
 });
 
 const { snapshotAndLockRoster } = require("../game-accounts/roster-snapshot.service");
+const { maybeAutoApproveRegistration } = require("../tournaments/auto-approval.service");
 
 const acceptPendingRegistrationInvites = async ({ tx, registrationId, savedTeamId, members }) => {
   const pendingMembers = (members || []).filter((member) => member.inviteStatus === "pending");
@@ -1408,6 +1409,17 @@ const correctTeamRegistrationRoster = async (registrationId, body = {}, auditCon
       await recordAuditInTransaction(tx, audit);
     }
 
+    // A correction that leaves every invitation accepted, such as dropping an
+    // expired member, is the same settling moment as an accepted invitation.
+    if (verificationStatus === "verified") {
+      await maybeAutoApproveRegistration({
+        tx,
+        registrationId,
+        requestId: auditContext.requestId || null,
+        ipAddress: auditContext.ipAddress || null,
+      });
+    }
+
     return {
       before,
       after: nextMembers.map((member) => ({
@@ -2157,7 +2169,24 @@ const updateTeamRegistrationStatus = async (
           action: "team_registration.verification_status_changed",
           ...auditContext,
         });
-        return updated;
+        if (updateData.verificationStatus !== "verified") return updated;
+        // An admin confirming the roster settles the last thing a registration
+        // can be waiting on, exactly as the final accepted invitation does. A
+        // tournament that does not review registrations approves it here;
+        // otherwise a verified, paid entry sits pending with nothing left that
+        // would ever move it.
+        const autoApproved = await maybeAutoApproveRegistration({
+          tx,
+          registrationId,
+          requestId: auditContext.requestId,
+          ipAddress: auditContext.ipAddress,
+        });
+        return autoApproved
+          ? tx.teamRegistration.findUnique({
+              where: { id: registrationId },
+              include: TEAM_REGISTRATION_INCLUDE,
+            })
+          : updated;
       });
     }
   }
