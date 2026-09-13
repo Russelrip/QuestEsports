@@ -475,6 +475,102 @@ test("admin approval flags a no-pending registration with a declined member", as
   }
 });
 
+const verificationOnlyHarness = ({ autoApproveRegistrations, status = "pending" }) => {
+  let row = registrationForStatusTest({
+    status,
+    verificationStatus: "pending",
+    tournament: {
+      ...registrationForStatusTest().tournament,
+      game: "Chess",
+      autoApproveRegistrations,
+    },
+  });
+  const updates = [];
+  const audits = [];
+  const tx = {
+    teamRegistration: {
+      findUnique: async () => ({ ...row }),
+      update: async ({ data }) => {
+        updates.push(data);
+        row = { ...row, ...data };
+        return { ...row };
+      },
+    },
+    auditLog: { create: async ({ data }) => { audits.push(data); return data; } },
+  };
+  const loaded = loadAdminService({
+    teamRegistration: { findUnique: async () => ({ ...row }) },
+    $transaction: async (work) => work(tx),
+  });
+  return { ...loaded, updates, audits };
+};
+
+test("an admin verifying the roster approves it when the tournament does not review registrations", async () => {
+  const { module: adminService, restore, updates, audits } = verificationOnlyHarness({
+    autoApproveRegistrations: true,
+  });
+
+  try {
+    const result = await adminService.updateTeamRegistrationStatus(
+      "registration-1",
+      { verificationStatus: "verified" },
+      "admin-1"
+    );
+
+    assert.equal(result.status, "approved");
+    assert.equal(result.verificationStatus, "verified");
+    assert.deepEqual(updates, [{ verificationStatus: "verified" }, { status: "approved" }]);
+    assert.deepEqual(
+      audits.map((audit) => [audit.action, audit.source ?? null]),
+      [
+        ["team_registration.verification_status_changed", null],
+        ["team_registration.status_changed", "system"],
+      ]
+    );
+  } finally {
+    restore();
+  }
+});
+
+test("an admin verifying the roster leaves approval to the admin when the tournament reviews registrations", async () => {
+  const { module: adminService, restore, updates } = verificationOnlyHarness({
+    autoApproveRegistrations: false,
+  });
+
+  try {
+    const result = await adminService.updateTeamRegistrationStatus(
+      "registration-1",
+      { verificationStatus: "verified" },
+      "admin-1"
+    );
+
+    assert.equal(result.status, "pending");
+    assert.deepEqual(updates, [{ verificationStatus: "verified" }]);
+  } finally {
+    restore();
+  }
+});
+
+test("an admin verifying a waitlisted roster does not approve it", async () => {
+  const { module: adminService, restore, updates } = verificationOnlyHarness({
+    autoApproveRegistrations: true,
+    status: "waitlisted",
+  });
+
+  try {
+    const result = await adminService.updateTeamRegistrationStatus(
+      "registration-1",
+      { verificationStatus: "verified" },
+      "admin-1"
+    );
+
+    assert.equal(result.status, "waitlisted");
+    assert.deepEqual(updates, [{ verificationStatus: "verified" }]);
+  } finally {
+    restore();
+  }
+});
+
 test("admin payment override accepts invites and activates the paid registration", async () => {
   const memberUpdates = [];
   const registrationUpdates = [];
@@ -2711,6 +2807,105 @@ test("correctTeamRegistrationRoster replaces a paid roster and its linked saved 
     assert.deepEqual(genericConflictQueries[0].where.role, { not: "COACH" });
     assert.deepEqual(genericConflictQueries[0].where.registration.status, { notIn: ["rejected", "waitlisted"] });
     assert.equal(transactionOptions.isolationLevel, "Serializable");
+  } finally {
+    restore();
+  }
+});
+
+test("correctTeamRegistrationRoster approves a roster it leaves fully accepted when the tournament does not review registrations", async () => {
+  const registrationUpdates = [];
+  const audits = [];
+  const currentMembers = [
+    { id: "captain-1", role: "CAPTAIN", memberOrder: 0, name: "Captain", email: "captain@example.com", emailNormalized: "captain@example.com", discord: "captain", riotId: "Captain#001", additionalData: {}, inviteStatus: "accepted" },
+    { id: "expired-player", role: "PLAYER", memberOrder: 1, name: "Gone", email: "gone@example.com", emailNormalized: "gone@example.com", discord: "gone", riotId: "Gone#001", additionalData: {}, inviteStatus: "expired" },
+  ];
+  const requestedMembers = [
+    { role: "CAPTAIN", name: "Captain", email: "captain@example.com", discord: "captain", gameId: "Captain#001" },
+    { role: "PLAYER", name: "Player One", email: "one@example.com", discord: "one", gameId: "One#001" },
+  ];
+  const users = requestedMembers.map((member, index) => ({
+    id: `user-${index + 1}`,
+    email: member.email,
+    emailNormalized: member.email,
+    emailVerified: true,
+    phone: member.role === "CAPTAIN" ? "0770000000" : null,
+  }));
+  let row = {
+    id: "registration-1",
+    tournamentId: "tournament-1",
+    savedTeamId: null,
+    entryType: "team",
+    status: "pending",
+    paymentStatus: "paid",
+    verificationStatus: "pending",
+    captainEmail: "captain@example.com",
+    captainPhone: "0770000000",
+    contactEmail: "captain@example.com",
+    additionalData: {},
+    tournament: {
+      id: "tournament-1",
+      title: "Quest Cup",
+      game: "Chess",
+      autoApproveRegistrations: true,
+      registrationFields: [],
+      minRosterSize: 2,
+      maxRosterSize: 2,
+      maxSubstitutes: 0,
+    },
+    members: currentMembers,
+    savedTeam: null,
+  };
+  const tx = {
+    teamRegistration: {
+      findUnique: async () => ({ ...row }),
+      update: async (args) => {
+        registrationUpdates.push(args.data);
+        row = { ...row, ...args.data };
+        return { ...row };
+      },
+    },
+    user: { findMany: async () => users },
+    registrationMember: {
+      findMany: async () => [],
+      deleteMany: async () => undefined,
+      createMany: async () => undefined,
+    },
+    auditLog: { create: async ({ data }) => { audits.push(data); return data; } },
+  };
+  const detail = {
+    ...row,
+    teamName: "Quest Two",
+    reservedUntil: null,
+    country: "Sri Lanka",
+    teamTag: "Q2",
+    organizationRequested: false,
+    adminSlotReservation: null,
+    createdAt: new Date("2026-07-20T10:00:00.000Z"),
+    teamLogoName: null,
+    tournament: { ...row.tournament, slug: "quest-cup", status: "registration_open", isPublished: true },
+    captainName: "Captain",
+    captainDiscord: "captain",
+    captainRiotId: "Captain#001",
+    members: currentMembers.map((member) => ({ ...member, inviteRespondedAt: new Date(), user: null })),
+  };
+  const { module: adminService, restore } = loadAdminService({
+    $transaction: async (work) => work(tx),
+    teamRegistration: { findUnique: async () => detail },
+  });
+
+  try {
+    await adminService.correctTeamRegistrationRoster(
+      "registration-1",
+      { members: requestedMembers },
+      { actorUserId: "admin-1" }
+    );
+
+    assert.equal(registrationUpdates[0].verificationStatus, "verified");
+    assert.deepEqual(registrationUpdates[1], { status: "approved" });
+    assert.deepEqual(
+      audits.map((audit) => audit.action),
+      ["team_registration.roster_corrected", "team_registration.status_changed"]
+    );
   } finally {
     restore();
   }

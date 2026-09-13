@@ -65,7 +65,8 @@ free-registration/admin-waiver paths.
 inside the caller's transaction at each point where the last outstanding thing
 is settled: registration creation for a free entry,
 `refreshRegistrationVerificationStatus` when the final invitation is accepted,
-and the paid transitions in
+an admin setting verification to `verified` or a roster correction that leaves
+every invitation accepted (`admin.service.js`), and the paid transitions in
 `payment.service.js` and `bank-transfer.service.js`. It produces the same record
 as the admin path — identity snapshot plus an audit row, written with no actor
 and source `system` — but never forces an outstanding invitation to accepted and
