@@ -3,6 +3,7 @@
 import { Fragment, useEffect, useState, type FormEvent } from "react";
 import ValorantEmptyState from "@/components/admin/valorant/ValorantEmptyState";
 import ValorantErrorAlert from "@/components/admin/valorant/ValorantErrorAlert";
+import ValorantLeaderboardRemovalsPanel from "@/components/admin/valorant/ValorantLeaderboardRemovalsPanel";
 import ValorantLoadingState from "@/components/admin/valorant/ValorantLoadingState";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -18,9 +19,16 @@ import { formatAdminCompactDateTime } from "@/lib/admin";
 import { formatSriLankaDate } from "@/lib/date-time";
 import { cn } from "@/lib/utils";
 import type { ValorantLeaderboardRegistration } from "@/lib/valorant";
-import { removeValorantLeaderboardRegistration } from "@/lib/valorant-api";
+import {
+  removeValorantLeaderboardRegistration,
+  restoreValorantLeaderboardRemoval,
+} from "@/lib/valorant-api";
 
 const REASON_MAX_LENGTH = 500;
+// Recorded as the restore reason when an admin undoes a removal they just made.
+export const UNDO_REMOVAL_REASON = "Undone straight after removing: removed by mistake.";
+
+type LastRemoval = { removalId: string; label: string };
 // The updater refreshes every player roughly hourly, so a row untouched for a
 // day is one it keeps failing on — usually the account a removal is for.
 const STALE_AFTER_MS = 24 * 60 * 60 * 1000;
@@ -36,6 +44,9 @@ export default function ValorantLeaderboardPlayersManager() {
   const [removingPuuid, setRemovingPuuid] = useState<string | null>(null);
   const [reason, setReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [lastRemoval, setLastRemoval] = useState<LastRemoval | null>(null);
+  const [undoing, setUndoing] = useState(false);
+  const [removalsVersion, setRemovalsVersion] = useState(0);
 
   const registrationsQuery = useValorantLeaderboardRegistrations(query, page);
   // A newer search is loading while the previous results are still shown.
@@ -86,8 +97,11 @@ export default function ValorantLeaderboardPlayersManager() {
     if (!trimmed) return;
     setSubmitting(true);
     try {
-      await removeValorantLeaderboardRegistration(entry.puuid, trimmed);
-      showToast({ title: `${entry.name}#${entry.tag} removed from the leaderboard`, tone: "success" });
+      const result = await removeValorantLeaderboardRegistration(entry.puuid, trimmed);
+      const label = `${entry.name}#${entry.tag}`;
+      showToast({ title: `${label} removed from the leaderboard`, tone: "success" });
+      setLastRemoval(result.removalId ? { removalId: result.removalId, label } : null);
+      setRemovalsVersion((version) => version + 1);
       closeRemoval();
       if (entries.length === 1 && page > 1) {
         setPage(page - 1);
@@ -102,6 +116,23 @@ export default function ValorantLeaderboardPlayersManager() {
     }
   };
 
+  const undoLastRemoval = async () => {
+    if (!lastRemoval) return;
+    setUndoing(true);
+    try {
+      await restoreValorantLeaderboardRemoval(lastRemoval.removalId, UNDO_REMOVAL_REASON);
+      showToast({ title: `${lastRemoval.label} restored to the leaderboard`, tone: "success" });
+      setLastRemoval(null);
+      await registrationsQuery.refetch();
+    } catch (undoError) {
+      const message = undoError instanceof Error ? undoError.message : "Could not undo this removal.";
+      showToast({ title: message, tone: "error" });
+    } finally {
+      setUndoing(false);
+      setRemovalsVersion((version) => version + 1);
+    }
+  };
+
   return (
     <div className="grid min-w-0 gap-4 sm:gap-6">
       <div>
@@ -111,6 +142,25 @@ export default function ValorantLeaderboardPlayersManager() {
           search, players the rank updater has not refreshed for longest are listed first; with one, the best matches are.
         </p>
       </div>
+
+      {lastRemoval ? (
+        <div
+          role="status"
+          className="flex min-w-0 flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-300"
+        >
+          <p className="min-w-0 break-words">
+            <span className="font-semibold text-white">{lastRemoval.label}</span> was removed from the leaderboard.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" size="sm" disabled={undoing} onClick={() => void undoLastRemoval()}>
+              {undoing ? "Undoing…" : "Undo"}
+            </Button>
+            <Button type="button" variant="ghost" size="sm" disabled={undoing} onClick={() => setLastRemoval(null)}>
+              Dismiss
+            </Button>
+          </div>
+        </div>
+      ) : null}
 
       <LeaderboardSearchForm
         search={search}
@@ -248,7 +298,7 @@ export default function ValorantLeaderboardPlayersManager() {
                                       its next pass, unless they have the Manual role.
                                     </li>
                                     <li>The rank shown on their Quest profile is cleared. Their linked game account stays.</li>
-                                    <li>They can register again at any time.</li>
+                                    <li>They can register again at any time, and you can restore them from Removed players below.</li>
                                   </ul>
                                 </div>
                                 <label className="grid gap-1.5 text-sm text-slate-300">
@@ -315,6 +365,14 @@ export default function ValorantLeaderboardPlayersManager() {
           ) : null}
         </>
       )}
+
+      <ValorantLeaderboardRemovalsPanel
+        refreshToken={removalsVersion}
+        onRestored={() => {
+          setLastRemoval(null);
+          void registrationsQuery.refetch();
+        }}
+      />
     </div>
   );
 }

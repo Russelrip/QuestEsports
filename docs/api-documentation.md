@@ -1294,11 +1294,13 @@ Quest admin routes for the VALORANT platform integration. Every route lives unde
 | `GET` | `/api/v1/admin/valorant/teams/{teamId}/series` | `GET /api/v1/teams/{team_id}/series` |
 | `GET` | `/api/v1/admin/valorant/reconciliation` | reconciliation queries via FastAPI reads only (§8.3) |
 | `GET` | `/api/v1/admin/valorant/leaderboard/players` | `GET /api/v1/leaderboard/players` — every player leaderboard registration, including rows the public board hides; `q`, `page`, `per_page`. Open to admins and to users with the `valorant_leaderboard` staff permission |
-| `DELETE` | `/api/v1/admin/valorant/leaderboard/players/{puuid}` | `DELETE /api/v1/leaderboard/players/{puuid}` — body `{ reason }` required; audited as `valorant.leaderboard_player.remove`; also clears the linked player's cached profile rank. Open to admins and to users with the `valorant_leaderboard` staff permission |
+| `DELETE` | `/api/v1/admin/valorant/leaderboard/players/{puuid}` | `DELETE /api/v1/leaderboard/players/{puuid}` — body `{ reason }` required; audited as `valorant.leaderboard_player.remove`; also clears the linked player's cached profile rank. The platform keeps a copy of the row and the response carries its `removalId`. Open to admins and to users with the `valorant_leaderboard` staff permission |
+| `GET` | `/api/v1/admin/valorant/leaderboard/removals` | `GET /api/v1/leaderboard/removals` — removed registrations newest first; `q` (Riot ID or Discord username), `page`, `per_page` (max 100). Each entry has `removalId`, the row as removed, `removedAt`/`removedBy`, `restoredAt`/`restoredBy` (`{ id, username }`), and `registeredAgain`, `superseded`, `restorable`. Removals made before migration `0017` were not kept. Open to admins and to users with the `valorant_leaderboard` staff permission |
+| `POST` | `/api/v1/admin/valorant/leaderboard/removals/{removalId}/restore` | `POST /api/v1/leaderboard/removals/{removal_id}/restore` — body `{ reason }` required; re-inserts the removed row unchanged and audits `valorant.leaderboard_player.restore`. `409` when already restored (`LEADERBOARD_REMOVAL_ALREADY_RESTORED`), when the player was removed again later (`LEADERBOARD_REMOVAL_SUPERSEDED`), when the PUUID is registered again (`LEADERBOARD_PLAYER_ALREADY_REGISTERED`) or when its Discord identity now belongs to another registration (`LEADERBOARD_DISCORD_ALREADY_REGISTERED`); `404` for an unknown removal. Open to admins and to users with the `valorant_leaderboard` staff permission |
 
 Responses follow the standard envelope `{ success: true, data: <payload>, meta: { serverNow } }`; errors go through `errorHandler` with `body.error.code`.
 
-The two leaderboard routes are the only `/api/v1/admin/valorant/*` routes that are not admin-only: they are declared before the `requireAdmin` guard and use `requireStaffPermission("valorant_leaderboard")` instead.
+The four leaderboard routes are the only `/api/v1/admin/valorant/*` routes that are not admin-only: they are declared before the `requireAdmin` guard and use `requireStaffPermission("valorant_leaderboard")` instead.
 
 ### Staff permissions
 

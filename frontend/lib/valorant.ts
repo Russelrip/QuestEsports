@@ -274,7 +274,54 @@ export type ValorantLeaderboardRegistrationPage = {
 
 export type ValorantLeaderboardRemoval = {
   removed: ValorantLeaderboardRegistration;
-  rankingsCleared: number;
+  // Null only if the platform did not keep a copy (older VALORANT backend).
+  removalId: string | null;
+  rankingsCleared: number | null;
+};
+
+// The admin who acted; `username` is null when the account no longer exists.
+export type ValorantLeaderboardActor = { id: string | null; username: string | null };
+
+export type ValorantLeaderboardRemovedPlayer = {
+  removalId: string;
+  puuid: string;
+  name: string;
+  tag: string;
+  discordUsername: string;
+  currentTier: string | null;
+  elo: number | null;
+  lastPlayed: string | null;
+  removedAt: string;
+  removedBy: ValorantLeaderboardActor | null;
+  restoredAt: string | null;
+  restoredBy: ValorantLeaderboardActor | null;
+  // The PUUID has a registration again, so restoring would collide.
+  registeredAgain: boolean;
+  // The same player was removed again later; only that removal can be restored.
+  superseded: boolean;
+  restorable: boolean;
+};
+
+export type ValorantLeaderboardRemovalPage = {
+  entries: ValorantLeaderboardRemovedPlayer[];
+  total: number;
+  page: number;
+  perPage: number;
+  totalPages: number;
+};
+
+export type ValorantLeaderboardRestore = {
+  restored: ValorantLeaderboardRegistration;
+  removalId: string;
+  removedAt: string | null;
+};
+
+/** Why a removal cannot be restored, or null when it can. */
+export const leaderboardRemovalBlocker = (entry: ValorantLeaderboardRemovedPlayer): string | null => {
+  if (entry.restoredAt) return "Already restored";
+  if (entry.superseded) return "Removed again later — restore the newer removal";
+  if (entry.registeredAgain) return "Registered again";
+  return entry.restorable ? null : "Cannot be restored";
 };
 
 export type ValorantRegistrationPreview = {

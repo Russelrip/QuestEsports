@@ -82,7 +82,7 @@ revoking access is admin-only and audited as
 
 | Area | Key | What it opens |
 | --- | --- | --- |
-| VALORANT leaderboard | `valorant_leaderboard` | Admin → Valorant → **Leaderboard Players**: search registrations and remove players. The other Valorant tabs stay admin-only. |
+| VALORANT leaderboard | `valorant_leaderboard` | Admin → Valorant → **Leaderboard Players**: search registrations, remove players, and restore removed ones. The other Valorant tabs stay admin-only. |
 
 Adding an area: add the value to the `StaffPermission` enum (Prisma schema and
 a migration), add it to the catalog in
@@ -537,6 +537,34 @@ Current email-producing workflows are documented in [Email System](./email-syste
 - Store exported files only where trusted operators can access them.
 - Back up PostgreSQL, `UPLOAD_ROOT`, and `PRIVATE_UPLOAD_ROOT` together; admin exports are recreated from database and upload metadata when needed.
 - Bank-transfer downloads and recruitment exports contain sensitive personal/payment evidence; do not keep them in shared download folders.
+
+## Removing and Restoring Leaderboard Players
+
+Admin → Valorant → **Leaderboard Players** lists every registration. **Remove**
+takes a reason (kept in the audit log) and takes the player off the public
+board, out of the rank updater and Discord bot passes, and clears the rank on
+their Quest profile.
+
+A removal can be undone:
+
+- Straight after removing, an **Undo** banner appears above the list. It restores
+  the player with the reason "Undone straight after removing: removed by mistake."
+- Any time later, **Removed players** below the list shows removals newest
+  first. **Restore** takes a reason and puts the registration back exactly as it
+  was: same Riot account, Discord, rank and history. The updater refreshes the
+  rank within the hour, the Discord bot restores rank roles on its next pass, and
+  the profile rank returns with the next ranking sync.
+
+Restore is refused, with the reason shown, when the removal was already
+restored, when the same player was removed again later (restore that newer
+removal), when the player has registered again, or when their Discord account is
+now registered to someone else. Both actions are audited
+(`valorant.leaderboard_player.remove` / `.restore`) and open to admins and to
+staff with the `valorant_leaderboard` area.
+
+Removals made before restoring existed (VALORANT migration `0017`) were not kept
+and cannot be restored from the page. The copy of a removed player is kept
+indefinitely, including when the player asked to be removed.
 
 ## VALORANT Admin Verification
 

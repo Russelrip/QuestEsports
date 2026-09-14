@@ -43,6 +43,15 @@ private registration fields to public components. Event summary responses omit
 payment evidence, admin holds/notes, and private upload names; full sensitive
 records are loaded only in the existing admin detail workflow.
 
+## VALORANT leaderboard players
+
+- `valorant/ValorantLeaderboardPlayersManager.tsx` searches registrations and
+  removes one with a reason, then offers a one-click **Undo** for that removal.
+- `valorant/ValorantLeaderboardRemovalsPanel.tsx` lists removals newest first and
+  restores one with a reason; whether a row can be restored comes from the
+  platform (`restorable`, `registeredAgain`, `superseded`), and a refused restore
+  shows the platform's message.
+
 ## Audit log
 
 - `AdminAuditLog.tsx` renders `/admin/audit-log`: filters (opened from URL

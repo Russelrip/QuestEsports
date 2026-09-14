@@ -214,3 +214,172 @@ test("listRegistrations trims the query and clamps paging", async () => {
 
   assert.deepEqual(seen, { query: "chamsy", page: 1, perPage: 200, actorUserId: ADMIN_ID });
 });
+
+const REMOVAL_ID = "0b5c9a8e-2f4d-4b7e-9c1a-3d5e7f9a1b2c";
+
+test("removeAdminRegistration passes on the removal id so the removal can be restored", async () => {
+  const service = loadService({
+    client: { removeRegistration: async () => ({ ...upstreamRow, removal_id: REMOVAL_ID }) },
+    prisma: { playerRanking: { deleteMany: async () => ({ count: 0 }) } },
+  });
+
+  const result = await service.removeAdminRegistration({ puuid: upstreamRow.puuid, actorUserId: ADMIN_ID });
+
+  assert.equal(result.removalId, REMOVAL_ID);
+});
+
+test("listAdminRemovals maps upstream rows and names the admins who acted", async () => {
+  let seen;
+  let userLookup;
+  const service = loadService({
+    client: {
+      listRemovals: async (input) => {
+        seen = input;
+        return {
+          entries: [
+            {
+              removal_id: REMOVAL_ID, puuid: upstreamRow.puuid, name: "CasperYT", tag: "1991",
+              discord_username: "janithbokula.", current_tier: "Diamond 2", elo: 1621,
+              last_played_match: "2026-09-12T20:56:09+00:00", removed_at: "2026-09-14T07:33:25+00:00",
+              removed_by: ADMIN_ID, restored_at: null, restored_by: null,
+              registered_again: false, superseded: false, restorable: true,
+            },
+            {
+              removal_id: "r2", puuid: "p2", name: "Gone", tag: "0001", discord_username: "gone",
+              current_tier: null, elo: null, last_played_match: null, removed_at: "2026-09-13T20:14:46+00:00",
+              removed_by: "quest-leaderboard-system", restored_at: null, restored_by: null,
+              registered_again: true, superseded: false, restorable: false,
+            },
+          ],
+          total: 2, page: 1, per_page: 20, total_pages: 1,
+        };
+      },
+    },
+    prisma: {
+      user: {
+        findMany: async (args) => {
+          userLookup = args;
+          return [{ id: ADMIN_ID, username: "Russel" }];
+        },
+      },
+    },
+  });
+
+  const result = await service.listAdminRemovals({ query: "casper", page: 1, perPage: 20, actorUserId: ADMIN_ID });
+
+  assert.deepEqual(seen, { query: "casper", page: 1, perPage: 20, actorUserId: ADMIN_ID });
+  // Only real user ids reach the uuid column.
+  assert.deepEqual(userLookup.where, { id: { in: [ADMIN_ID] } });
+  assert.deepEqual(result.entries[0], {
+    removalId: REMOVAL_ID, puuid: upstreamRow.puuid, name: "CasperYT", tag: "1991",
+    discordUsername: "janithbokula.", currentTier: "Diamond 2", elo: 1621,
+    lastPlayed: "2026-09-12T20:56:09+00:00", removedAt: "2026-09-14T07:33:25+00:00",
+    removedBy: { id: ADMIN_ID, username: "Russel" }, restoredAt: null, restoredBy: null,
+    registeredAgain: false, superseded: false, restorable: true,
+  });
+  assert.deepEqual(result.entries[1].removedBy, { id: null, username: null });
+  assert.equal(result.entries[1].restorable, false);
+  assert.equal(result.totalPages, 1);
+});
+
+test("restoreAdminRemoval restores upstream as the admin and returns the registration", async () => {
+  let seen;
+  const service = loadService({
+    client: {
+      restoreRemoval: async (input) => {
+        seen = input;
+        return { ...upstreamRow, on_leaderboard: true, removal_id: REMOVAL_ID, removed_at: "2026-09-14T07:33:25+00:00", removed_by: ADMIN_ID };
+      },
+    },
+  });
+
+  const result = await service.restoreAdminRemoval({ removalId: REMOVAL_ID, actorUserId: ADMIN_ID });
+
+  assert.deepEqual(seen, { removalId: REMOVAL_ID, actorUserId: ADMIN_ID });
+  assert.equal(result.restored.name, "Chamsy");
+  assert.equal(result.restored.onLeaderboard, true);
+  assert.equal(result.removalId, REMOVAL_ID);
+  assert.equal(result.removedAt, "2026-09-14T07:33:25+00:00");
+});
+
+test("restoreRemoval requires a reason and never calls the service without one", async () => {
+  let called = false;
+  const controller = loadController({
+    service: { restoreAdminRemoval: async () => { called = true; } },
+  });
+
+  for (const body of [{}, { reason: "" }, { reason: "   " }, { reason: 42 }, { reason: "x".repeat(501) }]) {
+    const { error } = await run(controller.restoreRemoval, { params: { removalId: REMOVAL_ID }, body, user: { id: ADMIN_ID } });
+    assert.equal(error?.statusCode, 400, JSON.stringify(body).slice(0, 40));
+  }
+  assert.equal(called, false);
+});
+
+test("restoreRemoval audits the restore with the Riot ID and reason, without the PUUID", async () => {
+  const audits = [];
+  const controller = loadController({
+    audits,
+    service: {
+      restoreAdminRemoval: async () => ({
+        restored: {
+          puuid: upstreamRow.puuid, name: "CasperYT", tag: "1991", discordUsername: "janithbokula.",
+          currentTier: "Diamond 2", elo: 1621, lastPlayed: null, updateSource: "updater_service",
+          updatedAt: "2026-09-14T06:47:06+00:00", onLeaderboard: true,
+        },
+        removalId: REMOVAL_ID,
+        removedAt: "2026-09-14T07:33:25+00:00",
+      }),
+    },
+  });
+
+  const { calls, error } = await run(controller.restoreRemoval, {
+    params: { removalId: REMOVAL_ID },
+    body: { reason: " Removed the wrong CasperYT " },
+    user: { id: ADMIN_ID },
+  });
+
+  assert.equal(error, undefined);
+  assert.equal(calls.json.data.restored.name, "CasperYT");
+  assert.equal(audits.length, 1);
+  const [audit] = audits;
+  assert.equal(audit.action, "valorant.leaderboard_player.restore");
+  assert.equal(audit.reason, "Removed the wrong CasperYT");
+  assert.equal(audit.source, "admin");
+  assert.deepEqual(audit.beforeData, { removed: true, removalId: REMOVAL_ID, removedAt: "2026-09-14T07:33:25+00:00" });
+  assert.equal(audit.afterData.riotId, "CasperYT#1991");
+  assert.equal(JSON.stringify(audit).includes(upstreamRow.puuid), false);
+});
+
+test("restoreRemoval records nothing when upstream refuses the restore", async () => {
+  const audits = [];
+  const controller = loadController({
+    audits,
+    service: {
+      restoreAdminRemoval: async () => {
+        const error = new Error("this player is registered on the leaderboard again, so there is nothing to restore");
+        error.statusCode = 409;
+        throw error;
+      },
+    },
+  });
+
+  const { error } = await run(controller.restoreRemoval, {
+    params: { removalId: REMOVAL_ID },
+    body: { reason: "Mistake" },
+    user: { id: ADMIN_ID },
+  });
+
+  assert.equal(error.statusCode, 409);
+  assert.equal(audits.length, 0);
+});
+
+test("listRemovals trims the query and clamps paging", async () => {
+  let seen;
+  const controller = loadController({
+    service: { listAdminRemovals: async (input) => { seen = input; return { entries: [] }; } },
+  });
+
+  await run(controller.listRemovals, { query: { q: "  casper ", page: "-2", per_page: "900" }, user: { id: ADMIN_ID } });
+
+  assert.deepEqual(seen, { query: "casper", page: 1, perPage: 100, actorUserId: ADMIN_ID });
+});
