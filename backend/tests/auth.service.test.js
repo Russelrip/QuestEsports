@@ -635,3 +635,62 @@ test("verification links are claimed atomically across concurrent requests", asy
     restore();
   }
 });
+
+test("confirming an email change alerts the previous address, not the new one", async () => {
+  const alerts = [];
+  const tx = {
+    user: {
+      update: async ({ data }) => ({ ...user, ...data }),
+    },
+    emailChangeToken: { updateMany: async () => ({ count: 1 }) },
+    verificationToken: { updateMany: async () => ({ count: 1 }) },
+    session: { deleteMany: async () => undefined },
+  };
+  const { module: authService, restore } = loadAuthService({
+    prismaOverride: {
+      emailChangeToken: {
+        findFirst: async () => ({
+          id: "email-change-1",
+          userId: user.id,
+          nextEmail: "someone-else@example.com",
+          nextEmailNormalized: "someone-else@example.com",
+          user: { ...user, pendingEmailNormalized: "someone-else@example.com" },
+        }),
+      },
+      $transaction: async (callback) => callback(tx),
+    },
+    additionalMocks: {
+      [securityEventModulePath]: {
+        sendSecurityEventEmail: async (args) => {
+          alerts.push(args);
+        },
+      },
+    },
+  });
+
+  try {
+    const result = await authService.confirmEmailChange({ token: "raw-token" });
+    assert.equal(result.email, "someone-else@example.com");
+    assert.equal(alerts.length, 1);
+    assert.equal(alerts[0].email, "captain@example.com");
+    assert.match(alerts[0].message, /so\*\*\*\*@example\.com/);
+    assert.doesNotMatch(alerts[0].message, /someone-else/);
+    assert.doesNotMatch(alerts[0].actionUrl || "", /\/profile/);
+  } finally {
+    restore();
+  }
+});
+
+test("maskEmail keeps a recognisable prefix and the domain, never the whole local part", () => {
+  const { module: authService, restore } = loadAuthService();
+  try {
+    assert.equal(authService.maskEmail("someone-else@example.com"), "so****@example.com");
+    assert.equal(authService.maskEmail("abc@example.com"), "ab****@example.com");
+    assert.equal(authService.maskEmail("ab@example.com"), "a****@example.com");
+    assert.equal(authService.maskEmail("a@example.com"), "a****@example.com");
+    assert.equal(authService.maskEmail("not-an-address"), "****");
+    assert.equal(authService.maskEmail(null), "****");
+  } finally {
+    restore();
+  }
+});

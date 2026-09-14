@@ -1,6 +1,7 @@
 const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
 const { Prisma } = require("../../generated/prisma");
+const { env } = require("../../config/env");
 const { prisma } = require("../../lib/prisma");
 const { HttpError } = require("../../lib/http-error");
 const { logger } = require("../../lib/logger");
@@ -228,6 +229,17 @@ const consumeMobileOAuthGrant = async ({ token, codeVerifier }) => {
     provider: grant.provider,
     user: mapUserForResponse(grant.user),
   };
+};
+
+// Enough of an address for its owner to recognise it, not enough for anyone
+// else to write to it: the first one or two characters of the local part and
+// the domain. The stars are a fixed run so the mask does not give away length.
+const maskEmail = (email) => {
+  const value = String(email || "");
+  const at = value.lastIndexOf("@");
+  if (at < 1) return "****";
+  const local = value.slice(0, at);
+  return `${local.slice(0, local.length > 2 ? 2 : 1)}****${value.slice(at)}`;
 };
 
 const sendSecurityAlert = async ({
@@ -938,12 +950,21 @@ const confirmEmailChange = async ({ token }) => {
       return updatedUser;
     });
 
+    // Sent to the address the account had before, not the one it has now. The
+    // new address just proved itself by clicking the link, so telling it about
+    // the change tells nobody anything; the person who needs to hear is whoever
+    // held the old one, in case the change was not theirs. By now they cannot
+    // sign in or reset a password (both go to the new address), so the email
+    // points them at the public contact page rather than their profile.
     await sendSecurityAlert({
-      user,
+      user: { ...user, email: emailChangeRecord.user.email },
       subject: "Quest E-sports email address changed",
       title: "Email address changed",
-      message:
-        "the email address on your Quest E-sports account was updated successfully.",
+      message: `the email address on your Quest E-sports account was changed to ${maskEmail(user.email)}.`,
+      actionLabel: "Contact Quest E-sports",
+      actionUrl: env.APP_URL ? new URL("/contact", env.APP_URL).toString() : "",
+      outro:
+        "If you made this change, you can ignore this email. If you did not, contact us right away: you will no longer be able to sign in or reset your password with this address.",
     });
 
     return mapUserForResponse(user);
@@ -1097,6 +1118,7 @@ const changePassword = async ({ currentUser, body, currentSessionId }) => {
 
 module.exports = {
   PUBLIC_USER_SELECT,
+  maskEmail,
   createSignup,
   authenticateUser,
   markUserLoginSucceeded,
