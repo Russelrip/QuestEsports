@@ -1,6 +1,7 @@
 const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
 const { Prisma } = require("../../generated/prisma");
+const { env } = require("../../config/env");
 const { prisma } = require("../../lib/prisma");
 const { HttpError } = require("../../lib/http-error");
 const { logger } = require("../../lib/logger");
@@ -938,12 +939,21 @@ const confirmEmailChange = async ({ token }) => {
       return updatedUser;
     });
 
+    // Sent to the address the account had before, not the one it has now. The
+    // new address just proved itself by clicking the link, so telling it about
+    // the change tells nobody anything; the person who needs to hear is whoever
+    // held the old one, in case the change was not theirs. By now they cannot
+    // sign in or reset a password (both go to the new address), so the email
+    // points them at the public contact page rather than their profile.
     await sendSecurityAlert({
-      user,
+      user: { ...user, email: emailChangeRecord.user.email },
       subject: "Quest E-sports email address changed",
       title: "Email address changed",
-      message:
-        "the email address on your Quest E-sports account was updated successfully.",
+      message: `the email address on your Quest E-sports account was changed to ${user.email}.`,
+      actionLabel: "Contact Quest E-sports",
+      actionUrl: env.APP_URL ? new URL("/contact", env.APP_URL).toString() : "",
+      outro:
+        "If you made this change, you can ignore this email. If you did not, contact us right away: you will no longer be able to sign in or reset your password with this address.",
     });
 
     return mapUserForResponse(user);
