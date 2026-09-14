@@ -673,8 +673,23 @@ test("confirming an email change alerts the previous address, not the new one", 
     assert.equal(result.email, "someone-else@example.com");
     assert.equal(alerts.length, 1);
     assert.equal(alerts[0].email, "captain@example.com");
-    assert.match(alerts[0].message, /someone-else@example\.com/);
+    assert.match(alerts[0].message, /so\*\*\*\*@example\.com/);
+    assert.doesNotMatch(alerts[0].message, /someone-else/);
     assert.doesNotMatch(alerts[0].actionUrl || "", /\/profile/);
+  } finally {
+    restore();
+  }
+});
+
+test("maskEmail keeps a recognisable prefix and the domain, never the whole local part", () => {
+  const { module: authService, restore } = loadAuthService();
+  try {
+    assert.equal(authService.maskEmail("someone-else@example.com"), "so****@example.com");
+    assert.equal(authService.maskEmail("abc@example.com"), "ab****@example.com");
+    assert.equal(authService.maskEmail("ab@example.com"), "a****@example.com");
+    assert.equal(authService.maskEmail("a@example.com"), "a****@example.com");
+    assert.equal(authService.maskEmail("not-an-address"), "****");
+    assert.equal(authService.maskEmail(null), "****");
   } finally {
     restore();
   }

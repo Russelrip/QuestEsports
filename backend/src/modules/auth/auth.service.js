@@ -231,6 +231,17 @@ const consumeMobileOAuthGrant = async ({ token, codeVerifier }) => {
   };
 };
 
+// Enough of an address for its owner to recognise it, not enough for anyone
+// else to write to it: the first one or two characters of the local part and
+// the domain. The stars are a fixed run so the mask does not give away length.
+const maskEmail = (email) => {
+  const value = String(email || "");
+  const at = value.lastIndexOf("@");
+  if (at < 1) return "****";
+  const local = value.slice(0, at);
+  return `${local.slice(0, local.length > 2 ? 2 : 1)}****${value.slice(at)}`;
+};
+
 const sendSecurityAlert = async ({
   user,
   subject,
@@ -949,7 +960,7 @@ const confirmEmailChange = async ({ token }) => {
       user: { ...user, email: emailChangeRecord.user.email },
       subject: "Quest E-sports email address changed",
       title: "Email address changed",
-      message: `the email address on your Quest E-sports account was changed to ${user.email}.`,
+      message: `the email address on your Quest E-sports account was changed to ${maskEmail(user.email)}.`,
       actionLabel: "Contact Quest E-sports",
       actionUrl: env.APP_URL ? new URL("/contact", env.APP_URL).toString() : "",
       outro:
@@ -1107,6 +1118,7 @@ const changePassword = async ({ currentUser, body, currentSessionId }) => {
 
 module.exports = {
   PUBLIC_USER_SELECT,
+  maskEmail,
   createSignup,
   authenticateUser,
   markUserLoginSucceeded,
