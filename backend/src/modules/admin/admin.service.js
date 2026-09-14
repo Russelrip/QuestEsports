@@ -578,6 +578,10 @@ const listAdminUsers = async ({ page, pageSize, search, role }) => {
 
   if (USER_ROLES.has(normalizedRole)) {
     where.role = normalizedRole;
+  } else if (normalizedRole === "staff") {
+    // Not a role: users who are not admins but hold at least one delegated area.
+    where.role = "user";
+    where.staffPermissions = { some: {} };
   }
 
   const [total, users] = await prisma.$transaction([
@@ -587,12 +591,15 @@ const listAdminUsers = async ({ page, pageSize, search, role }) => {
       orderBy: { createdAt: "desc" },
       skip: (pagination.page - 1) * pagination.pageSize,
       take: pagination.pageSize,
-      select: ADMIN_USER_SELECT,
+      select: { ...ADMIN_USER_SELECT, staffPermissions: { select: { permission: true } } },
     }),
   ]);
 
   return buildPagedResponse({
-    items: users.map(mapUserForResponse),
+    items: users.map((user) => ({
+      ...mapUserForResponse(user),
+      staffPermissions: (user.staffPermissions ?? []).map((grant) => grant.permission).sort(),
+    })),
     total,
     page: pagination.page,
     pageSize: pagination.pageSize,

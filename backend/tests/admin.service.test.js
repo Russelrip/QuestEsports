@@ -3904,3 +3904,37 @@ test("listTeamRegistrations matches a tournament id only when the value is a uui
     { title: { contains: identifier, mode: "insensitive" } },
   ]);
 });
+
+test("listAdminUsers reports each user's staff areas and filters to staff", async () => {
+  const calls = [];
+  const rows = [
+    { id: "u-1", role: "user", staffPermissions: [{ permission: "valorant_leaderboard" }] },
+    { id: "u-2", role: "user", staffPermissions: [] },
+    { id: "u-3", role: "admin" },
+  ];
+  const prisma = {
+    user: {
+      count: async (args) => { calls.push(["count", args]); return rows.length; },
+      findMany: async (args) => { calls.push(["findMany", args]); return rows; },
+    },
+    $transaction: async (operations) => Promise.all(operations),
+  };
+  const { module: service } = loadAdminService(prisma);
+
+  const all = await service.listAdminUsers({ page: 1, pageSize: 10 });
+  const users = all.items ?? all.users;
+  assert.deepEqual(users.map((user) => [user.id, user.staffPermissions]), [
+    ["u-1", ["valorant_leaderboard"]],
+    ["u-2", []],
+    ["u-3", []],
+  ]);
+  const findMany = calls.find(([name]) => name === "findMany")[1];
+  assert.deepEqual(findMany.select.staffPermissions, { select: { permission: true } });
+
+  calls.length = 0;
+  await service.listAdminUsers({ page: 1, pageSize: 10, role: "Staff" });
+  for (const [, args] of calls) {
+    assert.equal(args.where.role, "user");
+    assert.deepEqual(args.where.staffPermissions, { some: {} });
+  }
+});
