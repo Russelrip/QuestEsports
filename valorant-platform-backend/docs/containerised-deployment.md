@@ -92,12 +92,19 @@ returns a non-200 response and can never be reported as the healthy
 
 ## Weekly name-audit boundary
 
-The only supported weekly boundary is the sibling-owned Compose one-shot,
-invoked by `ops/systemd/valorant-name-audit.timer` at Sunday 02:00 Asia/Colombo.
-The timer service loads `/etc/quest-esports/valorant-platform.env`, a
-root-owned EnvironmentFile containing the last successful immutable
-`VALORANT_PLATFORM_IMAGE` digest. It never depends on a transient CD shell or a
-placeholder image.
+The only supported weekly boundary is the Compose one-shot invoked by
+`ops/systemd/valorant-name-audit.timer` at Sunday 02:00 Asia/Colombo, inside the
+updater's Sunday pause window. The service runs `valorant-name-audit` from the
+release bundle `/opt/quest-esports/current` points at, so it uses exactly the
+Compose file, environment and approved image digest the last release admitted.
+It never depends on a transient CD shell, a placeholder image, or the
+pre-cutover `/opt/quest-esports/valorant-platform-backend` checkout.
+
+The audit takes `/var/lock/quest-esports-release.lock` as the image's app user
+(uid 10001), so the Quest tmpfiles entry grants that uid an ACL on the lock
+(`ops/systemd/quest-esports-release-lock.tmpfiles`). Releases start only the
+three long-running services, and rollbacks bring back only those three, so the
+audit runs from the timer and never as a side effect of a deploy.
 `workers/name_audit.py` acquires `/var/lock/quest-esports-release.lock` without
 requiring a global freeze or archive.  A deployment/cutover holding the lock
 causes visible bounded retries; if it remains held, the run visibly skips and

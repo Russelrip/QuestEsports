@@ -243,7 +243,7 @@ if [[ "$mode" == pre-commit ]]; then
   compose --env-file "$rollback_release/.env" -f "$rollback_release/valorant.compose.yml" --project-name valorant-prod down --remove-orphans >/dev/null 2>&1 || recovery_status=1
   if [[ "$previous_database_authority" == quest-postgres ]]; then
     compose --env-file "$previous_release/.env" -f "$previous_release/compose.production.yml" --project-name quest-prod up -d --no-build >/dev/null 2>&1 || recovery_status=1
-    compose --env-file "$previous_release/.env" -f "$previous_release/valorant.compose.yml" --project-name valorant-prod up -d --no-build >/dev/null 2>&1 || recovery_status=1
+    compose --env-file "$previous_release/.env" -f "$previous_release/valorant.compose.yml" --project-name valorant-prod up -d --no-build valorant-platform valorant-updater valorant-discord-bot >/dev/null 2>&1 || recovery_status=1
   else
     if [[ "$first_cutover_recovery" == true ]]; then
       recovery_command "${OLD_APPLICATION_RESTART_COMMAND:-}" restarted || recovery_status=1

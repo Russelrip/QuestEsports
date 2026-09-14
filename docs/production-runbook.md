@@ -764,7 +764,13 @@ checksum pair, with release-bound machine-readable evidence containing
 `schemas=verified:public,valorant`, `uploads=verified:public,private`,
 `archive=verified`, `checksum=verified`, and `remote=verified`, plus the exact
 requested full SHA. Migrations are one-shot operations and are never
-automatically reversed. The manifest's `migrator_image` is passed as
+automatically reversed. The approvals are read from `/etc/quest-esports/release.env`
+itself (the script sources it, overriding the caller's environment), so set them
+there for the one run and blank them again afterwards. A release refused before
+it froze writers, stopped a legacy unit or started a candidate leaves the current
+release running untouched; retrying the same SHA sets the refused, never-admitted
+bundle aside under `/opt/quest-esports/refused-releases/` instead of failing on
+"the release directory already exists". The manifest's `migrator_image` is passed as
 `MIGRATOR_IMAGE` and `EXPECTED_MIGRATOR_IMAGE` to a migrator wrapper only when
 that migration is invoked; the release does not invent a Compose migrator.
 

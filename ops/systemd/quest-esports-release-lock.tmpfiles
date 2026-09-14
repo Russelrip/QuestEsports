@@ -1,1 +1,5 @@
 f /var/lock/quest-esports-release.lock 0660 root deploy -
+# The VALORANT name audit runs as the image's app user (uid 10001) and must take
+# this lock before auditing, but it is in neither the root nor the deploy group.
+# Without this entry it failed with "Permission denied" on every run.
+a+ /var/lock/quest-esports-release.lock - - - - u:10001:rw

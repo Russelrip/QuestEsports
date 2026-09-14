@@ -298,9 +298,14 @@ sudo install -o root -g root -m 644 \
   ops/systemd/quest-esports-release-lock.tmpfiles \
   /etc/tmpfiles.d/quest-esports-release.conf
 sudo systemd-tmpfiles --create /etc/tmpfiles.d/quest-esports-release.conf
+sudo install -o root -g root -m 644   valorant-platform-backend/ops/systemd/valorant-name-audit.service   valorant-platform-backend/ops/systemd/valorant-name-audit.timer   /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable quest-esports-backup.timer quest-esports-backup-freshness.timer
+sudo systemctl enable --now valorant-name-audit.timer
 ```
+
+The tmpfiles entry also grants uid 10001, the VALORANT image's app user, an ACL on
+the release lock so the weekly name audit can take it.
 
 The backup service runs at 02:15 UTC and the freshness service at 05:00 UTC, each with up to a 15-minute randomized delay. Release, migration, backup, and name-audit jobs must acquire `/var/lock/quest-esports-release.lock` before changing shared production state. Inspect installation and recent outcomes without starting a backup or deletion operation:
 
