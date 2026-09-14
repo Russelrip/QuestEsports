@@ -17,7 +17,7 @@ describe("VALORANT player leaderboard", () => {
     const component = read("components/valorant/ValorantLeaderboard.tsx");
     expect(component).toContain('"use client"');
     expect(component).toContain("Register your account");
-    expect(component).toContain("Search by Discord username");
+    expect(read("components/valorant/LeaderboardSearchForm.tsx")).toContain("Search by Discord username");
     expect(component).toContain("entry.discordUsername");
     expect(component).toContain("isTopTen");
     expect(component).toContain("Leaderboard unavailable");
@@ -35,7 +35,8 @@ describe("VALORANT player leaderboard", () => {
     expect(component).toContain("useTransition");
     // Typing must not stack a history entry per keystroke.
     expect(component).toContain("router.replace");
-    expect(component).toContain("MIN_QUERY_LENGTH");
+    expect(component).toContain("effectiveLeaderboardQuery");
+    expect(read("components/valorant/LeaderboardSearchForm.tsx")).toContain("LEADERBOARD_MIN_QUERY_LENGTH = 2");
   });
 
   it("renders every ranked match, not just one exact hit", () => {
@@ -47,10 +48,14 @@ describe("VALORANT player leaderboard", () => {
   });
 
   it("offers a clear control and highlights the matched text", () => {
+    // The search box is shared with the admin Leaderboard Players tab.
     const component = read("components/valorant/ValorantLeaderboard.tsx");
-    expect(component).toContain('aria-label="Clear search"');
-    expect(component).toContain('event.key === "Escape"');
-    expect(component).toContain("<mark");
+    const searchForm = read("components/valorant/LeaderboardSearchForm.tsx");
+    expect(component).toContain("<LeaderboardSearchForm");
+    expect(component).toContain("<Highlight");
+    expect(searchForm).toContain('aria-label="Clear search"');
+    expect(searchForm).toContain('event.key === "Escape"');
+    expect(searchForm).toContain("<mark");
   });
 
   it("keeps the register CTA reachable from the search results", () => {

@@ -108,12 +108,15 @@ const matchScore = (haystack, needle) => {
 // it still matches, but always sorts below a name or Discord hit.
 const TAG_PENALTY = 3;
 
+// The full `name#tag` only counts when the query has a `#` in it. Otherwise
+// every tag hit is also a substring hit on `name#tag`, which scored it as a name
+// match and made the tag penalty dead weight.
 const scoreEntry = (entry, needle) => {
   const candidates = [
     matchScore(normalize(entry.discordUsername), needle),
     matchScore(normalize(entry.name), needle),
-    matchScore(normalize(`${entry.name}#${entry.tag}`), needle),
   ];
+  if (needle.includes("#")) candidates.push(matchScore(normalize(`${entry.name}#${entry.tag}`), needle));
   const tagScore = matchScore(normalize(entry.tag), needle);
   if (tagScore !== null) candidates.push(tagScore + TAG_PENALTY);
   const scores = candidates.filter((score) => score !== null);

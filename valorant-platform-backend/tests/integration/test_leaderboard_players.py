@@ -205,12 +205,47 @@ async def test_list_registrations_includes_hidden_rows_and_matches_every_identit
             assert total == 1, query
 
         # LIKE wildcards in the query are literal, not "match anything".
-        rows, _ = await repo.list_registrations("%", 1, 50)
+        rows, _ = await repo.list_registrations("0%", 1, 50)
         assert [row.puuid for row in rows] == ["pct-1"]
         rows, _ = await repo.list_registrations("0%_l", 1, 50)
         assert [row.puuid for row in rows] == ["pct-1"]
         rows, _ = await repo.list_registrations("hams_", 1, 50)
         assert rows == []
+
+        # Like the public search, one character (or a bare "@x") is not a search.
+        for too_short in ("c", "@c", " % ", "@"):
+            rows, total = await repo.list_registrations(too_short, 1, 50)
+            assert total == 3, too_short
+
+
+async def test_list_registrations_ranks_like_the_public_search(session_factory) -> None:
+    async with session_factory() as session:
+        session.add_all([
+            # Substring of the Riot name, highest ELO: still below better matches.
+            _player(puuid="substring", name="TheSahanBot", tag="AAA", discord_username="bot.one", elo=2500),
+            _player(puuid="prefix", name="Sahani", tag="BBB", discord_username="someone", elo=900),
+            _player(puuid="exact-discord", name="Zed", tag="CCC", discord_username="sahan", elo=100),
+            # Only the tag matches: sorts below every name or Discord hit.
+            _player(puuid="tag-only", name="Other", tag="SAHAN", discord_username="other", elo=3000),
+            # Same score as "prefix" (a prefix hit), higher ELO wins the tie.
+            _player(puuid="prefix-high-elo", name="SahanPro", tag="DDD", discord_username="pro", elo=1800),
+            _player(puuid="unrelated", name="Nobody", tag="EEE", discord_username="nobody", elo=1500),
+        ])
+        await session.commit()
+
+        repo = LeaderboardPlayerRepository(session)
+        rows, total = await repo.list_registrations("  @Sahan ", 1, 50)
+        assert [row.puuid for row in rows] == ["exact-discord", "prefix-high-elo", "prefix", "substring", "tag-only"]
+        assert total == 5
+
+        # A full name#tag is an exact match on that field.
+        rows, _ = await repo.list_registrations("sahani#bbb", 1, 50)
+        assert [row.puuid for row in rows] == ["prefix"]
+
+        # Paging walks the ranked order, not the stalest-first one.
+        first, _ = await repo.list_registrations("sahan", 1, 2)
+        second, _ = await repo.list_registrations("sahan", 2, 2)
+        assert [row.puuid for row in first + second] == ["exact-discord", "prefix-high-elo", "prefix", "substring"]
 
 
 async def test_list_registrations_puts_least_recently_refreshed_first(session_factory) -> None:
