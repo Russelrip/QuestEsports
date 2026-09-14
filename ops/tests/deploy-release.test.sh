@@ -767,6 +767,46 @@ setup_fixture pending-without-approval
 export MIGRATION_PENDING=1
 assert_failed pending-without-approval run_release
 
+# A release refused before it touched anything running (here: a pending
+# migration without approval) must leave the current release running, and must
+# not block retrying the same SHA once the approvals exist. Before this, the
+# pre-commit rollback took the live projects down and up again, and the retry
+# died on "the release directory already exists".
+setup_fixture refused-release-is-retryable
+refused_sha=1111111111111111111111111111111111111111
+export MIGRATION_PENDING=1 REQUIRE_MIGRATION_RECHECK=1
+assert_failed refused-release-is-retryable run_release
+assert_contains "$failure_output" 'migration requires BACKUP_APPROVAL=BACKUP_QUEST_PRODUCTION.'
+assert_contains "$failure_output" 'the release changed no running service; the current release was left running.'
+if grep -Eq '^compose project=[a-z-]+ action=.* (up|down)( |$)' "$TEST_LOG"; then
+  gate_failure 'a release refused before touching any service restarted the live Compose projects'
+fi
+gate_file_contains "$fixture/releases/$refused_sha/release-metadata.txt" 'writer_admitted=false' 'the refused release left no staged bundle'
+export BACKUP_APPROVAL=BACKUP_QUEST_PRODUCTION
+export QUEST_MIGRATION_OWNER_APPROVAL_SHA=$refused_sha VALORANT_MIGRATION_OWNER_APPROVAL_SHA=$refused_sha
+retry_output="$work_directory/refused-release-retry.out"
+run_release >"$retry_output" 2>&1   || { printf 'FAIL: retrying a refused, never-admitted release failed
+' >&2; sed -n '1,60p' "$retry_output" >&2; exit 1; }
+grep -Fq 'set aside the refused, never-admitted bundle for this SHA' "$retry_output"   || gate_failure 'the retry did not report setting the refused bundle aside'
+refused_copies=("$fixture"/refused-releases/"$refused_sha"-*)
+[[ -f "${refused_copies[0]}/release-metadata.txt" ]]   || gate_failure 'the refused bundle was not kept under refused-releases'
+gate_file_contains "$fixture/releases/$refused_sha/release-metadata.txt" 'writer_admitted=true' 'the retried release was not admitted'
+
+# A bundle that ever started writer admission is never set aside or reused.
+setup_fixture admitted-bundle-stays-immutable
+mkdir -p "$fixture/releases/$refused_sha"
+printf 'commit_sha=%s
+writer_admitted=false
+current_pointer_updated=false
+' "$refused_sha" > "$fixture/releases/$refused_sha/release-metadata.txt"
+: > "$fixture/releases/$refused_sha/commit-point.txt"
+assert_failed admitted-bundle-stays-immutable run_release
+assert_contains "$failure_output" 'the release directory already exists; release directories are immutable.'
+[[ -e "$fixture/releases/$refused_sha/commit-point.txt" ]]   || gate_failure 'a bundle that started writer admission was moved'
+if compgen -G "$fixture/refused-releases/*" >/dev/null; then
+  gate_failure 'a bundle that started writer admission was set aside'
+fi
+
 setup_fixture failed-readiness
 export FAIL_QUEST_HEALTH=1
 assert_failed failed-readiness run_release

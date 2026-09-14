@@ -790,7 +790,7 @@ precommit_rollback() {
   fi
   if [[ -n "${PREVIOUS_RELEASE_DIR:-}" && -f "$PREVIOUS_RELEASE_DIR/compose.production.yml" && -f "$PREVIOUS_RELEASE_DIR/valorant.compose.yml" && -f "$PREVIOUS_RELEASE_DIR/.env" ]]; then
     compose --env-file "$PREVIOUS_RELEASE_DIR/.env" -f "$PREVIOUS_RELEASE_DIR/compose.production.yml" --project-name quest-prod up -d --no-build >/dev/null 2>&1 || status=1
-    compose --env-file "$PREVIOUS_RELEASE_DIR/.env" -f "$PREVIOUS_RELEASE_DIR/valorant.compose.yml" --project-name valorant-prod up -d --no-build >/dev/null 2>&1 || status=1
+    compose --env-file "$PREVIOUS_RELEASE_DIR/.env" -f "$PREVIOUS_RELEASE_DIR/valorant.compose.yml" --project-name valorant-prod up -d --no-build valorant-platform valorant-updater valorant-discord-bot >/dev/null 2>&1 || status=1
   fi
   if [[ "$old_valorant_stop_attempted" == true && "$old_valorant_was_active" == true && -n "${OLD_VALORANT_RESTART_COMMAND:-}" ]]; then
     if [[ -n "${OLD_VALORANT_UNMASKED_CHECK:-}" ]]; then recovery_hook OLD_VALORANT_UNMASKED_CHECK unmasked || status=1; fi

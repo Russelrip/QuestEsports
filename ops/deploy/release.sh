@@ -421,6 +421,7 @@ old_units_stopped=false
 old_valorant_stop_attempted=false
 postcommit_armed=false
 writer_admission_started=false
+candidate_start_attempted=false
 
 compose() { "$DOCKER_BIN" compose "$@"; }
 compose_common_args() { :; }
@@ -765,6 +766,14 @@ record_admission_state() {
 precommit_rollback() {
   local rollback_status=0
   set +e
+  # A refusal before this release froze writers, stopped a legacy unit or
+  # started a candidate has not touched anything that is running: migrations
+  # only run after the freeze. Taking the live projects down to bring the same
+  # release straight back up would be an outage with nothing to restore.
+  if [[ "$freeze_active" != true && "$old_valorant_stop_attempted" != true         && "$old_quest_stop_attempted" != true && "$candidate_start_attempted" != true ]]; then
+    say 'pre-commit boundary: the release changed no running service; the current release was left running.' >&2
+    return 0
+  fi
   say 'pre-commit boundary: restoring the previous application release without changing database authority.' >&2
   recovery_hook() {
     local variable="$1" expected="${2:-}" command output rc
@@ -787,7 +796,7 @@ precommit_rollback() {
   if [[ "${previous_database_authority:-}" == quest-postgres ]]; then
     if [[ -n "$previous_release" && -f "$previous_release/compose.production.yml" ]]; then
       compose --env-file "$previous_release/.env" -f "$previous_release/compose.production.yml" --project-name "$quest_project" up -d --no-build >/dev/null 2>&1 || rollback_status=1
-      compose --env-file "$previous_release/.env" -f "$previous_release/valorant.compose.yml" --project-name "$valorant_project" up -d --no-build >/dev/null 2>&1 || rollback_status=1
+      compose --env-file "$previous_release/.env" -f "$previous_release/valorant.compose.yml" --project-name "$valorant_project" up -d --no-build valorant-platform valorant-updater valorant-discord-bot >/dev/null 2>&1 || rollback_status=1
     fi
   elif [[ "${previous_database_authority:-}" == supabase ]]; then
     if [[ -n "${OLD_APPLICATION_RESTART_COMMAND:-}" ]]; then
@@ -1017,9 +1026,38 @@ previous_database_authority="$("$OLD_DATABASE_AUTHORITATIVE_COMMAND" 2>/dev/null
 [[ "$previous_database_authority" == supabase || "$previous_database_authority" == quest-postgres ]] || die 'previous database authority was ambiguous.'
 [[ "$previous_database_authority" != supabase ]] || die 'first cutover requires cutover.sh; release.sh is for steady-state releases only.'
 
-stage_dir="$releases_root/$release_sha"
-[[ ! -e "$stage_dir" && ! -L "$stage_dir" ]] || die 'the release directory already exists; release directories are immutable.'
-mkdir -p "$stage_dir"
+# A release refused before writer admission leaves its staged bundle behind, and
+# release directories are immutable, so retrying the same SHA (for example with
+# the migration approvals it was refused for) could never proceed. A bundle
+# that provably never admitted writers or became current is set aside, with its
+# recovery evidence, instead of being reused or deleted. Anything else keeps the
+# directory immutable.
+set_aside_refused_stage() {
+  local candidate="$1" metadata refused_root destination
+  [[ -d "$candidate" && ! -L "$candidate" ]] || return 1
+  [[ "$(realpath "$candidate" 2>/dev/null)" != "$(realpath "$previous_release" 2>/dev/null)" ]] || return 1
+  [[ ! -e "$candidate/commit-point.txt" ]] || return 1
+  metadata="$candidate/release-metadata.txt"
+  [[ -f "$metadata" && ! -L "$metadata" ]] || return 1
+  grep -Fxq "commit_sha=$release_sha" "$metadata" || return 1
+  grep -Fxq 'writer_admitted=false' "$metadata" || return 1
+  grep -Fxq 'current_pointer_updated=false' "$metadata" || return 1
+  refused_root="${RELEASE_REFUSED_ROOT:-$RELEASE_ROOT/refused-releases}"
+  [[ "$refused_root" == /* && "$refused_root" != / && "$refused_root" != "$releases_root"/* ]] || return 1
+  mkdir -p -m 700 "$refused_root" && [[ -d "$refused_root" && ! -L "$refused_root" ]] || return 1
+  destination="$refused_root/$release_sha-$(date -u +%Y%m%dT%H%M%SZ)"
+  [[ ! -e "$destination" ]] || return 1
+  mv -T -- "$candidate" "$destination" || return 1
+  say "set aside the refused, never-admitted bundle for this SHA: $destination" >&2
+}
+
+staged_bundle="$releases_root/$release_sha"
+if [[ -e "$staged_bundle" || -L "$staged_bundle" ]]; then
+  set_aside_refused_stage "$staged_bundle" || die 'the release directory already exists; release directories are immutable.'
+fi
+mkdir -p "$staged_bundle"
+# Only a bundle this run created may receive its recovery evidence.
+stage_dir="$staged_bundle"
 cp -- "$QUEST_COMPOSE_TEMPLATE" "$stage_dir/compose.production.yml"
 cp -- "$VALORANT_COMPOSE_SOURCE" "$stage_dir/valorant.compose.yml"
 compose_env_file="$stage_dir/.env"
@@ -1156,6 +1194,7 @@ run_candidate_start() {
   )" || die "$variable command failed."
   [[ "$output" == "started-frozen-read-only group=$group" ]] || die "$variable acknowledgement was invalid."
 }
+candidate_start_attempted=true
 run_candidate_start QUEST_CANDIDATE_FROZEN_START_COMMAND quest "$quest_project"
 run_candidate_start VALORANT_CANDIDATE_FROZEN_START_COMMAND valorant "$valorant_project"
 

@@ -328,8 +328,15 @@ def test_dockerfile_and_timer_enforce_runtime_identity_and_digest_boundary() -> 
     assert "USER app" in dockerfile
     assert "COPY" in dockerfile and "COPY tls" not in dockerfile
     assert "VALORANT_IMAGE:?" in compose
-    assert "EnvironmentFile=-/etc/quest-esports/valorant-platform.env" in timer_service
-    assert "run --rm --no-deps valorant-name-audit" in timer_service
+    # The audit runs from the release bundle `current` points at, never from a
+    # pre-cutover checkout the Quest release pipeline no longer maintains.
+    assert "readlink -f /opt/quest-esports/current" in timer_service
+    assert '--env-file "$$bundle/.env" -f "$$bundle/valorant.compose.yml"' in timer_service
+    assert "--project-name valorant-prod run --rm --no-deps valorant-name-audit" in timer_service
+    assert "docker-compose.production.yml" not in timer_service
+    lock_tmpfiles = (ROOT.parent / "ops/systemd/quest-esports-release-lock.tmpfiles").read_text()
+    # uid 10001 is the image's app user above; it must be able to take the lock.
+    assert "a+ /var/lock/quest-esports-release.lock - - - - u:10001:rw" in lock_tmpfiles
     assert "OnCalendar=Sun *-*-* 02:00:00 Asia/Colombo" in timer
 
 
@@ -574,9 +581,10 @@ def test_cd_and_systemd_timer_reject_mismatched_checkout_paths() -> None:
     canonical = "/opt/quest-esports/valorant-platform-backend"
     assert f"CANONICAL_CHECKOUT_PATH: {canonical}" in cd
     assert '"$APP_DIR" != "$CANONICAL_CHECKOUT_PATH"' in cd
-    assert f"WorkingDirectory={canonical}" in service
-    assert f"VALORANT_CHECKOUT_PATH:-{canonical}" in service
-    assert f'test "$$checkout_path" = "{canonical}"' in service
+    # The name audit no longer runs from that checkout: releases deploy from
+    # /opt/quest-esports/current, and the unit refuses a bundle outside releases/.
+    assert canonical not in service
+    assert "/opt/quest-esports/releases/*) ;;" in service
 
 
 def test_runbook_uses_fail_closed_legacy_writer_sequence() -> None:
