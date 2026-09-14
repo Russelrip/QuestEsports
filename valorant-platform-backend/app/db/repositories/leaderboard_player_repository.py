@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import delete, func, or_, select, update
+from sqlalchemy import case, delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -43,6 +43,44 @@ def _escape_like(value: str) -> str:
     return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
+# Below this a search matches nearly every row, so it is treated as no search.
+MIN_QUERY_LENGTH = 2
+# Riot tags are 3-5 characters, so a bare hit on one is mostly noise: it still
+# matches, but always sorts below a name or Discord hit.
+TAG_PENALTY = 3
+
+
+def _field_score(column, needle: str):
+    """0 exact, 1 prefix, 2 substring, NULL no match. ``needle`` is lowercase."""
+    escaped = _escape_like(needle)
+    value = func.lower(column)
+    return case(
+        (value == needle, 0),
+        (value.like(f"{escaped}%", escape="\\"), 1),
+        (value.like(f"%{escaped}%", escape="\\"), 2),
+        else_=None,
+    )
+
+
+def _match_score(needle: str):
+    """A row's best score across the searchable fields, NULL when none match.
+
+    PostgreSQL's ``LEAST`` ignores NULL arguments, so only a row that no field
+    matches comes out NULL. The full ``name#tag`` only counts when the query
+    has a ``#``: otherwise every tag hit is also a substring of ``name#tag`` and
+    would score as a name match, cancelling the tag penalty.
+    """
+    fields = [
+        _field_score(LeaderboardPlayer.discord_username, needle),
+        _field_score(LeaderboardPlayer.name, needle),
+        _field_score(LeaderboardPlayer.puuid, needle),
+        _field_score(LeaderboardPlayer.tag, needle) + TAG_PENALTY,
+    ]
+    if "#" in needle:
+        fields.append(_field_score(LeaderboardPlayer.name + "#" + LeaderboardPlayer.tag, needle))
+    return func.least(*fields)
+
+
 class LeaderboardPlayerRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
@@ -72,32 +110,42 @@ class LeaderboardPlayerRepository:
         """Every registration, listed or not, for the admin view.
 
         Unlike ``list_page`` nothing is filtered out: the rows an admin most
-        needs to find are exactly the ones the public board hides. ``query``
-        matches a Riot name, tag, ``name#tag``, Discord username or PUUID as a
-        case-insensitive substring. Least recently refreshed first, so rows the
-        updater keeps failing on sit at the top.
+        needs to find are exactly the ones the public board hides.
+
+        With a query, matching and ordering follow the public leaderboard
+        search (Quest ``valorant-leaderboard/service.js``) so the two boxes
+        behave the same: a Discord username, Riot name or ``name#tag`` scores 0
+        for an exact match, 1 for a prefix and 2 for a substring, and a hit on
+        the tag alone scores ``TAG_PENALTY`` higher. The admin view also matches
+        a PUUID. Best score first, then highest ELO. A query shorter than
+        ``MIN_QUERY_LENGTH`` once a leading ``@`` is dropped is ignored, as on
+        the public page.
+
+        Without a query, least recently refreshed first, so rows the updater
+        keeps failing on sit at the top.
         """
-        filters = []
-        needle = query.strip().lstrip("@")
+        needle = query.strip().lstrip("@").lower()
+        if len(needle) < MIN_QUERY_LENGTH:
+            needle = ""
+
+        statement = select(LeaderboardPlayer)
+        count = select(func.count()).select_from(LeaderboardPlayer)
         if needle:
-            pattern = f"%{_escape_like(needle)}%"
-            filters.append(
-                or_(
-                    LeaderboardPlayer.name.ilike(pattern, escape="\\"),
-                    LeaderboardPlayer.tag.ilike(pattern, escape="\\"),
-                    (LeaderboardPlayer.name + "#" + LeaderboardPlayer.tag).ilike(pattern, escape="\\"),
-                    LeaderboardPlayer.discord_username.ilike(pattern, escape="\\"),
-                    LeaderboardPlayer.puuid.ilike(pattern, escape="\\"),
-                )
+            score = _match_score(needle)
+            statement = statement.where(score.is_not(None)).order_by(
+                score.asc(),
+                LeaderboardPlayer.elo.desc().nulls_last(),
+                func.lower(LeaderboardPlayer.name),
+                LeaderboardPlayer.puuid,
             )
+            count = count.where(score.is_not(None))
+        else:
+            statement = statement.order_by(LeaderboardPlayer.updated_at.asc(), LeaderboardPlayer.puuid)
+
         rows = (await self._session.execute(
-            select(LeaderboardPlayer).where(*filters)
-            .order_by(LeaderboardPlayer.updated_at.asc(), LeaderboardPlayer.puuid)
-            .offset((page - 1) * per_page).limit(per_page)
+            statement.offset((page - 1) * per_page).limit(per_page)
         )).scalars().all()
-        total = (await self._session.execute(
-            select(func.count()).select_from(LeaderboardPlayer).where(*filters)
-        )).scalar_one()
+        total = (await self._session.execute(count)).scalar_one()
         return list(rows), total
 
     async def delete(self, puuid: str) -> LeaderboardPlayer | None:

@@ -125,6 +125,18 @@ test("searchLeaderboardPlayers ranks exact over prefix over substring", async ()
   assert.deepEqual(results.map((e) => e.name), ["nova", "novaking", "xxnovaxx"]);
 });
 
+test("searchLeaderboardPlayers sorts a tag-only hit below a name hit, even from a higher rank", async () => {
+  const { module: service } = loadService(snapshotClient([
+    // Rank 1, but only its tag contains the query.
+    player("Other", "NOVA", "private-a"),
+    // Rank 2, a substring of the Riot name.
+    player("xxnovaxx", "BBB", "private-b"),
+  ]));
+  const results = await service.searchLeaderboardPlayers("nova");
+  assert.deepEqual(results.map((e) => e.name), ["xxnovaxx", "Other"]);
+  assert.deepEqual(results.map((e) => e.rank), [2, 1]);
+});
+
 test("searchLeaderboardPlayers ignores queries shorter than two characters", async () => {
   let called = false;
   const client = snapshotClient([player("Sahan", "QST", "sahan")]);

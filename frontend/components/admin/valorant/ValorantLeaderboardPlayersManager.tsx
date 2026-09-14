@@ -1,13 +1,17 @@
 "use client";
 
-import { Fragment, useState, type FormEvent } from "react";
+import { Fragment, useEffect, useState, type FormEvent } from "react";
 import ValorantEmptyState from "@/components/admin/valorant/ValorantEmptyState";
 import ValorantErrorAlert from "@/components/admin/valorant/ValorantErrorAlert";
 import ValorantLoadingState from "@/components/admin/valorant/ValorantLoadingState";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import LeaderboardSearchForm, {
+  Highlight,
+  LEADERBOARD_SEARCH_DEBOUNCE_MS,
+  effectiveLeaderboardQuery,
+} from "@/components/valorant/LeaderboardSearchForm";
 import { useValorantLeaderboardRegistrations } from "@/hooks/api/useValorant";
 import { useToastStore } from "@/hooks/useToastStore";
 import { formatAdminCompactDateTime } from "@/lib/admin";
@@ -34,6 +38,8 @@ export default function ValorantLeaderboardPlayersManager() {
   const [submitting, setSubmitting] = useState(false);
 
   const registrationsQuery = useValorantLeaderboardRegistrations(query, page);
+  // A newer search is loading while the previous results are still shown.
+  const searching = registrationsQuery.loading && Boolean(registrationsQuery.data);
   const entries = registrationsQuery.data?.entries ?? [];
   const total = registrationsQuery.data?.total ?? 0;
   const totalPages = registrationsQuery.data?.totalPages ?? 1;
@@ -43,11 +49,36 @@ export default function ValorantLeaderboardPlayersManager() {
     setReason("");
   };
 
-  const handleSearch = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  // Same behaviour as the public leaderboard search: results follow the input
+  // after a short pause, from two characters, a leading @ ignored.
+  const applyQuery = (next: string) => {
+    if (next === query) return;
     closeRemoval();
     setPage(1);
-    setQuery(search.trim());
+    setQuery(next);
+  };
+
+  useEffect(() => {
+    const next = effectiveLeaderboardQuery(search);
+    if (next === query) return;
+    const timer = setTimeout(() => {
+      setRemovingPuuid(null);
+      setReason("");
+      setPage(1);
+      setQuery(next);
+    }, LEADERBOARD_SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [search, query]);
+
+  // Submitting flushes the pending debounce instead of waiting it out.
+  const handleSearch = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    applyQuery(effectiveLeaderboardQuery(search));
+  };
+
+  const clearSearch = () => {
+    setSearch("");
+    applyQuery("");
   };
 
   const handleRemove = async (entry: ValorantLeaderboardRegistration) => {
@@ -76,24 +107,21 @@ export default function ValorantLeaderboardPlayersManager() {
       <div>
         <h3 className="text-lg font-semibold text-white">Leaderboard Players</h3>
         <p className="text-sm text-slate-400">
-          Every player registered for the public VALORANT leaderboard, including the ones it currently hides. Players the
-          rank updater has not refreshed for longest are listed first.
+          Every player registered for the public VALORANT leaderboard, including the ones it currently hides. Without a
+          search, players the rank updater has not refreshed for longest are listed first; with one, the best matches are.
         </p>
       </div>
 
-      <form onSubmit={handleSearch} role="search" className="flex min-w-0 flex-col gap-2 sm:flex-row">
-        <Input
-          type="search"
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          placeholder="Riot ID, tag, Discord username or PUUID"
-          aria-label="Search leaderboard players"
-          maxLength={100}
-        />
-        <Button type="submit" variant="secondary" className="shrink-0">
-          Search
-        </Button>
-      </form>
+      <LeaderboardSearchForm
+        search={search}
+        setSearch={setSearch}
+        onSubmit={handleSearch}
+        onClear={clearSearch}
+        busy={searching}
+        label="Search by Discord username, Riot ID or PUUID"
+        hint="Partial matches work — try a Discord name, a Riot name, a tag, a full name#tag, or a PUUID."
+        hintId="admin-leaderboard-search-hint"
+      />
 
       {registrationsQuery.error ? (
         <ValorantErrorAlert message={registrationsQuery.error} onRetry={() => void registrationsQuery.refetch()} />
@@ -102,15 +130,30 @@ export default function ValorantLeaderboardPlayersManager() {
       ) : entries.length === 0 ? (
         <ValorantEmptyState
           title={query ? "No players match" : "No registered players"}
-          description={query ? `Nobody registered matches “${query}”.` : "Players appear here once they register for the leaderboard."}
+          description={
+            query
+              ? `No registered player matches “${query}”. Searches cover Discord usernames, Riot IDs and PUUIDs, including partial matches — check the spelling.`
+              : "Players appear here once they register for the leaderboard."
+          }
         />
       ) : (
         <>
-          <p className="text-sm text-slate-500" aria-live="polite">
-            {total} {total === 1 ? "player" : "players"}
-            {query ? ` matching “${query}”` : " registered"}
-          </p>
-          <Card className="min-w-0 overflow-hidden">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm text-slate-400" aria-live="polite">
+              {total} {total === 1 ? "player" : "players"}
+              {query ? (
+                <>
+                  {" "}matching <span className="text-slate-200">&ldquo;{query}&rdquo;</span>
+                </>
+              ) : " registered"}
+            </p>
+            {query ? (
+              <Button type="button" variant="ghost" size="sm" onClick={clearSearch}>
+                Show all players
+              </Button>
+            ) : null}
+          </div>
+          <Card className={cn("min-w-0 overflow-hidden transition-opacity", searching && "opacity-60")}>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[860px] text-left text-sm">
                 <thead>
@@ -132,11 +175,12 @@ export default function ValorantLeaderboardPlayersManager() {
                         <tr className={cn("border-b border-white/5", confirming && "bg-red-500/5")}>
                           <td className="px-4 py-4">
                             <p className="font-semibold text-white">
-                              {entry.name}
-                              <span className="text-slate-500">#{entry.tag}</span>
+                              <Highlight text={`${entry.name}#${entry.tag}`} term={query} />
                             </p>
                             <p className="mt-0.5 text-xs text-slate-400">
-                              {entry.discordUsername ? `@${entry.discordUsername}` : "No Discord linked"}
+                              {entry.discordUsername ? (
+                                <>@<Highlight text={entry.discordUsername} term={query} /></>
+                              ) : "No Discord linked"}
                             </p>
                           </td>
                           <td className="px-4 py-4 whitespace-nowrap text-slate-300">

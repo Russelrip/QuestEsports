@@ -7,7 +7,12 @@ import { Badge } from "@/components/ui/badge";
 import { buttonClassName } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import EmptyState from "@/components/ui/empty-state";
-import { Input } from "@/components/ui/input";
+import LeaderboardSearchForm, {
+  Highlight,
+  LEADERBOARD_SEARCH_DEBOUNCE_MS,
+  effectiveLeaderboardQuery,
+  normalizeLeaderboardQuery,
+} from "@/components/valorant/LeaderboardSearchForm";
 import { Container } from "@/components/ui/container";
 import { cn } from "@/lib/utils";
 import { formatSriLankaDate } from "@/lib/date-time";
@@ -29,30 +34,8 @@ type ValorantLeaderboardProps = {
 
 const TOP_N = 10;
 const BASE_PATH = "/valorant-leaderboard";
-// Below this the backend declines to search, so don't spend a round trip on it.
-const MIN_QUERY_LENGTH = 2;
-const SEARCH_DEBOUNCE_MS = 350;
-
-// Discord handles are often pasted with a leading @; the backend strips it too,
-// so strip it here as well or the highlight would never line up.
-const normalizeQuery = (value: string) => value.trim().replace(/^@+/, "");
-
 const buildSearchHref = (query: string) =>
   query ? `${BASE_PATH}?q=${encodeURIComponent(query)}` : BASE_PATH;
-
-const Highlight = ({ text, term }: { text: string; term: string }) => {
-  const index = term ? text.toLowerCase().indexOf(term.toLowerCase()) : -1;
-  if (index < 0) return <>{text}</>;
-  return (
-    <>
-      {text.slice(0, index)}
-      <mark className="rounded-sm bg-fuchsia-400/25 px-0.5 text-fuchsia-100">
-        {text.slice(index, index + term.length)}
-      </mark>
-      {text.slice(index + term.length)}
-    </>
-  );
-};
 
 const LeaderboardTableHeader = () => (
   <thead>
@@ -126,73 +109,6 @@ const LeaderboardRow = ({
   );
 };
 
-const SearchIcon = () => (
-  <svg viewBox="0 0 20 20" aria-hidden="true" className="h-4 w-4 fill-none stroke-current stroke-[1.8]">
-    <circle cx="9" cy="9" r="5.5" />
-    <path d="m13 13 3.5 3.5" strokeLinecap="round" />
-  </svg>
-);
-
-const SearchForm = ({
-  search,
-  setSearch,
-  onSubmit,
-  onClear,
-  busy,
-}: {
-  search: string;
-  setSearch: (value: string) => void;
-  onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
-  onClear: () => void;
-  busy: boolean;
-}) => (
-  <form onSubmit={onSubmit} role="search" className="space-y-2">
-    <div className="flex flex-col gap-3 sm:flex-row">
-      <div className="relative w-full max-w-sm">
-        <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-500">
-          <SearchIcon />
-        </span>
-        <Input
-          type="search"
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Escape" && search) {
-              event.preventDefault();
-              onClear();
-            }
-          }}
-          enterKeyHint="search"
-          autoComplete="off"
-          spellCheck={false}
-          placeholder="Search by Discord username or Riot ID"
-          aria-label="Search by Discord username or Riot ID"
-          aria-describedby="leaderboard-search-hint"
-          className="max-w-full pl-11 pr-10 [&::-webkit-search-cancel-button]:hidden"
-        />
-        {search ? (
-          <button
-            type="button"
-            onClick={onClear}
-            aria-label="Clear search"
-            className="absolute right-3 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full text-slate-400 transition hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fuchsia-300"
-          >
-            <span aria-hidden="true">×</span>
-          </button>
-        ) : null}
-      </div>
-      <button type="submit" className={buttonClassName({ variant: "secondary", size: "md" })}>
-        Search
-      </button>
-    </div>
-    <p id="leaderboard-search-hint" aria-live="polite" className="text-xs text-slate-500">
-      {busy
-        ? "Searching…"
-        : "Partial matches work — try a Discord name, a Riot name, a tag, or a full name#tag."}
-    </p>
-  </form>
-);
-
 const Pagination = ({
   page,
   totalPages,
@@ -265,10 +181,9 @@ export default function ValorantLeaderboard({
 
   // Search as you type: one debounced navigation instead of a button press.
   useEffect(() => {
-    const next = normalizeQuery(search);
-    const target = next.length >= MIN_QUERY_LENGTH ? next : "";
+    const target = effectiveLeaderboardQuery(search);
     if (target === navigatedQuery.current) return;
-    const timer = setTimeout(() => navigate(target), SEARCH_DEBOUNCE_MS);
+    const timer = setTimeout(() => navigate(target), LEADERBOARD_SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(timer);
   }, [navigate, search]);
 
@@ -284,8 +199,7 @@ export default function ValorantLeaderboard({
   // Submitting flushes the pending debounce instead of waiting it out.
   const submitSearch = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const next = normalizeQuery(search);
-    navigate(next.length >= MIN_QUERY_LENGTH ? next : "");
+    navigate(effectiveLeaderboardQuery(search));
   };
 
   const clearSearch = () => {
@@ -296,7 +210,7 @@ export default function ValorantLeaderboard({
   const goToPage = (next: number) => router.push(`${BASE_PATH}?page=${next}`);
 
   const searchForm = (
-    <SearchForm
+    <LeaderboardSearchForm
       search={search}
       setSearch={setSearch}
       onSubmit={submitSearch}
@@ -306,7 +220,7 @@ export default function ValorantLeaderboard({
   );
 
   if (query) {
-    const term = normalizeQuery(query);
+    const term = normalizeLeaderboardQuery(query);
     return (
       <Container className="space-y-6">
         {searchForm}

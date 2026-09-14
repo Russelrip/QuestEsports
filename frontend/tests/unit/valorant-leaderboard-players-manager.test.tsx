@@ -60,31 +60,60 @@ describe("ValorantLeaderboardPlayersManager", () => {
   it("lists hidden and listed players and flags the one the updater is failing on", async () => {
     render(<ValorantLeaderboardPlayersManager />);
 
-    expect(await screen.findByText("Chamsy")).toBeTruthy();
+    expect(await screen.findByText("Chamsy#0001")).toBeTruthy();
     expect(screen.getByText("Hidden")).toBeTruthy();
     expect(screen.getByText("Listed")).toBeTruthy();
     expect(screen.getByText("Updater is not refreshing this player")).toBeTruthy();
     expect(screen.getByText("None recorded")).toBeTruthy();
   });
 
-  it("searches from page one with the trimmed query", async () => {
+  it("searches as you type, like the public leaderboard, from two characters", async () => {
     render(<ValorantLeaderboardPlayersManager />);
-    await screen.findByText("Chamsy");
+    await screen.findByText("Chamsy#0001");
+    const box = screen.getByRole("searchbox", { name: "Search by Discord username, Riot ID or PUUID" });
 
-    fireEvent.change(screen.getByRole("searchbox", { name: "Search leaderboard players" }), {
-      target: { value: "  chamsy " },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Search" }));
+    // One character (after the @) is not a search: nothing new is fetched.
+    fireEvent.change(box, { target: { value: "@c" } });
+    await new Promise((resolve) => setTimeout(resolve, 450));
+    expect(mocks.fetchRegistrations).toHaveBeenCalledTimes(1);
 
+    // No button press: the debounce sends the normalized query from page one.
+    fireEvent.change(box, { target: { value: "  @Cham " } });
     await waitFor(() =>
-      expect(mocks.fetchRegistrations).toHaveBeenLastCalledWith({ query: "chamsy", page: 1 })
+      expect(mocks.fetchRegistrations).toHaveBeenLastCalledWith({ query: "Cham", page: 1 })
     );
+    expect(mocks.fetchRegistrations).toHaveBeenCalledTimes(2);
+  });
+
+  it("highlights the match and clears with the button or Escape", async () => {
+    render(<ValorantLeaderboardPlayersManager />);
+    await screen.findByText("Chamsy#0001");
+    const box = screen.getByRole("searchbox", { name: "Search by Discord username, Riot ID or PUUID" });
+
+    fireEvent.change(box, { target: { value: "cham" } });
+    // Submitting flushes the debounce.
+    fireEvent.submit(box.closest("form") as HTMLFormElement);
+    await waitFor(() => expect(mocks.fetchRegistrations).toHaveBeenLastCalledWith({ query: "cham", page: 1 }));
+    await waitFor(() => expect(document.querySelectorAll("mark").length).toBeGreaterThan(0));
+    expect([...document.querySelectorAll("mark")].map((mark) => mark.textContent)).toContain("Cham");
+    expect(screen.getByText(/matching/).textContent).toContain("cham");
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear search" }));
+    expect((box as HTMLInputElement).value).toBe("");
+    await waitFor(() => expect(mocks.fetchRegistrations).toHaveBeenLastCalledWith({ query: "", page: 1 }));
+
+    fireEvent.change(box, { target: { value: "sahan" } });
+    fireEvent.submit(box.closest("form") as HTMLFormElement);
+    await waitFor(() => expect(mocks.fetchRegistrations).toHaveBeenLastCalledWith({ query: "sahan", page: 1 }));
+    fireEvent.keyDown(box, { key: "Escape" });
+    expect((box as HTMLInputElement).value).toBe("");
+    await waitFor(() => expect(mocks.fetchRegistrations).toHaveBeenLastCalledWith({ query: "", page: 1 }));
   });
 
   it("will not remove without a reason, then sends the trimmed reason and refreshes", async () => {
     mocks.removeRegistration.mockResolvedValue({ removed: stale, rankingsCleared: 0 });
     render(<ValorantLeaderboardPlayersManager />);
-    await screen.findByText("Chamsy");
+    await screen.findByText("Chamsy#0001");
 
     fireEvent.click(screen.getAllByRole("button", { name: "Remove" })[0]);
     expect(screen.getByText(/Remove Chamsy#0001 from the leaderboard\?/)).toBeTruthy();
@@ -116,7 +145,7 @@ describe("ValorantLeaderboardPlayersManager", () => {
   it("keeps the confirmation open and reports the error when removal fails", async () => {
     mocks.removeRegistration.mockRejectedValue(new Error("leaderboard player not found"));
     render(<ValorantLeaderboardPlayersManager />);
-    await screen.findByText("Chamsy");
+    await screen.findByText("Chamsy#0001");
 
     fireEvent.click(screen.getAllByRole("button", { name: "Remove" })[0]);
     fireEvent.change(screen.getByRole("textbox", { name: /Reason/ }), { target: { value: "Duplicate" } });
