@@ -37,6 +37,7 @@ export const adminNavigationGroups: ReadonlyArray<{
       { href: "/admin", label: "Overview", icon: "dashboard" },
       { href: "/admin/media", label: "Media", icon: "image" },
       { href: "/admin/event-albums", label: "Albums", icon: "image" },
+      { href: "/admin/audit-log", label: "Audit Log", icon: "shield" },
     ],
   },
   {

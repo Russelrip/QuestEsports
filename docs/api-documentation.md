@@ -1309,6 +1309,15 @@ The two leaderboard routes are the only `/api/v1/admin/valorant/*` routes that a
 
 `GET /api/me` (and `/api/mobile/auth/me`) include `user.permissions`: every area for an admin, the granted areas otherwise.
 
+### Audit log
+
+| Method | Route | Notes |
+|---|---|---|
+| `GET` | `/api/v1/admin/audit-logs` | Admin only. Newest first. Query: `action`, `targetType`, `targetId` (exact); `actorUserId` (uuid); `actor` (case-insensitive match on username, email, first or last name); `source` (`web`, `admin`, `mobile`, `bot`, `system`); `from` (inclusive) and `to` (exclusive) ISO instants; `page`, `pageSize` (max 100). Returns `{ entries: [{ id, createdAt, action, targetType, targetId, actorUserId, actor: { id, username, name, email } \| null, source, reason, requestId, ipAddress, beforeData, afterData }], pagination }`. A malformed `actorUserId`, unknown `source`, unparseable date or `from` after `to` is 400 |
+| `GET` | `/api/v1/admin/audit-logs/facets` | Admin only. `{ actions: [{ value, count }], targetTypes: [{ value, count }], sources: [source] }` — the distinct values actually stored, for filter menus |
+
+Reads are not audited. Rows are returned as stored; `lib/audit.js` redacts sensitive values when they are written.
+
 ### Request/response shapes (spec §6.4)
 
 **Discover (`POST /api/v1/admin/valorant/discover`):**
