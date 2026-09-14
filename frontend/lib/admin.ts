@@ -156,6 +156,8 @@ export type AdminUser = {
   discordTag?: string | null;
   lastLoginAt?: string | null;
   createdAt?: string | null;
+  // Delegated admin areas granted to a non-admin. Only the users list reports it.
+  staffPermissions?: StaffPermission[];
 };
 
 export type ContactMessage = {

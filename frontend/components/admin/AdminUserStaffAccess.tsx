@@ -17,10 +17,12 @@ export default function AdminUserStaffAccess({
   userId,
   username,
   isAdmin,
+  onSaved,
 }: {
   userId: string;
   username: string;
   isAdmin: boolean;
+  onSaved?: () => void;
 }) {
   const showToast = useToastStore((state) => state.showToast);
   const [data, setData] = useState<UserStaffPermissions | null>(null);
@@ -59,6 +61,7 @@ export default function AdminUserStaffAccess({
       const next = await updateUserStaffPermissions(userId, selected);
       setData(next);
       setSelected(next.permissions);
+      onSaved?.();
       showToast({ tone: "success", title: "Staff access saved", description: `@${username} can now open ${next.permissions.length === 0 ? "no admin areas" : `${next.permissions.length} admin area${next.permissions.length === 1 ? "" : "s"}`}.` });
     } catch (nextError) {
       showToast({ tone: "error", title: "Unable to save staff access", description: nextError instanceof Error ? nextError.message : "Request failed." });

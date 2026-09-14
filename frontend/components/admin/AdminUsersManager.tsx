@@ -21,6 +21,7 @@ import {
   getAdminPaginationSummary,
   initialUserFormValues,
 } from "@/lib/admin";
+import { STAFF_PERMISSIONS } from "@/lib/staff-permissions";
 
 export default function AdminUsersManager() {
   const [search, setSearch] = useState("");
@@ -181,6 +182,7 @@ export default function AdminUsersManager() {
           userId={editingUserId}
           username={formValues.username}
           isAdmin={users.find((user) => user.id === editingUserId)?.role === "admin"}
+          onSaved={() => void refetch()}
         />
       ) : null}
 
@@ -195,6 +197,7 @@ export default function AdminUsersManager() {
             <Select value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)}>
               <option value="">All roles</option>
               <option value="user">Users</option>
+              <option value="staff">Staff (non-admins with admin areas)</option>
               <option value="admin">Admins</option>
             </Select>
           </div>
@@ -217,6 +220,21 @@ export default function AdminUsersManager() {
                 </div>
                 <div className="grid gap-1 text-sm text-slate-400">
                   <p>Role: <span className="text-white">{user.role}</span></p>
+                  {user.role === "admin" ? (
+                    <p>Staff access: <span className="text-white">All areas</span></p>
+                  ) : user.staffPermissions && user.staffPermissions.length > 0 ? (
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span>Staff access:</span>
+                      {user.staffPermissions.map((permission) => (
+                        <span
+                          key={permission}
+                          className="rounded-full border border-violet-300/25 bg-violet-400/10 px-2 py-0.5 text-xs text-violet-100"
+                        >
+                          {STAFF_PERMISSIONS[permission]?.label ?? permission}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
                   <p>Created: {user.createdAt ? formatSriLankaDateTime(user.createdAt) : "N/A"}</p>
                   <p>Last login: {user.lastLoginAt ? formatSriLankaDateTime(user.lastLoginAt) : "N/A"}</p>
                 </div>
