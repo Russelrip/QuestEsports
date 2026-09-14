@@ -271,6 +271,10 @@ router.post("/admin/game-accounts/change-requests/:requestId/review", requireAut
 const leaderboardStaff = requireStaffPermission("valorant_leaderboard");
 router.get("/admin/valorant/leaderboard/players", requireAuth, leaderboardStaff, valorantLeaderboardController.listRegistrations);
 router.delete("/admin/valorant/leaderboard/players/:puuid", requireAuth, leaderboardStaff, invalidateCache("foundation"), valorantLeaderboardController.removeRegistration);
+// Removals are kept upstream so a mistaken one can be undone; restoring puts
+// the player back on the cached public leaderboard straight away.
+router.get("/admin/valorant/leaderboard/removals", requireAuth, leaderboardStaff, valorantLeaderboardController.listRemovals);
+router.post("/admin/valorant/leaderboard/removals/:removalId/restore", requireAuth, leaderboardStaff, invalidateCache("foundation"), valorantLeaderboardController.restoreRemoval);
 
 // The audit log shows every actor's changes, IPs included, so it is admin-only
 // and not a delegable staff area.

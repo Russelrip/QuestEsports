@@ -8,13 +8,15 @@ Sri Lankan filter: ``elo IS NOT NULL``, ``last_played_match >= now()-14d``, and
 
 from __future__ import annotations
 
+import uuid
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import case, delete, func, select, update
+from sqlalchemy import case, delete, exists, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import LeaderboardPlayer
+from app.db.models import LeaderboardPlayer, LeaderboardPlayerRemoval
+from app.db.models.leaderboard_player_removal import REGISTRATION_COLUMNS
 
 _LEADERBOARD_FILTERS = (
     LeaderboardPlayer.elo.is_not(None),
@@ -148,18 +150,97 @@ class LeaderboardPlayerRepository:
         total = (await self._session.execute(count)).scalar_one()
         return list(rows), total
 
-    async def delete(self, puuid: str) -> LeaderboardPlayer | None:
-        """Delete one registration and return the row as it was, or ``None``.
+    async def remove(self, puuid: str, *, removed_by: str | None) -> LeaderboardPlayerRemoval | None:
+        """Delete one registration, keeping a copy that can be restored; ``None`` if absent.
 
-        The caller commits. Nothing references ``leaderboard_players`` by key,
-        so the delete cannot cascade into match, series or rating data.
+        The copy is written in the same transaction as the delete, so a removal
+        can never happen without it. The caller commits. Nothing references
+        ``leaderboard_players`` by key, so the delete cannot cascade into match,
+        series or rating data.
         """
-        return (await self._session.execute(
+        player = (await self._session.execute(
             delete(LeaderboardPlayer)
             .where(LeaderboardPlayer.puuid == puuid)
             .returning(LeaderboardPlayer)
             .execution_options(synchronize_session=False)
         )).scalar_one_or_none()
+        if player is None:
+            return None
+        removal = LeaderboardPlayerRemoval(
+            **{column: getattr(player, column) for column in REGISTRATION_COLUMNS},
+            removed_by=removed_by,
+        )
+        self._session.add(removal)
+        await self._session.flush()
+        await self._session.refresh(removal)
+        return removal
+
+    async def list_removals(
+        self, query: str, page: int, per_page: int
+    ) -> tuple[list[tuple[LeaderboardPlayerRemoval, bool, bool]], int]:
+        """Removals newest first, each with ``(registered_again, superseded)``.
+
+        ``registered_again``: the PUUID has a registration now, so restoring
+        would collide. ``superseded``: the PUUID was removed again later, and
+        only the latest removal is the one to restore. A query matches Riot
+        name, ``name#tag`` or Discord username as a case-insensitive substring.
+        """
+        needle = query.strip().lstrip("@").lower()
+        registered_again = exists().where(LeaderboardPlayer.puuid == LeaderboardPlayerRemoval.puuid)
+        newer = LeaderboardPlayerRemoval.__table__.alias("newer")
+        superseded = exists().where(
+            newer.c.puuid == LeaderboardPlayerRemoval.puuid,
+            newer.c.removed_at > LeaderboardPlayerRemoval.removed_at,
+        )
+        filters = []
+        if len(needle) >= MIN_QUERY_LENGTH:
+            pattern = f"%{needle}%"
+            filters.append(or_(
+                func.lower(LeaderboardPlayerRemoval.name + "#" + LeaderboardPlayerRemoval.tag).like(pattern),
+                func.lower(LeaderboardPlayerRemoval.discord_username).like(pattern),
+            ))
+        rows = (await self._session.execute(
+            select(LeaderboardPlayerRemoval, registered_again.label("registered_again"), superseded.label("superseded"))
+            .where(*filters)
+            .order_by(LeaderboardPlayerRemoval.removed_at.desc(), LeaderboardPlayerRemoval.id)
+            .offset((page - 1) * per_page)
+            .limit(per_page)
+        )).all()
+        total = (await self._session.execute(
+            select(func.count()).select_from(LeaderboardPlayerRemoval).where(*filters)
+        )).scalar_one()
+        return [(row[0], bool(row[1]), bool(row[2])) for row in rows], total
+
+    async def get_removal_for_update(self, removal_id: uuid.UUID) -> LeaderboardPlayerRemoval | None:
+        """One removal, row-locked so two restores of it cannot both proceed."""
+        return (await self._session.execute(
+            select(LeaderboardPlayerRemoval)
+            .where(LeaderboardPlayerRemoval.id == removal_id)
+            .with_for_update()
+        )).scalar_one_or_none()
+
+    async def has_newer_removal(self, removal: LeaderboardPlayerRemoval) -> bool:
+        return bool((await self._session.execute(
+            select(exists().where(
+                LeaderboardPlayerRemoval.puuid == removal.puuid,
+                LeaderboardPlayerRemoval.removed_at > removal.removed_at,
+            ))
+        )).scalar_one())
+
+    async def restore(self, removal: LeaderboardPlayerRemoval, *, restored_by: str | None) -> LeaderboardPlayer:
+        """Re-insert the removed row exactly as it was and mark the removal restored.
+
+        A plain INSERT, never an upsert: a registration that exists again must
+        make this fail rather than be overwritten. The caller checks for that
+        first and commits; a unique violation from a race surfaces as
+        ``IntegrityError``.
+        """
+        player = LeaderboardPlayer(**{column: getattr(removal, column) for column in REGISTRATION_COLUMNS})
+        self._session.add(player)
+        removal.restored_at = datetime.now(UTC)
+        removal.restored_by = restored_by
+        await self._session.flush()
+        return player
 
     async def refresh_rank(self, puuid: str, *, name: str, tag: str, **fields) -> bool:
         """Write the updater's fresh Riot data onto an EXISTING row and commit.

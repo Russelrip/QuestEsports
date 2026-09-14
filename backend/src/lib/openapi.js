@@ -1438,6 +1438,12 @@ const additionalPaths = {
   "/api/v1/admin/valorant/leaderboard/players/{puuid}": {
     delete: createOperation("valorant", "Remove a player from the VALORANT leaderboard (reason required, audited; admin or valorant_leaderboard staff permission)", { authenticated: true }),
   },
+  "/api/v1/admin/valorant/leaderboard/removals": {
+    get: createOperation("valorant", "List removed VALORANT leaderboard players, newest first, with whether each can be restored (admin or valorant_leaderboard staff permission)", { authenticated: true }),
+  },
+  "/api/v1/admin/valorant/leaderboard/removals/{removalId}/restore": {
+    post: createOperation("valorant", "Restore a removed VALORANT leaderboard player exactly as they were (reason required, audited; 409 when registered again; admin or valorant_leaderboard staff permission)", { authenticated: true }),
+  },
   "/api/v1/admin/audit-logs": {
     get: createOperation("Admin", "List audit log entries, newest first, filtered by action, target, actor, source and date range (admin only)", { authenticated: true }),
   },

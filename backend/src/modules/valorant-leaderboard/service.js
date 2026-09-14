@@ -8,6 +8,8 @@ const {
   repointRegistration: fetchRepointRegistration,
   listRegistrations: fetchRegistrations,
   removeRegistration: fetchRemoveRegistration,
+  listRemovals: fetchRemovals,
+  restoreRemoval: fetchRestoreRemoval,
 } = require("./client");
 const { requireLinkedDiscord } = require("../auth/discord-link.service");
 const { prisma } = require("../../lib/prisma");
@@ -253,7 +255,8 @@ const listAdminRegistrations = async ({ query, page, perPage, actorUserId }) => 
 // skip the audit record for a removal that did take effect. A rank left behind
 // is cosmetic and the next ranking sync can no longer match it anyway.
 const removeAdminRegistration = async ({ puuid, actorUserId }) => {
-  const removed = mapRegistration(await fetchRemoveRegistration({ puuid, actorUserId }));
+  const raw = await fetchRemoveRegistration({ puuid, actorUserId });
+  const removed = mapRegistration(raw);
   snapshot = null;
   let rankingsCleared = 0;
   try {
@@ -267,12 +270,77 @@ const removeAdminRegistration = async ({ puuid, actorUserId }) => {
     rankingsCleared = null;
     logger.warn("Leaderboard removal could not clear the cached profile rank", { error });
   }
-  return { removed, rankingsCleared };
+  return { removed, removalId: raw.removal_id ?? null, rankingsCleared };
+};
+
+// --- Admin: removals ----------------------------------------------------------
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// Upstream records the Quest user id from the signed service token. Show the
+// username; an id that no longer matches an account (or is not a user id at
+// all) shows as unknown rather than as a raw id.
+const loadActorNames = async (ids) => {
+  const userIds = [...new Set(ids.filter((id) => UUID_PATTERN.test(String(id || ""))))];
+  if (userIds.length === 0) return new Map();
+  const users = await prisma.user.findMany({
+    where: { id: { in: userIds } },
+    select: { id: true, username: true },
+  });
+  return new Map(users.map((user) => [user.id, user]));
+};
+
+const mapActor = (id, names) => (id ? names.get(id) ?? { id: null, username: null } : null);
+
+const mapRemoval = (entry, names) => ({
+  removalId: entry.removal_id,
+  puuid: entry.puuid,
+  name: entry.name,
+  tag: entry.tag,
+  discordUsername: entry.discord_username ?? "",
+  currentTier: entry.current_tier ?? null,
+  elo: entry.elo ?? null,
+  lastPlayed: entry.last_played_match ?? null,
+  removedAt: entry.removed_at,
+  removedBy: mapActor(entry.removed_by, names),
+  restoredAt: entry.restored_at ?? null,
+  restoredBy: mapActor(entry.restored_by, names),
+  registeredAgain: Boolean(entry.registered_again),
+  superseded: Boolean(entry.superseded),
+  restorable: Boolean(entry.restorable),
+});
+
+const listAdminRemovals = async ({ query, page, perPage, actorUserId }) => {
+  const raw = await fetchRemovals({ query, page, perPage, actorUserId });
+  const entries = raw.entries || [];
+  const names = await loadActorNames(entries.flatMap((entry) => [entry.removed_by, entry.restored_by]));
+  return {
+    entries: entries.map((entry) => mapRemoval(entry, names)),
+    total: raw.total ?? 0,
+    page: raw.page ?? page,
+    perPage: raw.per_page ?? perPage,
+    totalPages: raw.total_pages ?? 1,
+  };
+};
+
+// Put a removed registration back. The row returns exactly as it was, so the
+// board, updater and Discord bot pick the player up again on their own; the
+// profile rank cleared at removal comes back with the next ranking sync.
+const restoreAdminRemoval = async ({ removalId, actorUserId }) => {
+  const raw = await fetchRestoreRemoval({ removalId, actorUserId });
+  snapshot = null;
+  return {
+    restored: mapRegistration(raw),
+    removalId: raw.removal_id ?? removalId,
+    removedAt: raw.removed_at ?? null,
+  };
 };
 
 module.exports = {
   listAdminRegistrations,
   removeAdminRegistration,
+  listAdminRemovals,
+  restoreAdminRemoval,
   repointRegistration,
   listLeaderboard,
   searchLeaderboardPlayer,

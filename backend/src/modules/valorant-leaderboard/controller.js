@@ -4,6 +4,8 @@ const { recordAudit, requestAuditContext } = require("../../lib/audit");
 const {
   listAdminRegistrations,
   removeAdminRegistration,
+  listAdminRemovals,
+  restoreAdminRemoval,
   listLeaderboard,
   searchLeaderboardPlayers,
   checkPuuid: serviceCheckPuuid,
@@ -102,7 +104,46 @@ const removeRegistration = asyncHandler(async (req, res) => {
       updatedAt: removed.updatedAt,
       onLeaderboard: removed.onLeaderboard,
     },
-    afterData: { removed: true, rankingsCleared: data.rankingsCleared },
+    afterData: { removed: true, removalId: data.removalId, rankingsCleared: data.rankingsCleared },
+    source: "admin",
+    reason,
+  });
+  respond(res, data);
+});
+
+const listRemovals = asyncHandler(async (req, res) => {
+  const query = String(req.query.q || "").trim().slice(0, ADMIN_QUERY_MAX_LENGTH);
+  const page = Math.max(1, parsePositiveInt(req.query.page, 1));
+  const perPage = clamp(parsePositiveInt(req.query.per_page, 20), 1, 100);
+  const data = await listAdminRemovals({ query, page, perPage, actorUserId: req.user.id });
+  respond(res, data);
+});
+
+const restoreRemoval = asyncHandler(async (req, res) => {
+  const reason = typeof req.body?.reason === "string" ? req.body.reason.trim() : "";
+  if (!reason) {
+    throw new HttpError(400, "Give a reason for restoring this player to the leaderboard.");
+  }
+  if (reason.length > REMOVAL_REASON_MAX_LENGTH) {
+    throw new HttpError(400, `Keep the reason under ${REMOVAL_REASON_MAX_LENGTH} characters.`);
+  }
+
+  const data = await restoreAdminRemoval({ removalId: req.params.removalId, actorUserId: req.user.id });
+  const { restored } = data;
+  await recordAudit({
+    ...requestAuditContext(req),
+    action: "valorant.leaderboard_player.restore",
+    targetType: "valorant_leaderboard_player",
+    targetId: null,
+    beforeData: { removed: true, removalId: data.removalId, removedAt: data.removedAt },
+    afterData: {
+      riotId: `${restored.name}#${restored.tag}`,
+      discordUsername: restored.discordUsername,
+      currentTier: restored.currentTier,
+      elo: restored.elo,
+      lastPlayed: restored.lastPlayed,
+      onLeaderboard: restored.onLeaderboard,
+    },
     source: "admin",
     reason,
   });
@@ -112,6 +153,8 @@ const removeRegistration = asyncHandler(async (req, res) => {
 module.exports = {
   listRegistrations,
   removeRegistration,
+  listRemovals,
+  restoreRemoval,
   getLeaderboard,
   searchLeaderboard,
   checkPuuid,

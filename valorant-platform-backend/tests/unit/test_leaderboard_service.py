@@ -10,12 +10,14 @@ slice, ``search()``, and the ``total_pages`` formula (0 rows -> 1).
 
 from __future__ import annotations
 
+import uuid
 from datetime import UTC, datetime
 
 import pytest
 
 from app.api.errors import AppError
-from app.db.models import LeaderboardPlayer
+from app.db.models import LeaderboardPlayer, LeaderboardPlayerRemoval
+from app.db.models.leaderboard_player_removal import REGISTRATION_COLUMNS
 from app.schemas.leaderboard import LeaderboardEntry, LeaderboardPage, LeaderboardStats
 from app.services.leaderboard_service import LeaderboardService
 
@@ -217,19 +219,27 @@ async def test_total_pages_larger_total():
 # ------------------------------------------------------------ admin surface
 
 class FakeAdminRepo:
-    """Stub repo for the admin paths: a registration listing and a delete."""
+    """Stub repo for the admin paths: a registration listing and a removal."""
 
     def __init__(self, rows: list[LeaderboardPlayer] | None = None, total: int = 0) -> None:
         self.rows = rows or []
         self.total = total
-        self.deleted: list[str] = []
+        self.removed: list[tuple[str, str | None]] = []
 
     async def list_registrations(self, query: str, page: int, per_page: int) -> tuple[list[LeaderboardPlayer], int]:
         return self.rows, self.total
 
-    async def delete(self, puuid: str) -> LeaderboardPlayer | None:
-        self.deleted.append(puuid)
-        return next((row for row in self.rows if row.puuid == puuid), None)
+    async def remove(self, puuid: str, *, removed_by: str | None) -> LeaderboardPlayerRemoval | None:
+        self.removed.append((puuid, removed_by))
+        row = next((row for row in self.rows if row.puuid == puuid), None)
+        if row is None:
+            return None
+        return LeaderboardPlayerRemoval(
+            id=uuid.UUID(int=7),
+            **{column: getattr(row, column) for column in REGISTRATION_COLUMNS},
+            removed_at=NOW,
+            removed_by=removed_by,
+        )
 
 
 class FakeSession:
@@ -264,11 +274,13 @@ async def test_remove_commits_and_returns_the_removed_row() -> None:
     session = FakeSession()
     service = LeaderboardService(session=session, repo=repo)  # type: ignore[arg-type]
 
-    removed = await service.remove("gone")
+    removed = await service.remove("gone", "admin-user-id")
 
     assert removed.puuid == "gone"
     assert removed.update_source == "migration"
     assert removed.on_leaderboard is False
+    assert removed.removal_id == str(uuid.UUID(int=7))
+    assert repo.removed == [("gone", "admin-user-id")]
     assert session.commits == 1
 
 

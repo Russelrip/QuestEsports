@@ -19,6 +19,8 @@ import type {
   ValorantFormat,
   ValorantLeaderboardRegistrationPage,
   ValorantLeaderboardRemoval,
+  ValorantLeaderboardRemovalPage,
+  ValorantLeaderboardRestore,
   ValorantMatchSummary,
   ValorantPlayerLeaderboardPage,
   ValorantPlayerLeaderboardSearchEntry,
@@ -218,6 +220,21 @@ export const removeValorantLeaderboardRegistration = (puuid: string, reason: str
   valorantAdminRequest<ValorantLeaderboardRemoval>(
     `/api/v1/admin/valorant/leaderboard/players/${encodeURIComponent(puuid)}`,
     { method: "DELETE", json: { reason } }
+  );
+
+export const fetchValorantLeaderboardRemovals = ({ query = "", page = 1 }: { query?: string; page?: number } = {}) => {
+  const params = new URLSearchParams();
+  if (query) params.set("q", query);
+  params.set("page", String(page));
+  return valorantAdminRequest<ValorantLeaderboardRemovalPage>(
+    `/api/v1/admin/valorant/leaderboard/removals?${params.toString()}`
+  );
+};
+
+export const restoreValorantLeaderboardRemoval = (removalId: string, reason: string) =>
+  valorantAdminRequest<ValorantLeaderboardRestore>(
+    `/api/v1/admin/valorant/leaderboard/removals/${encodeURIComponent(removalId)}/restore`,
+    { method: "POST", json: { reason } }
   );
 
 export const fetchPublicValorantLeaderboard = async (

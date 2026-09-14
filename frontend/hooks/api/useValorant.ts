@@ -4,6 +4,7 @@ import { useApiQuery } from "@/hooks/api/useApiQuery";
 import {
   fetchValorantBindings,
   fetchValorantLeaderboardRegistrations,
+  fetchValorantLeaderboardRemovals,
   fetchValorantMatches,
   fetchValorantPreview,
   fetchValorantRankings,
@@ -22,6 +23,12 @@ export function useValorantBindings() {
 export function useValorantLeaderboardRegistrations(query: string, page: number) {
   return useApiQuery(["valorant-leaderboard-registrations", query, page], () =>
     fetchValorantLeaderboardRegistrations({ query, page })
+  );
+}
+
+export function useValorantLeaderboardRemovals(query: string, page: number) {
+  return useApiQuery(["valorant-leaderboard-removals", query, page], () =>
+    fetchValorantLeaderboardRemovals({ query, page })
   );
 }
 

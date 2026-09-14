@@ -261,18 +261,18 @@ async def test_list_registrations_puts_least_recently_refreshed_first(session_fa
         assert [row.puuid for row in rows] == ["oldest", "older"]
 
 
-async def test_delete_removes_the_row_and_returns_it(session_factory) -> None:
+async def test_remove_deletes_the_row_and_returns_its_archived_copy(session_factory) -> None:
     async with session_factory() as session:
         session.add(_player(puuid="gone", name="Chamsy", tag="0001"))
         await session.commit()
 
         repo = LeaderboardPlayerRepository(session)
-        removed = await repo.delete("gone")
+        removed = await repo.remove("gone", removed_by="admin")
         await session.commit()
 
         assert removed is not None
-        assert (removed.name, removed.tag) == ("Chamsy", "0001")
-        assert await repo.delete("gone") is None
+        assert (removed.puuid, removed.name, removed.tag, removed.removed_by) == ("gone", "Chamsy", "0001", "admin")
+        assert await repo.remove("gone", removed_by="admin") is None
 
     async with session_factory() as session:
         assert await session.get(LeaderboardPlayer, "gone") is None
@@ -308,7 +308,7 @@ async def test_refresh_rank_commits_so_a_concurrent_delete_is_not_blocked(sessio
         # With the pass mid-flight, the admin delete must not wait on p1's row lock.
         await admin_session.execute(text("SET LOCAL lock_timeout = '2s'"))
         admin = LeaderboardPlayerRepository(admin_session)
-        assert await admin.delete("p1") is not None
+        assert await admin.remove("p1", removed_by="admin") is not None
         await admin_session.commit()
 
         assert await updater.refresh_rank("p1", name="P", tag="ONE", elo=1400) is False

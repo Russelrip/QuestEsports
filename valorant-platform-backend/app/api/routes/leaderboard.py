@@ -7,7 +7,7 @@ out-of-range-page 404 is raised here as ``AppError``
 (``LEADERBOARD_PAGE_NOT_FOUND``); the search miss is a deliberate 200
 ``null`` per spec §5.1 (``LeaderboardEntry | null``). The ``/players`` pair
 is the admin surface: every registration regardless of the board filter, and
-removal of one.
+removal of one. The ``/removals`` pair lists removals and restores one.
 """
 
 from __future__ import annotations
@@ -18,11 +18,14 @@ from fastapi import APIRouter, Depends, Path, Query
 
 from app.api.dependencies import get_leaderboard_service, require_service_token
 from app.api.errors import AppError
+from app.api.service_token import ServicePrincipal
 from app.schemas.leaderboard import (
     LeaderboardEntry,
     LeaderboardPage,
-    LeaderboardRegistration,
     LeaderboardRegistrationPage,
+    LeaderboardRemovalPage,
+    LeaderboardRemovedRegistration,
+    LeaderboardRestoredRegistration,
     LeaderboardStats,
 )
 from app.services.leaderboard_service import LeaderboardService
@@ -30,6 +33,7 @@ from app.services.leaderboard_service import LeaderboardService
 router = APIRouter(prefix="/api/v1", tags=["leaderboard"])
 
 _ServiceDep = Annotated[LeaderboardService, Depends(get_leaderboard_service)]
+_PrincipalDep = Annotated[ServicePrincipal, Depends(require_service_token)]
 
 
 @router.get("/leaderboard", response_model=LeaderboardPage, dependencies=[Depends(require_service_token)])
@@ -80,9 +84,45 @@ async def list_registrations(
 
 @router.delete(
     "/leaderboard/players/{puuid}",
-    response_model=LeaderboardRegistration,
+    response_model=LeaderboardRemovedRegistration,
     dependencies=[Depends(require_service_token)],
 )
-async def remove_registration(svc: _ServiceDep, puuid: str) -> LeaderboardRegistration:
-    """Remove a registration; returns the row as it was so Quest can audit it."""
-    return await svc.remove(puuid)
+async def remove_registration(
+    svc: _ServiceDep,
+    principal: _PrincipalDep,
+    puuid: str,
+) -> LeaderboardRemovedRegistration:
+    """Remove a registration; returns the row as it was so Quest can audit it.
+
+    A copy is kept under ``removal_id`` so the removal can be restored.
+    """
+    return await svc.remove(puuid, principal.actor_id)
+
+
+@router.get(
+    "/leaderboard/removals",
+    response_model=LeaderboardRemovalPage,
+    dependencies=[Depends(require_service_token)],
+)
+async def list_removals(
+    svc: _ServiceDep,
+    q: str = Query("", max_length=100),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(20, ge=1, le=100),
+) -> LeaderboardRemovalPage:
+    """Removed registrations, newest first, with whether each can be restored."""
+    return await svc.removals(q, page, per_page)
+
+
+@router.post(
+    "/leaderboard/removals/{removal_id}/restore",
+    response_model=LeaderboardRestoredRegistration,
+    dependencies=[Depends(require_service_token)],
+)
+async def restore_removal(
+    svc: _ServiceDep,
+    principal: _PrincipalDep,
+    removal_id: str,
+) -> LeaderboardRestoredRegistration:
+    """Put a removed registration back exactly as it was (409 if it cannot be)."""
+    return await svc.restore(removal_id, principal.actor_id)

@@ -52,6 +52,7 @@ TRUNCATE_ORDER = (
     "matches",
     "players",
     "leaderboard_players",
+    "leaderboard_player_removals",
 )
 
 

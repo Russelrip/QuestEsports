@@ -239,6 +239,7 @@ describe("VALORANT admin UI boundaries", () => {
       "ValorantSeriesDetail.tsx",
       "ValorantRankingsManager.tsx",
       "ValorantLeaderboardPlayersManager.tsx",
+      "ValorantLeaderboardRemovalsPanel.tsx",
       "ValorantReconciliationManager.tsx",
     ]) {
       const source = read(`components/admin/valorant/${file}`);
@@ -259,6 +260,7 @@ describe("VALORANT admin UI boundaries", () => {
       "ValorantSeriesDetail.tsx",
       "ValorantRankingsManager.tsx",
       "ValorantLeaderboardPlayersManager.tsx",
+      "ValorantLeaderboardRemovalsPanel.tsx",
       "ValorantReconciliationManager.tsx",
       "ValorantManagementPage.tsx",
     ]) {

@@ -148,7 +148,8 @@ const listRegistrations = async ({ query = "", page = 1, perPage = 50, actorUser
   return requestJson({ path: `/api/v1/leaderboard/players?${params.toString()}`, actorUserId });
 };
 
-// Admin: delete one registration. Resolves to the row as it was.
+// Admin: delete one registration. Resolves to the row as it was, with the
+// `removal_id` of the copy upstream keeps so the removal can be restored.
 const removeRegistration = async ({ puuid, actorUserId }) =>
   requestJson({
     path: `/api/v1/leaderboard/players/${encodeURIComponent(puuid)}`,
@@ -156,9 +157,29 @@ const removeRegistration = async ({ puuid, actorUserId }) =>
     actorUserId,
   });
 
+// Admin: removed registrations, newest first, with whether each can be restored.
+const listRemovals = async ({ query = "", page = 1, perPage = 20, actorUserId }) => {
+  const params = new URLSearchParams();
+  if (query) params.set("q", query);
+  params.set("page", String(page));
+  params.set("per_page", String(perPage));
+  return requestJson({ path: `/api/v1/leaderboard/removals?${params.toString()}`, actorUserId });
+};
+
+// Admin: put a removed registration back exactly as it was. Upstream refuses
+// with 409 when it cannot (already restored, registered again, Discord taken).
+const restoreRemoval = async ({ removalId, actorUserId }) =>
+  requestJson({
+    path: `/api/v1/leaderboard/removals/${encodeURIComponent(removalId)}/restore`,
+    method: "POST",
+    actorUserId,
+  });
+
 module.exports = {
   listRegistrations,
   removeRegistration,
+  listRemovals,
+  restoreRemoval,
   repointRegistration,
   getLeaderboard,
   searchLeaderboard,
