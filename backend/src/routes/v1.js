@@ -20,6 +20,7 @@ const authRoutes = require("../modules/auth/auth.routes");
 const challongeController = require("../modules/challonge/challonge.controller");
 const staffController = require("../modules/permissions/staff.controller");
 const staffPermissionController = require("../modules/permissions/staff-permission.controller");
+const auditLogController = require("../modules/audit/audit-log.controller");
 const { getRealtimeEvents } = require("../modules/realtime/realtime.controller");
 const {
   requireSuperAdmin,
@@ -270,6 +271,11 @@ router.post("/admin/game-accounts/change-requests/:requestId/review", requireAut
 const leaderboardStaff = requireStaffPermission("valorant_leaderboard");
 router.get("/admin/valorant/leaderboard/players", requireAuth, leaderboardStaff, valorantLeaderboardController.listRegistrations);
 router.delete("/admin/valorant/leaderboard/players/:puuid", requireAuth, leaderboardStaff, invalidateCache("foundation"), valorantLeaderboardController.removeRegistration);
+
+// The audit log shows every actor's changes, IPs included, so it is admin-only
+// and not a delegable staff area.
+router.get("/admin/audit-logs", requireAuth, requireAdmin, auditLogController.getAuditLogs);
+router.get("/admin/audit-logs/facets", requireAuth, requireAdmin, auditLogController.getAuditLogFacets);
 
 // Granting delegated areas is itself admin-only.
 router.get("/admin/users/:userId/staff-permissions", requireAuth, requireAdmin, staffPermissionController.getUserStaffPermissions);

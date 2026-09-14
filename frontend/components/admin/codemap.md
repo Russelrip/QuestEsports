@@ -43,6 +43,14 @@ private registration fields to public components. Event summary responses omit
 payment evidence, admin holds/notes, and private upload names; full sensitive
 records are loaded only in the existing admin detail workflow.
 
+## Audit log
+
+- `AdminAuditLog.tsx` renders `/admin/audit-log`: filters (opened from URL
+  query parameters), click-to-filter on actor/action/target, and an expandable
+  field-by-field before/after view. Query building, day-range conversion and
+  the diff live in `frontend/lib/audit-log.ts` so they are unit-tested without
+  rendering. Read-only; admin-only on both sides.
+
 ## Support queue
 
 - `AdminSupportManager.tsx` owns queue loading, responsive selection, filters,

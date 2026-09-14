@@ -29,6 +29,12 @@ surfaces the backend conflict response when one person is submitted as both a
 coach and player in the same tournament; the role check is enforced
 transactionally by the backend rather than by route UI alone.
 
+## Audit log route
+
+- `audit-log/page.tsx` renders the read-only audit log at `/admin/audit-log`
+  inside a Suspense boundary, because the manager reads its opening filters
+  from the URL.
+
 ## Support route
 
 - `support/page.tsx` renders the authenticated staff support queue at

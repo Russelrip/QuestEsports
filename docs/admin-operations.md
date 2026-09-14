@@ -34,6 +34,34 @@ All admin routes require a valid session and `user.role === "admin"`.
 - `/admin/rulebooks` for rulebook management
 - `/admin/contact-messages` for the contact inbox
 - `/admin/teams` for saved-team details, logos, organization labels, and deletion
+- `/admin/audit-log` for the read-only history of recorded changes
+
+## Audit Log
+
+`/admin/audit-log` (Workspace → **Audit Log**) shows the `audit_logs` table,
+newest first. Every audited write in the backend lands here: registrations,
+payments, tickets, tournaments, brackets, matches, veto rooms, media, saved
+teams, game accounts, VALORANT operations and staff-access changes.
+
+Each entry shows when it happened, who did it (and from which surface — admin
+panel, website, bot or system), the action, the record it touched, and the
+reason when one was required. **Changes** opens a field-by-field before/after
+view, with the request ID and IP address for incident review.
+
+- Filter by actor (name, username or email), action, target type, target ID,
+  source, and a date range in Sri Lanka days.
+- Click an actor, action or target in a row to narrow the log to it; clicking
+  a target shows that record's full history.
+- Other admin pages can deep-link with query parameters, for example
+  `/admin/audit-log?targetType=User&targetId=<id>`.
+
+The log is admin-only and is not a delegable staff area: it exposes every
+actor's changes and IP addresses. Nothing on the page can edit or delete an
+entry, and viewing it is not itself audited. Values the audit writer treats as
+secret (tokens, passwords, PUUIDs, file contents) were redacted before they
+were stored and stay redacted here. An actor shown as "System or deleted
+account" means no account is attached — automation, or an account deleted
+since. Source "Not recorded" means the entry predates source tracking.
 
 ## Staff Access (Delegated Admin Areas)
 
