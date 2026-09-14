@@ -1444,6 +1444,13 @@ const additionalPaths = {
   "/api/v1/admin/valorant/leaderboard/removals/{removalId}/restore": {
     post: createOperation("valorant", "Restore a removed VALORANT leaderboard player exactly as they were (reason required, audited; 409 when registered again; admin or valorant_leaderboard staff permission)", { authenticated: true }),
   },
+  "/api/v1/admin/valorant/leaderboard/server-checks": {
+    get: createOperation("valorant", "List leaderboard players the server check flags for review (mostly playing away from the Singapore/Mumbai servers, or a Riot account off the AP shard), or those already cleared (admin or valorant_leaderboard staff permission)", { authenticated: true }),
+  },
+  "/api/v1/admin/valorant/leaderboard/server-checks/{puuid}/clear": {
+    post: createOperation("valorant", "Keep a flagged leaderboard player; only later matches can flag them again (reason required, audited; 409 when not flagged; admin or valorant_leaderboard staff permission)", { authenticated: true }),
+    delete: createOperation("valorant", "Reopen a cleared leaderboard server check (reason required, audited; 409 when not cleared; admin or valorant_leaderboard staff permission)", { authenticated: true }),
+  },
   "/api/v1/admin/audit-logs": {
     get: createOperation("Admin", "List audit log entries, newest first, filtered by action, target, actor, source and date range (admin only)", { authenticated: true }),
   },

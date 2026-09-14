@@ -383,3 +383,212 @@ test("listRemovals trims the query and clamps paging", async () => {
 
   assert.deepEqual(seen, { query: "casper", page: 1, perPage: 100, actorUserId: ADMIN_ID });
 });
+
+// --- Server check -------------------------------------------------------------
+
+const upstreamServerCheck = {
+  puuid: upstreamRow.puuid,
+  name: "Roo",
+  tag: "SYD",
+  discord_username: "roo",
+  current_tier: "Ascendant 1",
+  elo: 1900,
+  last_played_match: "2026-09-13T20:11:00+00:00",
+  on_leaderboard: true,
+  account_region: "ap",
+  status: "flagged",
+  reasons: ["away_servers"],
+  matches: 25,
+  known_matches: 25,
+  away_matches: 24,
+  away_share: 0.96,
+  servers: [
+    { cluster: "Sydney", matches: 24, home: false },
+    { cluster: "Mumbai", matches: 1, home: true },
+  ],
+  since: "2026-08-15T17:00:00+00:00",
+  checked_at: "2026-09-14T10:00:00+00:00",
+  cleared_at: null,
+  cleared_by: null,
+};
+
+const mappedServerCheck = (overrides = {}) => ({
+  puuid: upstreamRow.puuid,
+  name: "Roo",
+  tag: "SYD",
+  discordUsername: "roo",
+  currentTier: "Ascendant 1",
+  elo: 1900,
+  lastPlayed: "2026-09-13T20:11:00+00:00",
+  onLeaderboard: true,
+  accountRegion: "ap",
+  status: "flagged",
+  reasons: ["away_servers"],
+  matches: 25,
+  knownMatches: 25,
+  awayMatches: 24,
+  awayShare: 0.96,
+  servers: [
+    { cluster: "Sydney", matches: 24, home: false },
+    { cluster: "Mumbai", matches: 1, home: true },
+  ],
+  since: "2026-08-15T17:00:00+00:00",
+  checkedAt: "2026-09-14T10:00:00+00:00",
+  clearedAt: null,
+  clearedBy: null,
+  ...overrides,
+});
+
+test("listAdminServerChecks maps entries, summary and rule, and names who cleared", async () => {
+  let seen;
+  const service = loadService({
+    client: {
+      listServerChecks: async (input) => {
+        seen = input;
+        return {
+          entries: [{ ...upstreamServerCheck, status: "cleared", reasons: [], cleared_at: "2026-09-14T11:00:00+00:00", cleared_by: ADMIN_ID }],
+          total: 1, page: 1, per_page: 20, total_pages: 1,
+          summary: { registered: 491, checked: 40, flagged: 3, cleared: 1 },
+          rule: { home_clusters: ["Singapore", "Mumbai"], home_shard: "ap", window_days: 30, min_matches: 5, away_share: 0.5 },
+        };
+      },
+    },
+    prisma: { user: { findMany: async () => [{ id: ADMIN_ID, username: "Russel" }] } },
+  });
+
+  const result = await service.listAdminServerChecks({ status: "cleared", query: "roo", page: 1, perPage: 20, actorUserId: ADMIN_ID });
+
+  assert.deepEqual(seen, { status: "cleared", query: "roo", page: 1, perPage: 20, actorUserId: ADMIN_ID });
+  assert.deepEqual(result.entries[0], mappedServerCheck({
+    status: "cleared",
+    reasons: [],
+    clearedAt: "2026-09-14T11:00:00+00:00",
+    clearedBy: { id: ADMIN_ID, username: "Russel" },
+  }));
+  assert.deepEqual(result.summary, { registered: 491, checked: 40, flagged: 3, cleared: 1 });
+  assert.deepEqual(result.rule, { homeClusters: ["Singapore", "Mumbai"], homeShard: "ap", windowDays: 30, minMatches: 5, awayShare: 0.5 });
+});
+
+test("clearAdminServerCheck and reopenAdminServerCheck sign upstream as the admin", async () => {
+  const seen = [];
+  const service = loadService({
+    client: {
+      clearServerCheck: async (input) => {
+        seen.push(["clear", input]);
+        return { ...upstreamServerCheck, status: "cleared", reasons: [], cleared_at: "2026-09-14T11:00:00+00:00", cleared_by: ADMIN_ID };
+      },
+      reopenServerCheck: async (input) => {
+        seen.push(["reopen", input]);
+        return upstreamServerCheck;
+      },
+    },
+    prisma: { user: { findMany: async () => [{ id: ADMIN_ID, username: "Russel" }] } },
+  });
+
+  const cleared = await service.clearAdminServerCheck({ puuid: upstreamRow.puuid, actorUserId: ADMIN_ID });
+  const reopened = await service.reopenAdminServerCheck({ puuid: upstreamRow.puuid, actorUserId: ADMIN_ID });
+
+  assert.deepEqual(seen, [
+    ["clear", { puuid: upstreamRow.puuid, actorUserId: ADMIN_ID }],
+    ["reopen", { puuid: upstreamRow.puuid, actorUserId: ADMIN_ID }],
+  ]);
+  assert.deepEqual(cleared.clearedBy, { id: ADMIN_ID, username: "Russel" });
+  assert.deepEqual(reopened, mappedServerCheck());
+});
+
+test("listServerChecks defaults an unknown status to flagged and clamps paging", async () => {
+  const seen = [];
+  const controller = loadController({
+    service: { listAdminServerChecks: async (input) => { seen.push(input); return { entries: [] }; } },
+  });
+
+  await run(controller.listServerChecks, { query: { status: "everything", q: "  roo ", page: "0", per_page: "500" }, user: { id: ADMIN_ID } });
+  await run(controller.listServerChecks, { query: { status: "cleared" }, user: { id: ADMIN_ID } });
+
+  assert.deepEqual(seen, [
+    { status: "flagged", query: "roo", page: 1, perPage: 100, actorUserId: ADMIN_ID },
+    { status: "cleared", query: "", page: 1, perPage: 20, actorUserId: ADMIN_ID },
+  ]);
+});
+
+test("clearServerCheck and reopenServerCheck require a reason and never call the service without one", async () => {
+  let called = false;
+  const controller = loadController({
+    service: {
+      clearAdminServerCheck: async () => { called = true; },
+      reopenAdminServerCheck: async () => { called = true; },
+    },
+  });
+
+  for (const handler of [controller.clearServerCheck, controller.reopenServerCheck]) {
+    for (const body of [{}, { reason: "   " }, { reason: 7 }, { reason: "x".repeat(501) }]) {
+      const { error } = await run(handler, { params: { puuid: upstreamRow.puuid }, body, user: { id: ADMIN_ID } });
+      assert.equal(error?.statusCode, 400, JSON.stringify(body).slice(0, 40));
+    }
+  }
+  assert.equal(called, false);
+});
+
+test("clearServerCheck audits the evidence and reason, without the PUUID", async () => {
+  const audits = [];
+  const controller = loadController({
+    audits,
+    service: {
+      clearAdminServerCheck: async () => mappedServerCheck({
+        status: "cleared",
+        reasons: [],
+        clearedAt: "2026-09-14T11:00:00+00:00",
+        clearedBy: { id: ADMIN_ID, username: "Russel" },
+      }),
+    },
+  });
+
+  const { calls, error } = await run(controller.clearServerCheck, {
+    params: { puuid: upstreamRow.puuid },
+    body: { reason: " Sri Lankan studying in Melbourne; confirmed on Discord " },
+    user: { id: ADMIN_ID },
+  });
+
+  assert.equal(error, undefined);
+  assert.equal(calls.json.data.status, "cleared");
+  assert.equal(audits.length, 1);
+  const [audit] = audits;
+  assert.equal(audit.action, "valorant.leaderboard_player.server_check_clear");
+  assert.equal(audit.reason, "Sri Lankan studying in Melbourne; confirmed on Discord");
+  assert.equal(audit.source, "admin");
+  assert.deepEqual(audit.beforeData, { flagged: true });
+  assert.equal(audit.afterData.riotId, "Roo#SYD");
+  assert.equal(audit.afterData.servers, "Sydney 24, Mumbai 1");
+  assert.equal(audit.afterData.clearedAt, "2026-09-14T11:00:00+00:00");
+  assert.equal(JSON.stringify(audit).includes(upstreamRow.puuid), false);
+});
+
+test("reopenServerCheck audits the reopen, and nothing is audited when upstream refuses", async () => {
+  const audits = [];
+  const controller = loadController({
+    audits,
+    service: {
+      reopenAdminServerCheck: async () => mappedServerCheck(),
+      clearAdminServerCheck: async () => {
+        const error = new Error("this player is not flagged by the server check");
+        error.statusCode = 409;
+        throw error;
+      },
+    },
+  });
+
+  const refused = await run(controller.clearServerCheck, {
+    params: { puuid: upstreamRow.puuid }, body: { reason: "Keep" }, user: { id: ADMIN_ID },
+  });
+  assert.equal(refused.error.statusCode, 409);
+  assert.equal(audits.length, 0);
+
+  const { error } = await run(controller.reopenServerCheck, {
+    params: { puuid: upstreamRow.puuid }, body: { reason: "Cleared the wrong player" }, user: { id: ADMIN_ID },
+  });
+  assert.equal(error, undefined);
+  assert.equal(audits.length, 1);
+  assert.equal(audits[0].action, "valorant.leaderboard_player.server_check_reopen");
+  assert.deepEqual(audits[0].beforeData, { cleared: true });
+  assert.equal(audits[0].afterData.status, "flagged");
+});

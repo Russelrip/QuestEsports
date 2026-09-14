@@ -21,6 +21,7 @@ from app.api.service_token import (
 )
 from app.config import get_settings
 from app.db.repositories.leaderboard_player_repository import LeaderboardPlayerRepository
+from app.db.repositories.leaderboard_server_check_repository import LeaderboardServerCheckRepository
 from app.db.repositories.match_repository import MatchRepository
 from app.db.repositories.player_repository import PlayerRepository
 from app.db.repositories.rating_repository import RatingRepository
@@ -40,6 +41,7 @@ from app.services.ranking_service import RankingService
 from app.services.rating_service import RatingService
 from app.services.registration_service import RegistrationService
 from app.services.series_service import SeriesService
+from app.services.server_check_service import ServerCheckService
 from app.services.team_service import TeamService
 
 _ADMIN_AUTH_ERROR = {
@@ -178,6 +180,18 @@ async def get_leaderboard_service(
 ) -> LeaderboardService:
     """Request-scoped ``LeaderboardService`` bound to the request session."""
     return LeaderboardService(session=session, repo=LeaderboardPlayerRepository(session))
+
+
+async def get_server_check_service(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> ServerCheckService:
+    """Request-scoped ``ServerCheckService``; reads what the updater recorded, never Henrik."""
+    return ServerCheckService(
+        session=session,
+        repo=LeaderboardServerCheckRepository(session),
+        players=LeaderboardPlayerRepository(session),
+        settings=get_settings(),
+    )
 
 
 async def get_registration_service(

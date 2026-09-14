@@ -69,5 +69,6 @@ identifiers are reported as invalid/unresolved by the U-item statuses.
 account_v2/       v2 account responses (valid/force/missing-platform/404-22/404-23)
 history_v4/       v4 by-puuid match-list responses (pages/empty/error codes 27/28/42/43/45)
 match_detail_v4/  v4 match detail responses (completed/incomplete/optional-stats/malformed/unknown-side/404-26)
+stored_matches_v1/ v1 stored matches (server check: cluster/region per match, blank and missing fields)
 errors/           HTTP-level error envelopes (401/403/429) — `_headers` is names-only
 ```

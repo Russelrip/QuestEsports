@@ -6,7 +6,10 @@ maintained in `Russelrip/valorant-platform-backend`.
 - `app/` contains the HTTPS API, database access, rating logic, and service
   authentication.
 - `workers/` contains the updater, Discord bot, and scheduled name-audit
-  processes. They share the same immutable image as the API.
+  processes. They share the same immutable image as the API. The updater also
+  runs the leaderboard server check (`workers/server_check.py`): once a day per
+  player it records the servers of their recent competitive matches (0018), and
+  `app/domain/leaderboard/server_check.py` flags from them at read time.
 - `supabase/migrations/` owns only the PostgreSQL `valorant` schema and its
   `_migration_ledger`; it must not reference Quest's `public` schema.
 - `scripts/` contains migration, runtime-access, and release-image validators.

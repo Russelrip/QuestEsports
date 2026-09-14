@@ -158,3 +158,18 @@ class HenrikAccount(BaseModel):
     tag: str
     platforms: list[str] = []
     updated_at: datetime | None = None
+
+
+class HenrikServerMatch(BaseModel):
+    """Where one stored competitive match was played (v1 stored-matches ``data[].meta``).
+
+    ``cluster`` is the server name (``"Singapore"``, ``"Mumbai"``) and ``shard``
+    the Riot shard (``"ap"``); Henrik names the latter ``region``. Both were
+    confirmed against a live response on 2026-09-14.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+    match_id: str
+    cluster: str | None = None
+    shard: str | None = None
+    started_at: datetime

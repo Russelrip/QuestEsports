@@ -21,6 +21,7 @@ from app.integrations.henrik.models import (
     HenrikAccount,
     HenrikMatchDetail,
     HenrikMatchListItem,
+    HenrikServerMatch,
 )
 
 _T = TypeVar("_T", bound=BaseModel)
@@ -223,6 +224,34 @@ class HenrikMapper:
             return datetime.fromtimestamp(game_start / 1000, tz=UTC).isoformat()
         return None
 
+    def to_server_matches(self, raw: list) -> list[HenrikServerMatch]:
+        """Server observations from a v1 stored-matches ``data`` list.
+
+        Reads ``meta.id``, ``meta.cluster``, ``meta.region`` and
+        ``meta.started_at``. An item without an id or a start time cannot be
+        stored, so it is skipped rather than failing the whole player; a blank
+        cluster or region becomes ``None``.
+        """
+        matches: list[HenrikServerMatch] = []
+        for item in raw:
+            meta = item.get("meta") if isinstance(item, dict) else None
+            if not isinstance(meta, dict):
+                continue
+            match_id = meta.get("id")
+            started_at = meta.get("started_at")
+            if not isinstance(match_id, str) or not match_id or not isinstance(started_at, str):
+                continue
+            try:
+                matches.append(HenrikServerMatch(
+                    match_id=match_id,
+                    cluster=_blank_to_none(meta.get("cluster")),
+                    shard=_blank_to_none(meta.get("region")),
+                    started_at=started_at,
+                ))
+            except ValidationError:
+                continue
+        return matches
+
     # ------------------------------------------------------------ internals
 
     @staticmethod
@@ -322,3 +351,7 @@ class HenrikMapper:
 def _require_list_of_dicts(value, field: str) -> None:
     if not isinstance(value, list) or not all(isinstance(item, dict) for item in value):
         raise HenrikProtocolError(f"{field} must be a list of objects")
+
+
+def _blank_to_none(value) -> str | None:
+    return value.strip() if isinstance(value, str) and value.strip() else None

@@ -20,6 +20,8 @@ import type {
   ValorantLeaderboardRegistrationPage,
   ValorantLeaderboardRemoval,
   ValorantLeaderboardRemovalPage,
+  ValorantServerCheck,
+  ValorantServerCheckPage,
   ValorantLeaderboardRestore,
   ValorantMatchSummary,
   ValorantPlayerLeaderboardPage,
@@ -235,6 +237,30 @@ export const restoreValorantLeaderboardRemoval = (removalId: string, reason: str
   valorantAdminRequest<ValorantLeaderboardRestore>(
     `/api/v1/admin/valorant/leaderboard/removals/${encodeURIComponent(removalId)}/restore`,
     { method: "POST", json: { reason } }
+  );
+
+export const fetchValorantServerChecks = ({
+  status = "flagged",
+  page = 1,
+}: { status?: "flagged" | "cleared"; page?: number } = {}) => {
+  const params = new URLSearchParams();
+  params.set("status", status);
+  params.set("page", String(page));
+  return valorantAdminRequest<ValorantServerCheckPage>(
+    `/api/v1/admin/valorant/leaderboard/server-checks?${params.toString()}`
+  );
+};
+
+export const clearValorantServerCheck = (puuid: string, reason: string) =>
+  valorantAdminRequest<ValorantServerCheck>(
+    `/api/v1/admin/valorant/leaderboard/server-checks/${encodeURIComponent(puuid)}/clear`,
+    { method: "POST", json: { reason } }
+  );
+
+export const reopenValorantServerCheck = (puuid: string, reason: string) =>
+  valorantAdminRequest<ValorantServerCheck>(
+    `/api/v1/admin/valorant/leaderboard/server-checks/${encodeURIComponent(puuid)}/clear`,
+    { method: "DELETE", json: { reason } }
   );
 
 export const fetchPublicValorantLeaderboard = async (

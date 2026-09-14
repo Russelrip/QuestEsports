@@ -4,6 +4,7 @@ import { Fragment, useEffect, useState, type FormEvent } from "react";
 import ValorantEmptyState from "@/components/admin/valorant/ValorantEmptyState";
 import ValorantErrorAlert from "@/components/admin/valorant/ValorantErrorAlert";
 import ValorantLeaderboardRemovalsPanel from "@/components/admin/valorant/ValorantLeaderboardRemovalsPanel";
+import ValorantLeaderboardServerCheckPanel from "@/components/admin/valorant/ValorantLeaderboardServerCheckPanel";
 import ValorantLoadingState from "@/components/admin/valorant/ValorantLoadingState";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -47,6 +48,8 @@ export default function ValorantLeaderboardPlayersManager() {
   const [lastRemoval, setLastRemoval] = useState<LastRemoval | null>(null);
   const [undoing, setUndoing] = useState(false);
   const [removalsVersion, setRemovalsVersion] = useState(0);
+  // Bumped whenever a registration leaves or returns, so the server check follows.
+  const [serverChecksVersion, setServerChecksVersion] = useState(0);
 
   const registrationsQuery = useValorantLeaderboardRegistrations(query, page);
   // A newer search is loading while the previous results are still shown.
@@ -102,6 +105,7 @@ export default function ValorantLeaderboardPlayersManager() {
       showToast({ title: `${label} removed from the leaderboard`, tone: "success" });
       setLastRemoval(result.removalId ? { removalId: result.removalId, label } : null);
       setRemovalsVersion((version) => version + 1);
+      setServerChecksVersion((version) => version + 1);
       closeRemoval();
       if (entries.length === 1 && page > 1) {
         setPage(page - 1);
@@ -130,6 +134,7 @@ export default function ValorantLeaderboardPlayersManager() {
     } finally {
       setUndoing(false);
       setRemovalsVersion((version) => version + 1);
+      setServerChecksVersion((version) => version + 1);
     }
   };
 
@@ -366,10 +371,20 @@ export default function ValorantLeaderboardPlayersManager() {
         </>
       )}
 
+      <ValorantLeaderboardServerCheckPanel
+        refreshToken={serverChecksVersion}
+        onRemoved={({ removalId, label }) => {
+          setLastRemoval(removalId ? { removalId, label } : null);
+          setRemovalsVersion((version) => version + 1);
+          void registrationsQuery.refetch();
+        }}
+      />
+
       <ValorantLeaderboardRemovalsPanel
         refreshToken={removalsVersion}
         onRestored={() => {
           setLastRemoval(null);
+          setServerChecksVersion((version) => version + 1);
           void registrationsQuery.refetch();
         }}
       />

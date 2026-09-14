@@ -10,6 +10,9 @@ const {
   removeRegistration: fetchRemoveRegistration,
   listRemovals: fetchRemovals,
   restoreRemoval: fetchRestoreRemoval,
+  listServerChecks: fetchServerChecks,
+  clearServerCheck: fetchClearServerCheck,
+  reopenServerCheck: fetchReopenServerCheck,
 } = require("./client");
 const { requireLinkedDiscord } = require("../auth/discord-link.service");
 const { prisma } = require("../../lib/prisma");
@@ -336,7 +339,83 @@ const restoreAdminRemoval = async ({ removalId, actorUserId }) => {
   };
 };
 
+// --- Admin: server check ------------------------------------------------------
+//
+// Upstream records the server of each registered player's recent competitive
+// matches and flags the ones that mostly play away from the Sri Lankan servers,
+// or whose Riot account is not on the AP shard. It only flags: an admin decides,
+// either clearing the flag (keeping the player) or removing them through the
+// ordinary audited removal above.
+
+const mapServerCheck = (entry, names) => ({
+  puuid: entry.puuid,
+  name: entry.name,
+  tag: entry.tag,
+  discordUsername: entry.discord_username ?? "",
+  currentTier: entry.current_tier ?? null,
+  elo: entry.elo ?? null,
+  lastPlayed: entry.last_played_match ?? null,
+  onLeaderboard: Boolean(entry.on_leaderboard),
+  accountRegion: entry.account_region,
+  status: entry.status,
+  reasons: entry.reasons || [],
+  matches: entry.matches ?? 0,
+  knownMatches: entry.known_matches ?? 0,
+  awayMatches: entry.away_matches ?? 0,
+  awayShare: entry.away_share ?? null,
+  servers: (entry.servers || []).map((server) => ({
+    cluster: server.cluster ?? null,
+    matches: server.matches,
+    home: server.home ?? null,
+  })),
+  since: entry.since,
+  checkedAt: entry.checked_at ?? null,
+  clearedAt: entry.cleared_at ?? null,
+  clearedBy: mapActor(entry.cleared_by, names),
+});
+
+const listAdminServerChecks = async ({ status, query, page, perPage, actorUserId }) => {
+  const raw = await fetchServerChecks({ status, query, page, perPage, actorUserId });
+  const entries = raw.entries || [];
+  const names = await loadActorNames(entries.map((entry) => entry.cleared_by));
+  const summary = raw.summary || {};
+  const rule = raw.rule || {};
+  return {
+    entries: entries.map((entry) => mapServerCheck(entry, names)),
+    total: raw.total ?? 0,
+    page: raw.page ?? page,
+    perPage: raw.per_page ?? perPage,
+    totalPages: raw.total_pages ?? 1,
+    summary: {
+      registered: summary.registered ?? 0,
+      checked: summary.checked ?? 0,
+      flagged: summary.flagged ?? 0,
+      cleared: summary.cleared ?? 0,
+    },
+    rule: {
+      homeClusters: rule.home_clusters || [],
+      homeShard: rule.home_shard ?? null,
+      windowDays: rule.window_days ?? null,
+      minMatches: rule.min_matches ?? null,
+      awayShare: rule.away_share ?? null,
+    },
+  };
+};
+
+const clearAdminServerCheck = async ({ puuid, actorUserId }) => {
+  const raw = await fetchClearServerCheck({ puuid, actorUserId });
+  return mapServerCheck(raw, await loadActorNames([raw.cleared_by]));
+};
+
+const reopenAdminServerCheck = async ({ puuid, actorUserId }) => {
+  const raw = await fetchReopenServerCheck({ puuid, actorUserId });
+  return mapServerCheck(raw, new Map());
+};
+
 module.exports = {
+  listAdminServerChecks,
+  clearAdminServerCheck,
+  reopenAdminServerCheck,
   listAdminRegistrations,
   removeAdminRegistration,
   listAdminRemovals,

@@ -40,6 +40,18 @@ class Settings(BaseSettings):
     # ``update_interval_minutes`` / ``rate_limit_delay``).
     updater_interval_minutes: int = 30
     updater_rate_limit_delay: float = 2.5
+    # Leaderboard server check (0018). The updater fetches each player's recent
+    # competitive servers at most once per interval, and an admin reviews the
+    # players whose matches are mostly away from the home servers. The defaults
+    # come from a 30-player production sample on 2026-09-14: 27 played almost
+    # only on Singapore and/or Mumbai, and the other three played 24-25 of
+    # their last 25 on Sydney.
+    server_check_home_clusters: str = "Singapore,Mumbai"
+    server_check_interval_hours: float = Field(default=24, gt=0)
+    server_check_match_count: int = Field(default=25, ge=1, le=100)
+    server_check_window_days: int = Field(default=30, ge=1)
+    server_check_min_matches: int = Field(default=5, ge=1)
+    server_check_away_share: float = Field(default=0.5, gt=0, le=1)
     # Name-audit worker (R34; mirrors valorantsl-new's ``name_audit_delay``):
     # seconds slept between players during the weekly name/tag drift audit.
     name_audit_delay: float = 0.75
