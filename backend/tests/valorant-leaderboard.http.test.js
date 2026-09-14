@@ -160,6 +160,7 @@ const buildMountedApp = () => {
     [realtimeControllerPath]: { getRealtimeEvents: pass },
     [permissionMiddlewarePath]: {
       requireSuperAdmin: () => pass,
+      requireStaffPermission: () => pass,
       requirePermission: () => pass,
       requireVetoRoomCode: pass,
       requireVetoRoomCredential: pass,

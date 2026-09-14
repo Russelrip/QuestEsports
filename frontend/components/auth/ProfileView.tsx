@@ -32,6 +32,7 @@ import { resolveImageUrl } from "@/lib/media";
 import { AccountDashboard, DashboardRegistration, fetchAccountDashboard } from "@/lib/account";
 import { type VetoRoom, vetoRequest } from "@/lib/veto";
 import { type MatchRoomSummary, roomRequest } from "@/lib/match-rooms";
+import { adminHomeFor } from "@/lib/staff-permissions";
 
 const profileSchema = z.object({
   firstName: z.string().min(1, "First name is required."),
@@ -328,7 +329,7 @@ export default function ProfileView() {
               <div className="grid w-full min-w-0 grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap">
                 <label className={buttonClassName({ variant: "secondary", className: "w-full min-w-0 cursor-pointer px-2 sm:w-auto sm:px-5" })}>{avatarSaving ? "Saving..." : "Change photo"}<input className="sr-only" type="file" accept="image/png,image/jpeg,image/webp" disabled={avatarSaving} onChange={(event) => void updateAvatar(event.target.files?.[0])} /></label>
                 {user.avatarUrl ? <Button className="min-w-0 px-2 sm:px-5" type="button" variant="ghost" disabled={avatarSaving} onClick={() => void removeAvatar()}>Remove photo</Button> : null}
-                {user.role === "admin" ? <Link href="/admin" className={buttonClassName({ variant: "secondary", className: "min-w-0 px-2 sm:px-5" })}>Admin</Link> : null}
+                {adminHomeFor(user) ? <Link href={adminHomeFor(user) ?? "/admin"} className={buttonClassName({ variant: "secondary", className: "min-w-0 px-2 sm:px-5" })}>Admin</Link> : null}
                 <Button className="min-w-0 px-2 sm:px-5" variant="ghost" onClick={async () => { if (await logout()) router.push("/"); }}>Logout</Button>
               </div>
             </div>

@@ -16,10 +16,11 @@ import { SupportUnreadBadge, SupportUnreadDot } from "@/components/support/Suppo
 type UserMenuProps = {
   user: AuthUser;
   logout: () => Promise<boolean>;
-  isAdmin?: boolean;
+  // Where the admin panel starts for this user; null hides the link.
+  adminHref?: string | null;
 };
 
-export default function UserMenu({ user, logout, isAdmin = false }: UserMenuProps) {
+export default function UserMenu({ user, logout, adminHref = null }: UserMenuProps) {
   const router = useRouter();
   const menuRef = useRef<HTMLDivElement>(null);
   const [isOpen, setIsOpen] = useState(false);
@@ -104,8 +105,8 @@ export default function UserMenu({ user, logout, isAdmin = false }: UserMenuProp
               <Link href="/support" onClick={() => setIsOpen(false)} className="account-menu-item flex min-h-11 items-center gap-3 px-3 py-2 text-sm text-slate-200 transition hover:bg-white/8 hover:text-white">
                 <NavIcon icon="message" /> Support inbox <SupportUnreadBadge />
               </Link>
-              {isAdmin ? (
-                <Link href="/admin" className="account-menu-item flex items-center gap-3 px-3 py-2 text-sm text-slate-200 transition hover:bg-white/8 hover:text-white">
+              {adminHref ? (
+                <Link href={adminHref} className="account-menu-item flex items-center gap-3 px-3 py-2 text-sm text-slate-200 transition hover:bg-white/8 hover:text-white">
                   <NavIcon icon="shield" />
                   Admin Panel
                 </Link>

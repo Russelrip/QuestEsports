@@ -1433,10 +1433,14 @@ const additionalPaths = {
     post: createOperation("valorant", "Finalize a series with a rating mode and optional override", { authenticated: true }),
   },
   "/api/v1/admin/valorant/leaderboard/players": {
-    get: createOperation("valorant", "List every VALORANT leaderboard registration, including players the public board hides", { authenticated: true }),
+    get: createOperation("valorant", "List every VALORANT leaderboard registration, including players the public board hides (admin or valorant_leaderboard staff permission)", { authenticated: true }),
   },
   "/api/v1/admin/valorant/leaderboard/players/{puuid}": {
-    delete: createOperation("valorant", "Remove a player from the VALORANT leaderboard (reason required, audited)", { authenticated: true }),
+    delete: createOperation("valorant", "Remove a player from the VALORANT leaderboard (reason required, audited; admin or valorant_leaderboard staff permission)", { authenticated: true }),
+  },
+  "/api/v1/admin/users/{userId}/staff-permissions": {
+    get: createOperation("Admin", "List the delegated admin areas granted to a user, with the area catalog", { authenticated: true }),
+    put: createOperation("Admin", "Replace the delegated admin areas granted to a user (admin only, audited)", { authenticated: true }),
   },
   "/api/v1/admin/valorant/rankings": {
     get: createOperation("valorant", "List VALORANT team rankings", { authenticated: true }),

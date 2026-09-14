@@ -1,6 +1,7 @@
 const { prisma } = require("../../lib/prisma");
 const { asyncHandler } = require("../../lib/async-handler");
 const { HttpError } = require("../../lib/http-error");
+const { hasStaffPermission, STAFF_PERMISSION_KEYS } = require("./staff-permission.service");
 
 const isSuperAdmin = (user) => user?.role === "admin";
 
@@ -185,6 +186,22 @@ const requireSuperAdmin = (req, res, next) => {
   next();
 };
 
+// Site-wide delegated admin area (see staff-permission.service). Admins pass;
+// anyone else needs a grant for exactly this area. Unknown areas fail closed at
+// startup rather than silently letting nobody — or everybody — through.
+const requireStaffPermission = (permission) => {
+  if (!STAFF_PERMISSION_KEYS.includes(permission)) {
+    throw new Error(`Unknown staff permission: ${permission}`);
+  }
+  return asyncHandler(async (req, res, next) => {
+    if (!req.user) throw new HttpError(401, "You must be logged in to access this resource.");
+    if (!(await hasStaffPermission(req.user, permission))) {
+      throw new HttpError(403, "You do not have access to this area.");
+    }
+    next();
+  });
+};
+
 const requireTournamentStaff = ({
   roles = ["tournament_admin", "referee"],
   parameter = "id",
@@ -287,6 +304,7 @@ module.exports = {
   resolveTournamentId,
   requirePermission,
   requireSuperAdmin,
+  requireStaffPermission,
   requireTournamentStaff,
   requireMatchStaff,
   requireVetoRoomStaff,

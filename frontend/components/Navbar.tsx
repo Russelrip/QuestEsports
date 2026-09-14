@@ -8,6 +8,7 @@ import UserMenu from "@/components/UserMenu";
 import { Button, buttonClassName } from "@/components/ui/button";
 import { Container } from "@/components/ui/container";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { adminHomeFor } from "@/lib/staff-permissions";
 import { useUiStore } from "@/hooks/useUiStore";
 import { cn, getInitials } from "@/lib/utils";
 import { resolveImageUrl } from "@/lib/media";
@@ -114,7 +115,7 @@ export default function Navbar() {
 
             <div className="hidden shrink-0 items-center justify-end gap-3 lg:flex">
               {!isLoading && isAuthenticated && user ? (
-                <UserMenu user={user} logout={logout} isAdmin={user.role === "admin"} />
+                <UserMenu user={user} logout={logout} adminHref={adminHomeFor(user)} />
               ) : !isLoading ? (
                 authNavItems.map((item) => (
                   <Link
@@ -188,8 +189,8 @@ export default function Navbar() {
                     <Link href="/support" onClick={() => setMobileNavOpen(false)} className="flex min-h-11 items-center gap-3 rounded-2xl bg-white/6 px-4 py-3 text-sm text-white">
                       <NavIcon icon="message" /> Support inbox <SupportUnreadBadge />
                     </Link>
-                    {user.role === "admin" ? (
-                      <Link href="/admin" prefetch={false} className="flex items-center gap-3 rounded-2xl bg-white/6 px-4 py-3 text-sm text-white">
+                    {adminHomeFor(user) ? (
+                      <Link href={adminHomeFor(user) ?? "/admin"} prefetch={false} className="flex items-center gap-3 rounded-2xl bg-white/6 px-4 py-3 text-sm text-white">
                         <NavIcon icon="shield" />
                         Admin Panel
                       </Link>

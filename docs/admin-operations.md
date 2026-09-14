@@ -35,6 +35,35 @@ All admin routes require a valid session and `user.role === "admin"`.
 - `/admin/contact-messages` for the contact inbox
 - `/admin/teams` for saved-team details, logos, organization labels, and deletion
 
+## Staff Access (Delegated Admin Areas)
+
+`users.role` is still all-or-nothing: an `admin` opens every admin page and
+route. To let someone manage one area without making them an admin, give them
+**staff access** to that area:
+
+1. Open `/admin/users`, find the user, and click **Edit**.
+2. In the **Staff Access** card, tick the areas they should manage and click
+   **Save staff access**.
+
+The change applies on their next request; no re-login is needed. They reach
+the admin panel from the usual **Admin Panel** link, see only their areas in
+the navigation, and are sent back to their area from any other admin page.
+Every admin API route outside their areas still returns 403. Granting and
+revoking access is admin-only and audited as
+`admin.user.staff_permissions.updated` with the before and after lists.
+
+| Area | Key | What it opens |
+| --- | --- | --- |
+| VALORANT leaderboard | `valorant_leaderboard` | Admin → Valorant → **Leaderboard Players**: search registrations and remove players. The other Valorant tabs stay admin-only. |
+
+Adding an area: add the value to the `StaffPermission` enum (Prisma schema and
+a migration), add it to the catalog in
+`backend/src/modules/permissions/staff-permission.service.js` and
+`frontend/lib/staff-permissions.ts`, guard its routes with
+`requireStaffPermission("<key>")` declared before any blanket `requireAdmin`
+for the same prefix, and set `permission` on its navigation link (and tab, if
+it shares a page).
+
 ## Media Library
 
 `/admin/media` provides two related views:
