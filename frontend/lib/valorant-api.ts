@@ -241,10 +241,14 @@ export const restoreValorantLeaderboardRemoval = (removalId: string, reason: str
 
 export const fetchValorantServerChecks = ({
   status = "flagged",
+  query = "",
+  server = "",
   page = 1,
-}: { status?: "flagged" | "cleared"; page?: number } = {}) => {
+}: { status?: "flagged" | "cleared" | "all"; query?: string; server?: string; page?: number } = {}) => {
   const params = new URLSearchParams();
   params.set("status", status);
+  if (query) params.set("q", query);
+  if (server) params.set("server", server);
   params.set("page", String(page));
   return valorantAdminRequest<ValorantServerCheckPage>(
     `/api/v1/admin/valorant/leaderboard/server-checks?${params.toString()}`

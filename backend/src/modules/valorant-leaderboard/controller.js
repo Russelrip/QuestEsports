@@ -153,7 +153,8 @@ const restoreRemoval = asyncHandler(async (req, res) => {
   respond(res, data);
 });
 
-const SERVER_CHECK_STATUSES = new Set(["flagged", "cleared"]);
+const SERVER_CHECK_STATUSES = new Set(["flagged", "cleared", "all"]);
+const SERVER_NAME_MAX_LENGTH = 50;
 
 const readReason = (req, missingMessage) => {
   const reason = typeof req.body?.reason === "string" ? req.body.reason.trim() : "";
@@ -183,9 +184,10 @@ const serverCheckAuditData = (entry) => ({
 const listServerChecks = asyncHandler(async (req, res) => {
   const status = SERVER_CHECK_STATUSES.has(req.query.status) ? req.query.status : "flagged";
   const query = String(req.query.q || "").trim().slice(0, ADMIN_QUERY_MAX_LENGTH);
+  const server = String(req.query.server || "").trim().slice(0, SERVER_NAME_MAX_LENGTH);
   const page = Math.max(1, parsePositiveInt(req.query.page, 1));
   const perPage = clamp(parsePositiveInt(req.query.per_page, 20), 1, 100);
-  const data = await listAdminServerChecks({ status, query, page, perPage, actorUserId: req.user.id });
+  const data = await listAdminServerChecks({ status, query, server, page, perPage, actorUserId: req.user.id });
   respond(res, data);
 });
 

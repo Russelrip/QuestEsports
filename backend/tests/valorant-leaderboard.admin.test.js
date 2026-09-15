@@ -448,7 +448,10 @@ test("listAdminServerChecks maps entries, summary and rule, and names who cleare
         return {
           entries: [{ ...upstreamServerCheck, status: "cleared", reasons: [], cleared_at: "2026-09-14T11:00:00+00:00", cleared_by: ADMIN_ID }],
           total: 1, page: 1, per_page: 20, total_pages: 1,
-          summary: { registered: 491, checked: 40, flagged: 3, cleared: 1 },
+          summary: {
+            registered: 491, checked: 40, flagged: 3, cleared: 1,
+            servers: [{ cluster: "Singapore", matches: 900, players: 30, home: true }, { cluster: "Sydney", matches: 70, players: 3, home: false }],
+          },
           rule: { home_clusters: ["Singapore", "Mumbai"], home_shard: "ap", window_days: 30, min_matches: 5, away_share: 0.5 },
         };
       },
@@ -456,16 +459,19 @@ test("listAdminServerChecks maps entries, summary and rule, and names who cleare
     prisma: { user: { findMany: async () => [{ id: ADMIN_ID, username: "Russel" }] } },
   });
 
-  const result = await service.listAdminServerChecks({ status: "cleared", query: "roo", page: 1, perPage: 20, actorUserId: ADMIN_ID });
+  const result = await service.listAdminServerChecks({ status: "cleared", query: "roo", server: "", page: 1, perPage: 20, actorUserId: ADMIN_ID });
 
-  assert.deepEqual(seen, { status: "cleared", query: "roo", page: 1, perPage: 20, actorUserId: ADMIN_ID });
+  assert.deepEqual(seen, { status: "cleared", query: "roo", server: "", page: 1, perPage: 20, actorUserId: ADMIN_ID });
   assert.deepEqual(result.entries[0], mappedServerCheck({
     status: "cleared",
     reasons: [],
     clearedAt: "2026-09-14T11:00:00+00:00",
     clearedBy: { id: ADMIN_ID, username: "Russel" },
   }));
-  assert.deepEqual(result.summary, { registered: 491, checked: 40, flagged: 3, cleared: 1 });
+  assert.deepEqual(result.summary, {
+    registered: 491, checked: 40, flagged: 3, cleared: 1,
+    servers: [{ cluster: "Singapore", matches: 900, players: 30, home: true }, { cluster: "Sydney", matches: 70, players: 3, home: false }],
+  });
   assert.deepEqual(result.rule, { homeClusters: ["Singapore", "Mumbai"], homeShard: "ap", windowDays: 30, minMatches: 5, awayShare: 0.5 });
 });
 
@@ -504,10 +510,12 @@ test("listServerChecks defaults an unknown status to flagged and clamps paging",
 
   await run(controller.listServerChecks, { query: { status: "everything", q: "  roo ", page: "0", per_page: "500" }, user: { id: ADMIN_ID } });
   await run(controller.listServerChecks, { query: { status: "cleared" }, user: { id: ADMIN_ID } });
+  await run(controller.listServerChecks, { query: { status: "all", server: ` Sydney${"x".repeat(80)}` }, user: { id: ADMIN_ID } });
 
   assert.deepEqual(seen, [
-    { status: "flagged", query: "roo", page: 1, perPage: 100, actorUserId: ADMIN_ID },
-    { status: "cleared", query: "", page: 1, perPage: 20, actorUserId: ADMIN_ID },
+    { status: "flagged", query: "roo", server: "", page: 1, perPage: 100, actorUserId: ADMIN_ID },
+    { status: "cleared", query: "", server: "", page: 1, perPage: 20, actorUserId: ADMIN_ID },
+    { status: "all", query: "", server: `Sydney${"x".repeat(44)}`, page: 1, perPage: 20, actorUserId: ADMIN_ID },
   ]);
 });
 
