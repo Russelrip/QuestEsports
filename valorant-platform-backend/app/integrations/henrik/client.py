@@ -49,6 +49,7 @@ from app.integrations.henrik.models import (
     HenrikAccount,
     HenrikMatchDetailEnvelope,
     HenrikMatchListItem,
+    HenrikServerMatch,
 )
 
 logger = logging.getLogger("app.integrations.henrik.client")
@@ -163,6 +164,30 @@ class HenrikClient:
         if not isinstance(data, list):
             raise HenrikProtocolError("history data must be a list")
         return self._mapper.to_last_competitive_match(data)
+
+    async def get_stored_competitive_servers(
+        self, puuid: str, *, affinity: str, size: int
+    ) -> list[HenrikServerMatch]:
+        """The server of each of a player's recent competitive matches, newest first.
+
+        ``GET /valorant/v1/by-puuid/stored-matches/{affinity}/{puuid}``. The v4
+        history carries the same ``cluster`` but returns every match in full —
+        about 440 KB each when measured on 2026-09-14, against roughly 0.7 KB
+        per stored match — and only the server is needed here. Stored matches
+        are the ones Henrik has already seen, which for an active player is
+        effectively all of them.
+        """
+        body, http_status = await self._request(
+            "stored_matches",
+            "GET",
+            f"/valorant/v1/by-puuid/stored-matches/{affinity}/{puuid}",
+            params={"mode": "competitive", "size": str(size)},
+        )
+        envelope = self._validate_success_envelope(body, http_status)
+        data = envelope["data"]
+        if not isinstance(data, list):
+            raise HenrikProtocolError("stored matches data must be a list")
+        return self._mapper.to_server_matches(data)
 
     async def get_match_detail(
         self, match_id: str, *, affinity: str

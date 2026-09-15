@@ -566,6 +566,48 @@ Removals made before restoring existed (VALORANT migration `0017`) were not kept
 and cannot be restored from the page. The copy of a removed player is kept
 indefinitely, including when the player asked to be removed.
 
+## Leaderboard Server Check
+
+The leaderboard is for Sri Lankan players, and they play competitive on the
+Singapore and Mumbai servers. Admin → Valorant → **Leaderboard Players** →
+**Server check** lists the registrations worth a second look:
+
+- **Away servers**: at least half of the player's competitive matches in the
+  last 30 days (and at least 5 of them) were on other servers. In a 30-player
+  production sample on 2026-09-14, 27 played almost only on Singapore and/or
+  Mumbai and 3 played almost only on Sydney.
+- **Account region**: the Riot account is not on the AP region at all (3 of 491
+  registrations on 2026-09-14).
+
+It only flags. A Sri Lankan living abroad, or one who plays with friends on
+another server, looks exactly like someone who is not Sri Lankan, so review each
+player (the **tracker.gg** link helps, and so does asking them on Discord):
+
+- **Keep** takes a reason and moves the player to **Kept**. Their matches so far
+  stop counting; enough away matches after that flag them again, marked as
+  flagged after being kept. **Reopen** on the Kept view undoes it.
+- **Remove** is the ordinary removal described above: same reason, same audit
+  entry, same **Undo** banner and **Removed players** restore.
+
+Keep and Reopen are audited (`valorant.leaderboard_player.server_check_clear` /
+`.server_check_reopen`) with the servers and counts the decision was based on,
+and are open to admins and to staff with the `valorant_leaderboard` area.
+
+How the evidence is gathered: after refreshing a player's rank, the VALORANT rank
+updater fetches the servers of their last 25 competitive matches (Henrik stored
+matches, a few KB per player) at most once every 24 hours, and stores each match
+once. After this ships, the first pass checks everyone, so expect the page to
+fill in over about an hour and a half; afterwards a pass checks roughly one
+player in twenty. Its log line gains `servers_checked=` and
+`server_check_failed=`; a failed check never affects the rank refresh and is
+retried next pass. Removing a player keeps their evidence and any Keep decision,
+so a restored player comes back as they were. The rule's settings
+(`SERVER_CHECK_HOME_CLUSTERS`, `SERVER_CHECK_WINDOW_DAYS`,
+`SERVER_CHECK_MIN_MATCHES`, `SERVER_CHECK_AWAY_SHARE`,
+`SERVER_CHECK_INTERVAL_HOURS`, `SERVER_CHECK_MATCH_COUNT`) are read by the
+VALORANT platform and apply at read time, except the last two, which the
+updater uses.
+
 ## VALORANT Admin Verification
 
 The VALORANT admin flows (bindings, discovery, series build, preview/finalize,

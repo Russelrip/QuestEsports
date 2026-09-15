@@ -11,7 +11,9 @@ removed mid-pass stays removed) with ``update_source="updater_service"``,
 committing per player. A between-player
 ``rate_limit_delay`` and the Sunday 01:30–06:00 Asia/Colombo rank-pause window
 are honored (R30; a simple asyncio loop replaces valorantsl-new's ``schedule``
-dependency).
+dependency). After a successful refresh, the server check (``workers.server_check``)
+records the servers of the player's recent competitive matches when due; its
+failures are counted apart and never cost the rank refresh.
 
 CLI (``python -m workers.updater``): default scheduler (initial full pass, then
 the interval loop), ``--once`` (one full pass; exit 0 iff ``updated > 0``),
@@ -33,9 +35,11 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.config import Settings, get_settings
 from app.db.repositories.leaderboard_player_repository import LeaderboardPlayerRepository
+from app.db.repositories.leaderboard_server_check_repository import LeaderboardServerCheckRepository
 from app.db.session import SessionFactory
 from app.integrations.henrik.client import HenrikClient
 from app.middleware.write_freeze import refuse_writer_start
+from workers.server_check import ServerChecker
 
 logger = logging.getLogger(__name__)
 
@@ -91,10 +95,13 @@ async def update_all_players(
     affinity: str,
     platform: str,
     rate_limit_delay: float,
+    server_checker: ServerChecker | None = None,
 ) -> dict[str, int]:
     """One full pass over every ``leaderboard_players`` row.
 
-    Returns ``{"total", "updated", "removed", "failed"}``. Each player's
+    Returns ``{"total", "updated", "removed", "failed"}``, plus
+    ``{"servers_checked", "server_check_failed"}`` when a ``server_checker`` is
+    given. Each player's
     refresh commits on its own, so the site sees ranks change as the pass
     goes and a failure never costs the players before it. Per-player failures
     are caught and counted as ``failed`` — one bad player never kills the
@@ -106,10 +113,15 @@ async def update_all_players(
     """
     players = await repo.list_all()
     stats = {"total": len(players), "updated": 0, "removed": 0, "failed": 0}
+    if server_checker is not None:
+        stats.update(servers_checked=0, server_check_failed=0)
+        await server_checker.start_pass()
     for i, player in enumerate(players):
         try:
             if await _update_player(client, repo, player, affinity=affinity, platform=platform):
                 stats["updated"] += 1
+                if server_checker is not None:
+                    await _check_servers(server_checker, repo, player.puuid, stats)
             else:
                 stats["removed"] += 1
         except SQLAlchemyError:
@@ -122,6 +134,22 @@ async def update_all_players(
         if i < len(players) - 1:
             await asyncio.sleep(rate_limit_delay)
     return stats
+
+
+async def _check_servers(
+    checker: ServerChecker, repo: LeaderboardPlayerRepository, puuid: str, stats: dict[str, int]
+) -> None:
+    """Run the server check for one refreshed player; a failure is counted, never raised."""
+    try:
+        if await checker.check(puuid):
+            stats["servers_checked"] += 1
+    except SQLAlchemyError:
+        logger.exception("server check failed for player %s (db error)", puuid)
+        await repo.rollback()
+        stats["server_check_failed"] += 1
+    except Exception:
+        logger.exception("server check failed for player %s", puuid)
+        stats["server_check_failed"] += 1
 
 
 async def update_player_by_puuid(
@@ -141,12 +169,16 @@ async def update_player_by_puuid(
 
 
 def _log_summary(stats: dict[str, int]) -> None:
+    extra = ""
+    if "servers_checked" in stats:
+        extra = f" servers_checked={stats['servers_checked']} server_check_failed={stats['server_check_failed']}"
     logger.info(
-        "update pass complete: total=%s updated=%s removed=%s failed=%s",
+        "update pass complete: total=%s updated=%s removed=%s failed=%s%s",
         stats["total"],
         stats["updated"],
         stats["removed"],
         stats["failed"],
+        extra,
     )
 
 
@@ -159,6 +191,8 @@ def _print_info(settings: Settings) -> None:
     print(f"Platform: {settings.leaderboard_platform}")
     print(f"Update interval: {settings.updater_interval_minutes} minutes")
     print(f"Rate limit delay: {settings.updater_rate_limit_delay}s between players")
+    print(f"Server check: every {settings.server_check_interval_hours}h, last {settings.server_check_match_count} "
+          f"competitive matches; home servers {settings.server_check_home_clusters}")
     print(f"Henrik max retries: {settings.henrik_max_retries}")
     print("=" * 60)
 
@@ -177,6 +211,7 @@ async def _cli_once(settings: Settings) -> int:
             affinity=settings.leaderboard_affinity,
             platform=settings.leaderboard_platform,
             rate_limit_delay=settings.updater_rate_limit_delay,
+            server_checker=ServerChecker.from_settings(client, LeaderboardServerCheckRepository(session), settings),
         )
         _log_summary(stats)
         return 0 if stats["updated"] > 0 else 1
@@ -218,9 +253,10 @@ async def _cli_scheduler(settings: Settings) -> None:
         platform = settings.leaderboard_platform
         delay = settings.updater_rate_limit_delay
         interval = settings.updater_interval_minutes * 60
+        checker = ServerChecker.from_settings(client, LeaderboardServerCheckRepository(session), settings)
 
         logger.info("updater scheduler starting: running initial full pass")
-        _log_summary(await update_all_players(client, repo, affinity=affinity, platform=platform, rate_limit_delay=delay))
+        _log_summary(await update_all_players(client, repo, affinity=affinity, platform=platform, rate_limit_delay=delay, server_checker=checker))
         # Players commit as they go; this only closes the read transaction a
         # pass can leave open, so the sleep never holds a lock a migration needs.
         await session.commit()
@@ -228,7 +264,7 @@ async def _cli_scheduler(settings: Settings) -> None:
         while True:
             if not _in_rank_pause_window():
                 try:
-                    _log_summary(await update_all_players(client, repo, affinity=affinity, platform=platform, rate_limit_delay=delay))
+                    _log_summary(await update_all_players(client, repo, affinity=affinity, platform=platform, rate_limit_delay=delay, server_checker=checker))
                     await session.commit()
                 except Exception:
                     logger.exception("scheduler pass failed; continuing to next interval")

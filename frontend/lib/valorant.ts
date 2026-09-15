@@ -324,6 +324,85 @@ export const leaderboardRemovalBlocker = (entry: ValorantLeaderboardRemovedPlaye
   return entry.restorable ? null : "Cannot be restored";
 };
 
+// --- Leaderboard server check ------------------------------------------------
+
+export type ValorantServerCheckStatus = "flagged" | "cleared" | "clear" | "not_enough_matches" | "not_checked";
+export type ValorantServerCheckReason = "account_region" | "away_servers";
+
+export type ValorantServerMatchCount = {
+  // Null when Henrik did not report the server.
+  cluster: string | null;
+  matches: number;
+  home: boolean | null;
+};
+
+export type ValorantServerCheck = {
+  puuid: string;
+  name: string;
+  tag: string;
+  discordUsername: string;
+  currentTier: string | null;
+  elo: number | null;
+  lastPlayed: string | null;
+  onLeaderboard: boolean;
+  accountRegion: string;
+  status: ValorantServerCheckStatus;
+  reasons: ValorantServerCheckReason[];
+  matches: number;
+  knownMatches: number;
+  awayMatches: number;
+  awayShare: number | null;
+  servers: ValorantServerMatchCount[];
+  // Where the evidence starts: the window start, or the clearance if later.
+  since: string;
+  checkedAt: string | null;
+  clearedAt: string | null;
+  clearedBy: ValorantLeaderboardActor | null;
+};
+
+export type ValorantServerCheckRule = {
+  homeClusters: string[];
+  homeShard: string | null;
+  windowDays: number | null;
+  minMatches: number | null;
+  awayShare: number | null;
+};
+
+export type ValorantServerCheckPage = {
+  entries: ValorantServerCheck[];
+  total: number;
+  page: number;
+  perPage: number;
+  totalPages: number;
+  summary: { registered: number; checked: number; flagged: number; cleared: number };
+  rule: ValorantServerCheckRule;
+};
+
+const formatShare = (share: number) => `${Math.round(share * 100)}%`;
+
+/** Plain-language reasons a player is flagged, one per reason. */
+export const serverCheckReasonLines = (entry: ValorantServerCheck, rule: ValorantServerCheckRule): string[] =>
+  entry.reasons.map((reason) => {
+    if (reason === "account_region") {
+      const home = (rule.homeShard ?? "ap").toUpperCase();
+      return `Riot account is on ${entry.accountRegion.toUpperCase()}, not ${home}`;
+    }
+    const share = entry.awayShare === null ? "" : `${formatShare(entry.awayShare)} — `;
+    return `${share}${entry.awayMatches} of ${entry.knownMatches} recent competitive matches away from ${
+      rule.homeClusters.join(" and ") || "the home servers"
+    }`;
+  });
+
+/** The flagging rule as one sentence, from what the platform reports. */
+export const describeServerCheckRule = (rule: ValorantServerCheckRule): string => {
+  const home = rule.homeClusters.join(" and ") || "the home servers";
+  const share = rule.awayShare === null ? "most" : `at least ${formatShare(rule.awayShare)}`;
+  const window = rule.windowDays === null ? "recent" : `the last ${rule.windowDays} days of`;
+  const minimum = rule.minMatches === null ? "" : ` (from ${rule.minMatches} or more matches)`;
+  const shard = (rule.homeShard ?? "ap").toUpperCase();
+  return `A player is flagged when ${share} of ${window} competitive matches were played away from ${home}${minimum}, or when their Riot account is not on the ${shard} region.`;
+};
+
 export type ValorantRegistrationPreview = {
   puuid: string;
   name: string;

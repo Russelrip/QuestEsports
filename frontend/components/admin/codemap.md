@@ -51,6 +51,12 @@ records are loaded only in the existing admin detail workflow.
   restores one with a reason; whether a row can be restored comes from the
   platform (`restorable`, `registeredAgain`, `superseded`), and a refused restore
   shows the platform's message.
+- `valorant/ValorantLeaderboardServerCheckPanel.tsx` lists players the server
+  check flags (or that an admin kept), with per-server match counts. **Keep** and
+  **Reopen** call the server-check routes; **Remove** is the same removal as the
+  players table and hands the removal back to the manager for its Undo banner.
+  The rule sentence and reason lines are built in `lib/valorant.ts` from the
+  `rule` the platform returns, never hard-coded.
 
 ## Audit log
 

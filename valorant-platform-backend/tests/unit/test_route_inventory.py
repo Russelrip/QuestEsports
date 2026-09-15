@@ -78,6 +78,7 @@ from app.schemas.series import (
     UpdateGameRequest,
     UpdateSeriesRequest,
 )
+from app.schemas.server_checks import LeaderboardServerCheckEntry, LeaderboardServerCheckPage
 from app.schemas.teams import TeamCreate, TeamResponse, TeamUpdate
 
 # The documented API surface: path -> {method: (request_model | None,
@@ -94,6 +95,11 @@ DOCUMENTED_SURFACE: dict[str, dict[str, tuple[type | None, type | None]]] = {
     "/api/v1/leaderboard/players/{puuid}": {"delete": (None, LeaderboardRemovedRegistration)},
     "/api/v1/leaderboard/removals": {"get": (None, LeaderboardRemovalPage)},
     "/api/v1/leaderboard/removals/{removal_id}/restore": {"post": (None, LeaderboardRestoredRegistration)},
+    "/api/v1/leaderboard/server-checks": {"get": (None, LeaderboardServerCheckPage)},
+    "/api/v1/leaderboard/server-checks/{puuid}/clear": {
+        "post": (None, LeaderboardServerCheckEntry),
+        "delete": (None, LeaderboardServerCheckEntry),
+    },
     "/api/v1/players/resolve": {"post": (PlayerResolveRequest, PlayerResponse)},
     "/api/v1/players/{player_id}": {"get": (None, PlayerResponse)},
     "/api/v1/players/by-puuid/{puuid}": {"get": (None, PlayerResponse)},

@@ -49,10 +49,17 @@ deny-by-default rules above. See `tests/fixtures/henrik/README.md`.
 | 1 | Resolve account | `GET /valorant/v2/account/{name}/{tag}` | `Authorization: <key>` (U1) | optional `force` (cache-bypass, refresh path only) |
 | 2 | Match history | `GET /valorant/v4/by-puuid/matches/{affinity}/{platform}/{puuid}` | `Authorization: <key>` | `mode`, `map`, `size`, `start`; **never `queue`** (U3) |
 | 3 | Match details | `GET /valorant/v4/match/{affinity}/{match_id}` | `Authorization: <key>` | none |
+| 4 | Stored-match servers | `GET /valorant/v1/by-puuid/stored-matches/{affinity}/{puuid}` | `Authorization: <key>` | `mode=competitive`, `size` |
 
 - `affinity` = historically "region"; default `eu`, per-request override.
 - `platform` default `pc`; accepted literals `pc` / `console` (else code 42).
 - Account resolution means *Henrik resolved this Riot ID to a PUUID* — not ownership verification.
+- Stored matches (4) are read only for the leaderboard server check, and only
+  `data[].meta.id`, `meta.cluster` (server name, e.g. `Singapore`), `meta.region`
+  (shard, e.g. `ap`) and `meta.started_at`. Live-verified 2026-09-14: `size=25`
+  is honoured and 10 matches come to ~7 KB, where the same fields from (2) cost
+  ~440 KB per match. The envelope also carries a top-level `results` object,
+  which is ignored.
 
 ## Auth form (U1)
 

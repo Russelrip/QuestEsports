@@ -16,6 +16,7 @@ class Base(DeclarativeBase):
 
 from app.db.models.leaderboard_player import LeaderboardPlayer
 from app.db.models.leaderboard_player_removal import LeaderboardPlayerRemoval
+from app.db.models.leaderboard_server_check import LeaderboardServerCheck, LeaderboardServerMatch
 from app.db.models.match import Match
 from app.db.models.match_player import MatchPlayer
 from app.db.models.player import Player
@@ -30,6 +31,8 @@ __all__ = [
     "Base",
     "LeaderboardPlayer",
     "LeaderboardPlayerRemoval",
+    "LeaderboardServerCheck",
+    "LeaderboardServerMatch",
     "Match",
     "MatchPlayer",
     "Player",

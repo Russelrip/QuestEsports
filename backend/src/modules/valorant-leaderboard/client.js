@@ -175,7 +175,37 @@ const restoreRemoval = async ({ removalId, actorUserId }) =>
     actorUserId,
   });
 
+// Admin: players the server check flags for review (status "flagged"), or the
+// ones an admin already cleared (status "cleared").
+const listServerChecks = async ({ status = "flagged", query = "", page = 1, perPage = 20, actorUserId }) => {
+  const params = new URLSearchParams();
+  params.set("status", status);
+  if (query) params.set("q", query);
+  params.set("page", String(page));
+  params.set("per_page", String(perPage));
+  return requestJson({ path: `/api/v1/leaderboard/server-checks?${params.toString()}`, actorUserId });
+};
+
+// Admin: keep a flagged player. Upstream refuses with 409 when they are not flagged.
+const clearServerCheck = async ({ puuid, actorUserId }) =>
+  requestJson({
+    path: `/api/v1/leaderboard/server-checks/${encodeURIComponent(puuid)}/clear`,
+    method: "POST",
+    actorUserId,
+  });
+
+// Admin: undo a clearance. Upstream refuses with 409 when there is none.
+const reopenServerCheck = async ({ puuid, actorUserId }) =>
+  requestJson({
+    path: `/api/v1/leaderboard/server-checks/${encodeURIComponent(puuid)}/clear`,
+    method: "DELETE",
+    actorUserId,
+  });
+
 module.exports = {
+  listServerChecks,
+  clearServerCheck,
+  reopenServerCheck,
   listRegistrations,
   removeRegistration,
   listRemovals,

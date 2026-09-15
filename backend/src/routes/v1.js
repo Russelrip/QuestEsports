@@ -275,6 +275,11 @@ router.delete("/admin/valorant/leaderboard/players/:puuid", requireAuth, leaderb
 // the player back on the cached public leaderboard straight away.
 router.get("/admin/valorant/leaderboard/removals", requireAuth, leaderboardStaff, valorantLeaderboardController.listRemovals);
 router.post("/admin/valorant/leaderboard/removals/:removalId/restore", requireAuth, leaderboardStaff, invalidateCache("foundation"), valorantLeaderboardController.restoreRemoval);
+// The server check flags players to review; clearing or reopening a flag changes
+// nothing on the public leaderboard, so no cache is cleared.
+router.get("/admin/valorant/leaderboard/server-checks", requireAuth, leaderboardStaff, valorantLeaderboardController.listServerChecks);
+router.post("/admin/valorant/leaderboard/server-checks/:puuid/clear", requireAuth, leaderboardStaff, valorantLeaderboardController.clearServerCheck);
+router.delete("/admin/valorant/leaderboard/server-checks/:puuid/clear", requireAuth, leaderboardStaff, valorantLeaderboardController.reopenServerCheck);
 
 // The audit log shows every actor's changes, IPs included, so it is admin-only
 // and not a delegable staff area.

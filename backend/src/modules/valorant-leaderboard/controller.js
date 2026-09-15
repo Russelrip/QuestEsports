@@ -6,6 +6,9 @@ const {
   removeAdminRegistration,
   listAdminRemovals,
   restoreAdminRemoval,
+  listAdminServerChecks,
+  clearAdminServerCheck,
+  reopenAdminServerCheck,
   listLeaderboard,
   searchLeaderboardPlayers,
   checkPuuid: serviceCheckPuuid,
@@ -150,7 +153,80 @@ const restoreRemoval = asyncHandler(async (req, res) => {
   respond(res, data);
 });
 
+const SERVER_CHECK_STATUSES = new Set(["flagged", "cleared"]);
+
+const readReason = (req, missingMessage) => {
+  const reason = typeof req.body?.reason === "string" ? req.body.reason.trim() : "";
+  if (!reason) {
+    throw new HttpError(400, missingMessage);
+  }
+  if (reason.length > REMOVAL_REASON_MAX_LENGTH) {
+    throw new HttpError(400, `Keep the reason under ${REMOVAL_REASON_MAX_LENGTH} characters.`);
+  }
+  return reason;
+};
+
+// What a server check decision was based on, for the audit row. The audit
+// policy keeps PUUIDs out, so the Riot ID and Discord handle identify the player.
+const serverCheckAuditData = (entry) => ({
+  riotId: `${entry.name}#${entry.tag}`,
+  discordUsername: entry.discordUsername,
+  accountRegion: entry.accountRegion,
+  status: entry.status,
+  reasons: entry.reasons,
+  awayMatches: entry.awayMatches,
+  knownMatches: entry.knownMatches,
+  servers: entry.servers.map((server) => `${server.cluster ?? "Unknown"} ${server.matches}`).join(", "),
+  since: entry.since,
+});
+
+const listServerChecks = asyncHandler(async (req, res) => {
+  const status = SERVER_CHECK_STATUSES.has(req.query.status) ? req.query.status : "flagged";
+  const query = String(req.query.q || "").trim().slice(0, ADMIN_QUERY_MAX_LENGTH);
+  const page = Math.max(1, parsePositiveInt(req.query.page, 1));
+  const perPage = clamp(parsePositiveInt(req.query.per_page, 20), 1, 100);
+  const data = await listAdminServerChecks({ status, query, page, perPage, actorUserId: req.user.id });
+  respond(res, data);
+});
+
+// Keeping a flagged player. The audit row records what the flag was when the
+// admin decided, since the clearance itself resets what counts.
+const clearServerCheck = asyncHandler(async (req, res) => {
+  const reason = readReason(req, "Give a reason for keeping this player on the leaderboard.");
+  const data = await clearAdminServerCheck({ puuid: req.params.puuid, actorUserId: req.user.id });
+  await recordAudit({
+    ...requestAuditContext(req),
+    action: "valorant.leaderboard_player.server_check_clear",
+    targetType: "valorant_leaderboard_player",
+    targetId: null,
+    beforeData: { flagged: true },
+    afterData: { ...serverCheckAuditData(data), clearedAt: data.clearedAt },
+    source: "admin",
+    reason,
+  });
+  respond(res, data);
+});
+
+const reopenServerCheck = asyncHandler(async (req, res) => {
+  const reason = readReason(req, "Give a reason for reopening this player's server check.");
+  const data = await reopenAdminServerCheck({ puuid: req.params.puuid, actorUserId: req.user.id });
+  await recordAudit({
+    ...requestAuditContext(req),
+    action: "valorant.leaderboard_player.server_check_reopen",
+    targetType: "valorant_leaderboard_player",
+    targetId: null,
+    beforeData: { cleared: true },
+    afterData: serverCheckAuditData(data),
+    source: "admin",
+    reason,
+  });
+  respond(res, data);
+});
+
 module.exports = {
+  listServerChecks,
+  clearServerCheck,
+  reopenServerCheck,
   listRegistrations,
   removeRegistration,
   listRemovals,

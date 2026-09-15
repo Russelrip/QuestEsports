@@ -15,7 +15,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app.api.dependencies import get_leaderboard_service
+from app.api.dependencies import get_leaderboard_service, get_server_check_service
 from app.api.errors import AppError
 from app.config import Settings
 from app.main import create_app
@@ -29,6 +29,13 @@ from app.schemas.leaderboard import (
     LeaderboardRemovedRegistration,
     LeaderboardRestoredRegistration,
     LeaderboardStats,
+)
+from app.schemas.server_checks import (
+    LeaderboardServerCheckEntry,
+    LeaderboardServerCheckPage,
+    ServerCheckRule,
+    ServerCheckSummary,
+    ServerMatchCount,
 )
 
 
@@ -316,4 +323,130 @@ def test_admin_player_routes_require_service_token(monkeypatch: pytest.MonkeyPat
     assert client.delete("/api/v1/leaderboard/players/p1").status_code == 401
     assert client.get("/api/v1/leaderboard/removals").status_code == 401
     assert client.post(f"/api/v1/leaderboard/removals/{REMOVED.removal_id}/restore").status_code == 401
+    assert fake.calls == []
+
+
+# ------------------------------------------------------------ server check (0018)
+
+SERVER_CHECK_ENTRY = LeaderboardServerCheckEntry(
+    puuid="p1",
+    name="PlayerA",
+    tag="A",
+    discord_username="playera",
+    current_tier="Gold 1",
+    elo=1200,
+    last_played_match="2026-09-13T20:11:00+00:00",
+    on_leaderboard=True,
+    account_region="ap",
+    status="flagged",
+    reasons=["away_servers"],
+    matches=25,
+    known_matches=25,
+    away_matches=24,
+    away_share=0.96,
+    servers=[
+        ServerMatchCount(cluster="Sydney", matches=24, home=False),
+        ServerMatchCount(cluster="Mumbai", matches=1, home=True),
+    ],
+    since="2026-08-15T00:00:00+00:00",
+    checked_at="2026-09-14T10:00:00+00:00",
+)
+
+
+class _FakeServerCheckService:
+    def __init__(self, *, outcome: LeaderboardServerCheckEntry | AppError = SERVER_CHECK_ENTRY) -> None:
+        self._outcome = outcome
+        self.calls: list[tuple] = []
+
+    async def list_checks(self, status: str, query: str, page: int, per_page: int) -> LeaderboardServerCheckPage:
+        self.calls.append(("list", status, query, page, per_page))
+        return LeaderboardServerCheckPage(
+            entries=[SERVER_CHECK_ENTRY],
+            total=1,
+            page=page,
+            per_page=per_page,
+            total_pages=1,
+            summary=ServerCheckSummary(registered=491, checked=12, flagged=1, cleared=0),
+            rule=ServerCheckRule(
+                home_clusters=["Singapore", "Mumbai"], home_shard="ap", window_days=30, min_matches=5, away_share=0.5
+            ),
+        )
+
+    async def clear(self, puuid: str, actor_id: str | None = None) -> LeaderboardServerCheckEntry:
+        self.calls.append(("clear", puuid, actor_id))
+        if isinstance(self._outcome, AppError):
+            raise self._outcome
+        return self._outcome
+
+    async def reopen(self, puuid: str) -> LeaderboardServerCheckEntry:
+        self.calls.append(("reopen", puuid))
+        if isinstance(self._outcome, AppError):
+            raise self._outcome
+        return self._outcome
+
+
+def _server_check_app(
+    monkeypatch: pytest.MonkeyPatch, fake: _FakeServerCheckService, settings: Settings | None = None
+) -> FastAPI:
+    app = _app(monkeypatch, _FakeLeaderboardService(), settings)
+
+    async def _stub():
+        yield fake
+
+    app.dependency_overrides[get_server_check_service] = _stub
+    return app
+
+
+def test_server_checks_route_defaults_to_flagged(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = _FakeServerCheckService()
+    client = TestClient(_server_check_app(monkeypatch, fake))
+    resp = client.get("/api/v1/leaderboard/server-checks")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["entries"] == [SERVER_CHECK_ENTRY.model_dump()]
+    assert body["summary"]["flagged"] == 1
+    assert body["rule"]["home_clusters"] == ["Singapore", "Mumbai"]
+    assert fake.calls == [("list", "flagged", "", 1, 20)]
+
+
+def test_server_checks_route_passes_status_query_and_paging(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = _FakeServerCheckService()
+    client = TestClient(_server_check_app(monkeypatch, fake))
+    resp = client.get(
+        "/api/v1/leaderboard/server-checks", params={"status": "cleared", "q": "playa", "page": 2, "per_page": 10}
+    )
+    assert resp.status_code == 200
+    assert fake.calls == [("list", "cleared", "playa", 2, 10)]
+    assert client.get("/api/v1/leaderboard/server-checks", params={"status": "clear"}).status_code == 422
+
+
+def test_clear_route_records_the_actor(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = _FakeServerCheckService()
+    client = TestClient(_server_check_app(monkeypatch, fake))
+    resp = client.post("/api/v1/leaderboard/server-checks/p1/clear", headers={"X-Quest-Actor-Id": "actor-1"})
+    assert resp.status_code == 200
+    assert resp.json() == SERVER_CHECK_ENTRY.model_dump()
+    assert fake.calls == [("clear", "p1", "actor-1")]
+
+
+def test_clear_and_reopen_surface_refusals(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = _FakeServerCheckService(outcome=AppError("LEADERBOARD_SERVER_CHECK_NOT_FLAGGED", 409, "not flagged"))
+    client = TestClient(_server_check_app(monkeypatch, fake))
+    resp = client.post("/api/v1/leaderboard/server-checks/p1/clear")
+    assert resp.status_code == 409
+    assert resp.json()["error"]["code"] == "LEADERBOARD_SERVER_CHECK_NOT_FLAGGED"
+    assert client.delete("/api/v1/leaderboard/server-checks/p1/clear").status_code == 409
+    assert fake.calls == [("clear", "p1", None), ("reopen", "p1")]
+
+
+def test_server_check_routes_require_service_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = _FakeServerCheckService()
+    client = TestClient(
+        _server_check_app(
+            monkeypatch, fake, Settings(app_env="production", quest_service_shared_secrets="kid=secret")
+        )
+    )
+    assert client.get("/api/v1/leaderboard/server-checks").status_code == 401
+    assert client.post("/api/v1/leaderboard/server-checks/p1/clear").status_code == 401
+    assert client.delete("/api/v1/leaderboard/server-checks/p1/clear").status_code == 401
     assert fake.calls == []

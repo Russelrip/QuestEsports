@@ -19,6 +19,9 @@ from zoneinfo import ZoneInfo
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.db.models import LeaderboardPlayer
+from app.integrations.henrik.exceptions import HenrikNotFoundError
+from app.integrations.henrik.models import HenrikServerMatch
+from workers.server_check import ServerChecker
 from workers.updater import _in_rank_pause_window, update_all_players, update_player_by_puuid
 
 COLOMBO = ZoneInfo("Asia/Colombo")
@@ -252,3 +255,103 @@ async def test_update_single_player_missing_puuid_returns_false():
     )
     assert ok is False
     assert repo.refreshes == []
+
+
+# ------------------------------------------------------------ server check (0018)
+
+class FakeServerClient:
+    """Canned stored-match servers; raises per PUUID when asked."""
+
+    def __init__(self, *, fail_for: dict[str, Exception] | None = None) -> None:
+        self.fail_for = fail_for or {}
+        self.calls: list[tuple[str, str, int]] = []
+
+    async def get_stored_competitive_servers(self, puuid: str, *, affinity: str, size: int) -> list:
+        self.calls.append((puuid, affinity, size))
+        if puuid in self.fail_for:
+            raise self.fail_for[puuid]
+        return [
+            HenrikServerMatch(match_id=f"{puuid}-m1", cluster="Sydney", shard="ap", started_at=LAST_MATCH),
+        ]
+
+
+class FakeServerRepo:
+    def __init__(self, checked_at: dict[str, datetime | None] | None = None) -> None:
+        self.checked_at = checked_at or {}
+        self.recorded: list[tuple[str, list[str]]] = []
+
+    async def checked_at_by_puuid(self) -> dict[str, datetime | None]:
+        return dict(self.checked_at)
+
+    async def record_servers(self, puuid: str, matches) -> None:
+        self.recorded.append((puuid, [m.match_id for m in matches]))
+
+
+def _checker(client: FakeServerClient, repo: FakeServerRepo, *, hours: float = 24) -> ServerChecker:
+    return ServerChecker(
+        client, repo, affinity="ap", match_count=25, interval=timedelta(hours=hours), delay=0,  # type: ignore[arg-type]
+    )
+
+
+async def test_server_check_runs_for_refreshed_players_that_are_due() -> None:
+    now = datetime.now(UTC)
+    servers = FakeServerClient()
+    server_repo = FakeServerRepo({"fresh": now - timedelta(hours=1), "old": now - timedelta(hours=25)})
+    repo = FakeRepo(players=[_row("fresh"), _row("old"), _row("never")])
+
+    stats = await update_all_players(
+        FakeHenrikClient(), repo, affinity="ap", platform="pc", rate_limit_delay=0,  # type: ignore[arg-type]
+        server_checker=_checker(servers, server_repo),
+    )
+
+    assert stats == {
+        "total": 3, "updated": 3, "removed": 0, "failed": 0, "servers_checked": 2, "server_check_failed": 0,
+    }
+    assert [call[0] for call in servers.calls] == ["old", "never"]
+    assert servers.calls[0] == ("old", "ap", 25)
+    assert server_repo.recorded == [("old", ["old-m1"]), ("never", ["never-m1"])]
+
+
+async def test_server_check_skips_removed_and_failed_players() -> None:
+    servers = FakeServerClient()
+    repo = FakeRepo(players=[_row("gone"), _row("broken"), _row("ok")], removed={"gone"})
+    stats = await update_all_players(
+        FakeHenrikClient(fail_for={"broken"}), repo, affinity="ap", platform="pc", rate_limit_delay=0,  # type: ignore[arg-type]
+        server_checker=_checker(servers, FakeServerRepo()),
+    )
+    assert stats["servers_checked"] == 1
+    assert [call[0] for call in servers.calls] == ["ok"]
+
+
+async def test_server_check_failure_never_costs_the_rank_refresh() -> None:
+    servers = FakeServerClient(fail_for={"p1": RuntimeError("henrik down"), "p2": SQLAlchemyError("db boom")})
+    server_repo = FakeServerRepo()
+    repo = FakeRepo(players=[_row("p1"), _row("p2"), _row("p3")])
+    stats = await update_all_players(
+        FakeHenrikClient(), repo, affinity="ap", platform="pc", rate_limit_delay=0,  # type: ignore[arg-type]
+        server_checker=_checker(servers, server_repo),
+    )
+    assert stats == {
+        "total": 3, "updated": 3, "removed": 0, "failed": 0, "servers_checked": 1, "server_check_failed": 2,
+    }
+    # Nothing was stamped for the failures, so they are retried next pass.
+    assert server_repo.recorded == [("p3", ["p3-m1"])]
+    assert repo.rollbacks == 1
+
+
+async def test_a_404_is_recorded_as_a_check_that_found_no_matches() -> None:
+    servers = FakeServerClient(fail_for={"p1": HenrikNotFoundError("no matches", sub_code=None, request_id=None)})
+    server_repo = FakeServerRepo()
+    checker = _checker(servers, server_repo)
+    await checker.start_pass()
+    assert await checker.check("p1") is True
+    assert server_repo.recorded == [("p1", [])]
+    # Stamped in memory too, so the same pass does not fetch it again.
+    assert await checker.check("p1") is False
+
+
+async def test_without_a_checker_the_pass_is_unchanged() -> None:
+    stats = await update_all_players(
+        FakeHenrikClient(), FakeRepo(players=[_row("p1")]), affinity="ap", platform="pc", rate_limit_delay=0,  # type: ignore[arg-type]
+    )
+    assert stats == {"total": 1, "updated": 1, "removed": 0, "failed": 0}

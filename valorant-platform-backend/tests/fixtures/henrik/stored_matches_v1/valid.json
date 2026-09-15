@@ -1,0 +1,52 @@
+{
+  "status": 200,
+  "results": { "total": 4, "returned": 4, "before": 0, "after": 0 },
+  "data": [
+    {
+      "meta": {
+        "id": "00000000-0000-0000-0000-0000000000a1",
+        "map": { "id": "00000000-0000-0000-0000-000000000002", "name": "Corrode" },
+        "version": "release-13.05-shipping-11-5350494",
+        "mode": "Competitive",
+        "started_at": "2026-09-13T20:11:00.444Z",
+        "season": { "id": "season-e11a5", "short": "e11a5" },
+        "region": "ap",
+        "cluster": "Singapore"
+      },
+      "stats": { "puuid": "puuid_p_a", "team": "Red", "kills": 20, "deaths": 12, "assists": 4 },
+      "teams": { "red": 13, "blue": 9 }
+    },
+    {
+      "meta": {
+        "id": "00000000-0000-0000-0000-0000000000a2",
+        "mode": "Competitive",
+        "started_at": "2026-09-12T08:17:00.666Z",
+        "region": "ap",
+        "cluster": "Mumbai"
+      },
+      "stats": { "puuid": "puuid_p_a" },
+      "teams": { "red": 7, "blue": 13 }
+    },
+    {
+      "meta": {
+        "id": "00000000-0000-0000-0000-0000000000a3",
+        "mode": "Competitive",
+        "started_at": "2026-09-11T16:48:11.535Z",
+        "region": "",
+        "cluster": null
+      },
+      "stats": { "puuid": "puuid_p_a" },
+      "teams": { "red": 13, "blue": 11 }
+    },
+    {
+      "meta": {
+        "id": "00000000-0000-0000-0000-0000000000a4",
+        "mode": "Competitive",
+        "region": "ap",
+        "cluster": "Sydney"
+      },
+      "stats": { "puuid": "puuid_p_a" },
+      "teams": { "red": 13, "blue": 5 }
+    }
+  ]
+}
