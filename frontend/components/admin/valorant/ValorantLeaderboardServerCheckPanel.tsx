@@ -1,11 +1,12 @@
 "use client";
 
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState, type FormEvent } from "react";
 import ValorantEmptyState from "@/components/admin/valorant/ValorantEmptyState";
 import ValorantErrorAlert from "@/components/admin/valorant/ValorantErrorAlert";
 import ValorantLoadingState from "@/components/admin/valorant/ValorantLoadingState";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useValorantServerChecks } from "@/hooks/api/useValorant";
 import { useToastStore } from "@/hooks/useToastStore";
@@ -16,9 +17,12 @@ import {
   buildValorantTrackerProfileUrl,
   describeServerCheckRule,
   serverCheckReasonLines,
+  serverCheckStatusLine,
+  serverShareLabel,
   type ValorantLeaderboardActor,
   type ValorantServerCheck,
   type ValorantServerCheckRule,
+  type ValorantServerCheckView,
 } from "@/lib/valorant";
 import {
   clearValorantServerCheck,
@@ -28,7 +32,9 @@ import {
 
 const REASON_MAX_LENGTH = 500;
 
-type View = "flagged" | "cleared";
+type View = ValorantServerCheckView;
+
+const VIEW_LABELS: Record<View, string> = { flagged: "Flagged", cleared: "Kept", all: "All players" };
 type Action = { puuid: string; kind: "keep" | "remove" | "reopen" };
 
 const actorName = (actor: ValorantLeaderboardActor | null) =>
@@ -82,7 +88,10 @@ export default function ValorantLeaderboardServerCheckPanel({
   const [action, setAction] = useState<Action | null>(null);
   const [reason, setReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const checksQuery = useValorantServerChecks(view, page);
+  const [search, setSearch] = useState("");
+  const [query, setQuery] = useState("");
+  const [server, setServer] = useState("");
+  const checksQuery = useValorantServerChecks(view, page, query, server);
   const { refetch } = checksQuery;
   const entries = checksQuery.data?.entries ?? [];
   const totalPages = checksQuery.data?.totalPages ?? 1;
@@ -114,6 +123,36 @@ export default function ValorantLeaderboardServerCheckPanel({
     setPage(1);
     setView(next);
   };
+
+  // Clicking a server lists everyone who played there, whatever view was open.
+  const toggleServer = (cluster: string) => {
+    closeAction();
+    setPage(1);
+    if (server === cluster) {
+      setServer("");
+      return;
+    }
+    setServer(cluster);
+    setView("all");
+  };
+
+  const handleSearch = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    closeAction();
+    setPage(1);
+    setQuery(search.trim());
+  };
+
+  const clearFilters = () => {
+    closeAction();
+    setPage(1);
+    setSearch("");
+    setQuery("");
+    setServer("");
+  };
+
+  const serverTotals = summary?.servers ?? [];
+  const filtered = Boolean(query || server);
 
   const submitAction = async (entry: ValorantServerCheck, kind: Action["kind"]) => {
     const trimmed = reason.trim();
@@ -152,7 +191,8 @@ export default function ValorantLeaderboardServerCheckPanel({
       <div>
         <h3 className="text-lg font-semibold text-white">Server check</h3>
         <p className="text-sm text-slate-400">
-          Players whose recent competitive matches suggest they may not be playing from Sri Lanka.{" "}
+          Which servers registered players play competitive on, and the ones that suggest they may not be playing from
+          Sri Lanka.{" "}
           {checksQuery.data ? describeServerCheckRule(rule) : null} Nothing is removed automatically: someone living
           abroad looks the same, so review each player, then keep or remove them.
         </p>
@@ -166,25 +206,95 @@ export default function ValorantLeaderboardServerCheckPanel({
         ) : null}
       </div>
 
-      <div className="flex flex-wrap gap-2" role="group" aria-label="Server check view">
-        {(["flagged", "cleared"] as const).map((option) => (
-          <Button
-            key={option}
-            type="button"
-            size="sm"
-            variant={view === option ? "primary" : "ghost"}
-            aria-pressed={view === option}
-            onClick={() => switchView(option)}
-          >
-            {option === "flagged" ? "Flagged" : "Kept"}
-            {summary ? (
-              <span className="ml-2 tabular-nums text-slate-400">
-                {option === "flagged" ? summary.flagged : summary.cleared}
-              </span>
-            ) : null}
+      {serverTotals.length > 0 ? (
+        <div className="grid gap-2">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+            Where the leaderboard plays{rule.windowDays ? ` · last ${rule.windowDays} days` : ""}
+          </p>
+          <div className="flex flex-wrap gap-2" role="group" aria-label="Filter by server">
+            {serverTotals.map((total) => {
+              const active = server === total.cluster;
+              return (
+                <button
+                  key={total.cluster}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => toggleServer(total.cluster)}
+                  className={cn(
+                    "inline-flex items-baseline gap-2 rounded-xl border px-3 py-1.5 text-left text-sm transition-colors",
+                    active
+                      ? "border-white/40 bg-white/10 text-white"
+                      : total.home
+                        ? "border-white/10 bg-white/5 text-slate-200 hover:border-white/20"
+                        : "border-amber-400/30 bg-amber-400/10 text-amber-100 hover:border-amber-300/50"
+                  )}
+                >
+                  <span className="font-semibold">{total.cluster}</span>
+                  <span className="tabular-nums">{serverShareLabel(total, serverTotals)}</span>
+                  <span className="text-xs tabular-nums text-slate-400">
+                    {total.players} {total.players === 1 ? "player" : "players"} · {total.matches} matches
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
+
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap gap-2" role="group" aria-label="Server check view">
+          {(["flagged", "cleared", "all"] as const).map((option) => (
+            <Button
+              key={option}
+              type="button"
+              size="sm"
+              variant={view === option ? "primary" : "ghost"}
+              aria-pressed={view === option}
+              onClick={() => switchView(option)}
+            >
+              {VIEW_LABELS[option]}
+              {summary ? (
+                <span className="ml-2 tabular-nums text-slate-400">
+                  {option === "flagged" ? summary.flagged : option === "cleared" ? summary.cleared : summary.registered}
+                </span>
+              ) : null}
+            </Button>
+          ))}
+        </div>
+        <form className="flex min-w-0 gap-2" onSubmit={handleSearch} role="search">
+          <Input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Riot ID or Discord"
+            aria-label="Search server check players"
+            className="h-10 w-56 max-w-full"
+          />
+          <Button type="submit" size="sm" variant="ghost">
+            Search
           </Button>
-        ))}
+        </form>
       </div>
+
+      {filtered ? (
+        <div className="flex flex-wrap items-center gap-2 text-sm text-slate-400" aria-live="polite">
+          <span>
+            {checksQuery.data ? `${checksQuery.data.total} ${checksQuery.data.total === 1 ? "player" : "players"}` : "Players"}
+            {server ? (
+              <>
+                {" "}who played on <span className="text-slate-200">{server}</span>
+              </>
+            ) : null}
+            {query ? (
+              <>
+                {" "}matching <span className="text-slate-200">&ldquo;{query}&rdquo;</span>
+              </>
+            ) : null}
+          </span>
+          <Button type="button" size="sm" variant="ghost" onClick={clearFilters}>
+            Clear filters
+          </Button>
+        </div>
+      ) : null}
 
       {checksQuery.error ? (
         <ValorantErrorAlert message={checksQuery.error} onRetry={() => void refetch()} />
@@ -192,11 +302,15 @@ export default function ValorantLeaderboardServerCheckPanel({
         <ValorantLoadingState />
       ) : entries.length === 0 ? (
         <ValorantEmptyState
-          title={view === "flagged" ? "No players flagged" : "No players kept"}
+          title={filtered ? "No players match" : view === "flagged" ? "No players flagged" : view === "cleared" ? "No players kept" : "No registered players"}
           description={
-            view === "flagged"
-              ? "No checked player currently plays mostly away from the home servers."
-              : "Players you keep after reviewing a flag appear here, where the decision can be reopened."
+            filtered
+              ? "Nobody in this view matches the server or search. Clear the filters to see everyone."
+              : view === "flagged"
+                ? "No checked player currently plays mostly away from the home servers."
+                : view === "cleared"
+                  ? "Players you keep after reviewing a flag appear here, where the decision can be reopened."
+                  : "Players appear here once they register for the leaderboard."
           }
         />
       ) : (
@@ -208,7 +322,9 @@ export default function ValorantLeaderboardServerCheckPanel({
                   <tr className="border-b border-white/10 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">
                     <th scope="col" className="px-4 py-3">Player</th>
                     <th scope="col" className="px-4 py-3">Servers</th>
-                    <th scope="col" className="px-4 py-3">{view === "flagged" ? "Why flagged" : "Kept"}</th>
+                    <th scope="col" className="px-4 py-3">
+                      {view === "flagged" ? "Why flagged" : view === "cleared" ? "Kept" : "Check"}
+                    </th>
                     <th scope="col" className="px-4 py-3 text-right">Actions</th>
                   </tr>
                 </thead>
@@ -245,7 +361,7 @@ export default function ValorantLeaderboardServerCheckPanel({
                             </p>
                           </td>
                           <td className="px-4 py-4 text-slate-300">
-                            {view === "flagged" ? (
+                            {entry.status === "flagged" ? (
                               <>
                                 <ul className="space-y-1">
                                   {serverCheckReasonLines(entry, rule).map((line) => (
@@ -259,14 +375,18 @@ export default function ValorantLeaderboardServerCheckPanel({
                                   </p>
                                 ) : null}
                               </>
-                            ) : (
+                            ) : entry.status === "cleared" ? (
                               <>
-                                <p>{entry.clearedAt ? formatAdminCompactDateTime(entry.clearedAt) : "—"}</p>
+                                <p>Kept {entry.clearedAt ? formatAdminCompactDateTime(entry.clearedAt) : ""}</p>
                                 <p className="mt-0.5 text-xs text-slate-500">by {actorName(entry.clearedBy)}</p>
                                 <p className="mt-0.5 text-xs text-slate-500">
                                   Only matches after this can flag them again.
                                 </p>
                               </>
+                            ) : (
+                              <p className={entry.status === "clear" ? "text-slate-300" : "text-slate-500"}>
+                                {serverCheckStatusLine(entry, rule)}
+                              </p>
                             )}
                           </td>
                           <td className="px-4 py-4">
@@ -281,7 +401,7 @@ export default function ValorantLeaderboardServerCheckPanel({
                                   tracker.gg
                                 </a>
                               ) : null}
-                              {open ? null : view === "flagged" ? (
+                              {open ? null : entry.status === "flagged" ? (
                                 <>
                                   <Button
                                     type="button"
@@ -302,7 +422,7 @@ export default function ValorantLeaderboardServerCheckPanel({
                                     Remove
                                   </Button>
                                 </>
-                              ) : (
+                              ) : entry.status === "cleared" ? (
                                 <Button
                                   type="button"
                                   variant="ghost"
@@ -312,7 +432,7 @@ export default function ValorantLeaderboardServerCheckPanel({
                                 >
                                   Reopen
                                 </Button>
-                              )}
+                              ) : null}
                             </div>
                           </td>
                         </tr>

@@ -30,13 +30,31 @@ from app.schemas.server_checks import (
     ServerCheckRule,
     ServerCheckSummary,
     ServerMatchCount,
+    ServerTotal,
 )
 
-ServerCheckFilter = Literal["flagged", "cleared"]
+ServerCheckFilter = Literal["flagged", "cleared", "all"]
 
 
 def _iso(value: datetime | None) -> str | None:
     return value.isoformat() if value else None
+
+
+def _matches_on(entry: LeaderboardServerCheckEntry, wanted: str) -> int:
+    return sum(count.matches for count in entry.servers if (count.cluster or "").casefold() == wanted)
+
+
+def _server_totals(entries: list[LeaderboardServerCheckEntry]) -> list[ServerTotal]:
+    """Matches and players per known server across every registration, busiest first."""
+    totals: dict[str, ServerTotal] = {}
+    for entry in entries:
+        for count in entry.servers:
+            if count.cluster is None:
+                continue
+            total = totals.setdefault(count.cluster, ServerTotal(cluster=count.cluster, matches=0, players=0, home=bool(count.home)))
+            total.matches += count.matches
+            total.players += 1
+    return sorted(totals.values(), key=lambda t: (-t.matches, t.cluster.casefold()))
 
 
 class ServerCheckService:
@@ -54,9 +72,15 @@ class ServerCheckService:
         self._policy = ServerCheckPolicy.from_settings(settings)
 
     async def list_checks(
-        self, status: ServerCheckFilter, query: str, page: int, per_page: int
+        self, status: ServerCheckFilter, query: str, page: int, per_page: int, server: str = ""
     ) -> LeaderboardServerCheckPage:
-        """Flagged players, most clearly away first; or cleared ones, latest clearance first."""
+        """Flagged players, most clearly away first; cleared ones, latest clearance first;
+        or every registration by name.
+
+        ``server`` keeps only players with a match on that server, most matches
+        there first. The summary's ``servers`` covers every registration, so the
+        page can show where the whole leaderboard plays whatever is selected.
+        """
         now = datetime.now(UTC)
         entries = await self._evaluate_all(now)
 
@@ -65,9 +89,10 @@ class ServerCheckService:
             checked=sum(1 for entry in entries if entry.checked_at is not None),
             flagged=sum(1 for entry in entries if entry.status == "flagged"),
             cleared=sum(1 for entry in entries if entry.status == "cleared"),
+            servers=_server_totals(entries),
         )
 
-        selected = [entry for entry in entries if entry.status == status]
+        selected = entries if status == "all" else [entry for entry in entries if entry.status == status]
         needle = query.strip().lstrip("@").casefold()
         if len(needle) >= MIN_QUERY_LENGTH:
             selected = [
@@ -75,10 +100,16 @@ class ServerCheckService:
                 if needle in f"{entry.name}#{entry.tag}".casefold()
                 or needle in entry.discord_username.casefold()
             ]
-        if status == "flagged":
+        wanted = server.strip().casefold()
+        if wanted:
+            selected = [entry for entry in selected if _matches_on(entry, wanted) > 0]
+            selected.sort(key=lambda e: (-_matches_on(e, wanted), e.name.casefold(), e.puuid))
+        elif status == "flagged":
             selected.sort(key=lambda e: (-(e.away_share or 0), -e.away_matches, e.name.casefold(), e.puuid))
-        else:
+        elif status == "cleared":
             selected.sort(key=lambda e: (e.cleared_at or ""), reverse=True)
+        else:
+            selected.sort(key=lambda e: (e.name.casefold(), e.tag.casefold(), e.puuid))
 
         total = len(selected)
         start = (page - 1) * per_page

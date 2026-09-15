@@ -33,9 +33,14 @@ export function useValorantLeaderboardRemovals(query: string, page: number) {
   );
 }
 
-export function useValorantServerChecks(status: "flagged" | "cleared", page: number) {
-  return useApiQuery(["valorant-leaderboard-server-checks", status, page], () =>
-    fetchValorantServerChecks({ status, page })
+export function useValorantServerChecks(
+  status: "flagged" | "cleared" | "all",
+  page: number,
+  query = "",
+  server = ""
+) {
+  return useApiQuery(["valorant-leaderboard-server-checks", status, page, query, server], () =>
+    fetchValorantServerChecks({ status, page, query, server })
   );
 }
 

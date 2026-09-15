@@ -140,7 +140,7 @@ async def test_list_flags_away_and_off_shard_players_and_summarises(session_fact
     flagged = page.entries[0]
     assert (flagged.away_matches, flagged.known_matches, flagged.away_share) == (9, 10, 0.9)
     assert [(s.cluster, s.matches, s.home) for s in flagged.servers] == [("Sydney", 9, False), ("Mumbai", 1, True)]
-    assert page.summary.model_dump() == {"registered": 5, "checked": 4, "flagged": 2, "cleared": 0}
+    assert page.summary.model_dump(exclude={"servers"}) == {"registered": 5, "checked": 4, "flagged": 2, "cleared": 0}
     assert page.rule.home_clusters == ["Singapore", "Mumbai"]
 
 
@@ -254,3 +254,50 @@ async def test_cleared_list_is_newest_clearance_first(session_factory) -> None:
     async with session_factory() as session:
         page = await _service(session).list_checks("cleared", "", 1, 20)
     assert [e.name for e in page.entries] == ["Second", "First"]
+
+
+async def test_all_lists_every_registration_by_name_with_server_totals(session_factory) -> None:
+    mumbai = _player("Mumbai")
+    both = _player("Both")
+    sydney = _player("Sydney")
+    unchecked = _player("Unchecked")
+    await _seed(session_factory, mumbai, both, sydney, unchecked)
+    await _record(session_factory, mumbai.puuid, _matches("m", "Mumbai", 6))
+    await _record(session_factory, both.puuid, _matches("b", "Mumbai", 2) + _matches("b", "Singapore", 3) + _matches("b", None, 1))
+    await _record(session_factory, sydney.puuid, _matches("s", "Sydney", 7))
+
+    async with session_factory() as session:
+        page = await _service(session).list_checks("all", "", 1, 20)
+
+    assert [(e.name, e.status) for e in page.entries] == [
+        ("Both", "clear"),
+        ("Mumbai", "clear"),
+        ("Sydney", "flagged"),
+        ("Unchecked", "not_checked"),
+    ]
+    assert [(t.cluster, t.matches, t.players, t.home) for t in page.summary.servers] == [
+        ("Mumbai", 8, 2, True),
+        ("Sydney", 7, 1, False),
+        ("Singapore", 3, 1, True),
+    ]
+
+
+async def test_server_filter_lists_players_on_that_server_most_matches_first(session_factory) -> None:
+    few = _player("Few")
+    many = _player("Many")
+    elsewhere = _player("Elsewhere")
+    await _seed(session_factory, few, many, elsewhere)
+    await _record(session_factory, few.puuid, _matches("f", "Sydney", 1) + _matches("f", "Mumbai", 9))
+    await _record(session_factory, many.puuid, _matches("m", "Sydney", 8))
+    await _record(session_factory, elsewhere.puuid, _matches("e", "Singapore", 8))
+
+    async with session_factory() as session:
+        service = _service(session)
+        everyone = await service.list_checks("all", "", 1, 20, "sydney")
+        flagged = await service.list_checks("flagged", "", 1, 20, "Sydney")
+
+    assert [e.name for e in everyone.entries] == ["Many", "Few"]
+    assert everyone.total == 2
+    # The server filter narrows a status view too; the totals still cover everyone.
+    assert [e.name for e in flagged.entries] == ["Many"]
+    assert {t.cluster for t in flagged.summary.servers} == {"Sydney", "Mumbai", "Singapore"}

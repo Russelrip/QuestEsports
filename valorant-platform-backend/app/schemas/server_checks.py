@@ -42,11 +42,21 @@ class LeaderboardServerCheckEntry(BaseModel):
     cleared_by: str | None = None
 
 
+class ServerTotal(BaseModel):
+    """One server across every registration: matches played there and how many players played them."""
+
+    cluster: str
+    matches: int
+    players: int
+    home: bool
+
+
 class ServerCheckSummary(BaseModel):
     registered: int
     checked: int
     flagged: int
     cleared: int
+    servers: list[ServerTotal] = []
 
 
 class ServerCheckRule(BaseModel):

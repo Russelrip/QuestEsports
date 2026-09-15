@@ -140,13 +140,14 @@ async def restore_removal(
 )
 async def list_server_checks(
     svc: _ServerCheckDep,
-    status: Literal["flagged", "cleared"] = Query("flagged"),
+    status: Literal["flagged", "cleared", "all"] = Query("flagged"),
     q: str = Query("", max_length=100),
+    server: str = Query("", max_length=50),
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
 ) -> LeaderboardServerCheckPage:
-    """Players whose recent competitive servers need a review, or the ones already cleared."""
-    return await svc.list_checks(status, q, page, per_page)
+    """Players whose recent competitive servers need a review, the ones already cleared, or everyone."""
+    return await svc.list_checks(status, q, page, per_page, server)
 
 
 @router.post(

@@ -175,12 +175,14 @@ const restoreRemoval = async ({ removalId, actorUserId }) =>
     actorUserId,
   });
 
-// Admin: players the server check flags for review (status "flagged"), or the
-// ones an admin already cleared (status "cleared").
-const listServerChecks = async ({ status = "flagged", query = "", page = 1, perPage = 20, actorUserId }) => {
+// Admin: players the server check flags for review (status "flagged"), the
+// ones an admin already cleared ("cleared"), or every registration ("all").
+// `server` narrows any of them to players with a match on that server.
+const listServerChecks = async ({ status = "flagged", query = "", server = "", page = 1, perPage = 20, actorUserId }) => {
   const params = new URLSearchParams();
   params.set("status", status);
   if (query) params.set("q", query);
+  if (server) params.set("server", server);
   params.set("page", String(page));
   params.set("per_page", String(perPage));
   return requestJson({ path: `/api/v1/leaderboard/server-checks?${params.toString()}`, actorUserId });

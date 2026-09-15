@@ -374,8 +374,8 @@ const mapServerCheck = (entry, names) => ({
   clearedBy: mapActor(entry.cleared_by, names),
 });
 
-const listAdminServerChecks = async ({ status, query, page, perPage, actorUserId }) => {
-  const raw = await fetchServerChecks({ status, query, page, perPage, actorUserId });
+const listAdminServerChecks = async ({ status, query, server, page, perPage, actorUserId }) => {
+  const raw = await fetchServerChecks({ status, query, server, page, perPage, actorUserId });
   const entries = raw.entries || [];
   const names = await loadActorNames(entries.map((entry) => entry.cleared_by));
   const summary = raw.summary || {};
@@ -391,6 +391,12 @@ const listAdminServerChecks = async ({ status, query, page, perPage, actorUserId
       checked: summary.checked ?? 0,
       flagged: summary.flagged ?? 0,
       cleared: summary.cleared ?? 0,
+      servers: (summary.servers || []).map((total) => ({
+        cluster: total.cluster,
+        matches: total.matches,
+        players: total.players,
+        home: Boolean(total.home),
+      })),
     },
     rule: {
       homeClusters: rule.home_clusters || [],

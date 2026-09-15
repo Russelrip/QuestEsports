@@ -368,13 +368,18 @@ export type ValorantServerCheckRule = {
   awayShare: number | null;
 };
 
+// One server across every registration.
+export type ValorantServerTotal = { cluster: string; matches: number; players: number; home: boolean };
+
+export type ValorantServerCheckView = "flagged" | "cleared" | "all";
+
 export type ValorantServerCheckPage = {
   entries: ValorantServerCheck[];
   total: number;
   page: number;
   perPage: number;
   totalPages: number;
-  summary: { registered: number; checked: number; flagged: number; cleared: number };
+  summary: { registered: number; checked: number; flagged: number; cleared: number; servers: ValorantServerTotal[] };
   rule: ValorantServerCheckRule;
 };
 
@@ -392,6 +397,27 @@ export const serverCheckReasonLines = (entry: ValorantServerCheck, rule: Valoran
       rule.homeClusters.join(" and ") || "the home servers"
     }`;
   });
+
+/** What the check concluded about a player who is not flagged or kept. */
+export const serverCheckStatusLine = (entry: ValorantServerCheck, rule: ValorantServerCheckRule): string => {
+  if (entry.status === "not_checked") return "Not checked yet";
+  if (entry.status === "not_enough_matches") {
+    const minimum = rule.minMatches === null ? "enough" : `${rule.minMatches}`;
+    return `Too few recent competitive matches to judge (${entry.knownMatches} of ${minimum})`;
+  }
+  if (entry.status === "clear") return "Plays mostly on the home servers";
+  if (entry.status === "cleared") return "Kept after review";
+  return "Flagged";
+};
+
+/** Each server's share of all recent competitive matches, rounded. */
+export const serverShareLabel = (total: ValorantServerTotal, totals: ValorantServerTotal[]): string => {
+  const all = totals.reduce((sum, item) => sum + item.matches, 0);
+  if (!all || !total.matches) return "0%";
+  const share = Math.round((total.matches / all) * 100);
+  // A server someone did play on should never read as nobody playing there.
+  return share === 0 ? "<1%" : `${share}%`;
+};
 
 /** The flagging rule as one sentence, from what the platform reports. */
 export const describeServerCheckRule = (rule: ValorantServerCheckRule): string => {
