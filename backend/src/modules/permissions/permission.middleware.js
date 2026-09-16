@@ -14,10 +14,12 @@ const PERMISSION_SCOPES = Object.freeze({
   VETO_CATALOG_CONFIG: "veto.catalog.config",
 });
 
+// Staff roster management is deliberately absent: only admins assign tournament
+// staff (docs/roles-and-permissions.md), so a tournament admin cannot grant
+// themselves or anyone else a place on the roster.
 const TOURNAMENT_ADMIN_SCOPES = Object.freeze([
   PERMISSION_SCOPES.TOURNAMENT_READ,
   PERMISSION_SCOPES.TOURNAMENT_ADMINISTRATION,
-  PERMISSION_SCOPES.STAFF_ROSTER_MANAGEMENT,
   PERMISSION_SCOPES.MATCH_OPERATIONS,
   PERMISSION_SCOPES.VETO_OPERATIONS,
   PERMISSION_SCOPES.VETO_CATALOG_CONFIG,
