@@ -359,9 +359,9 @@ class _FakeServerCheckService:
         self.calls: list[tuple] = []
 
     async def list_checks(
-        self, status: str, query: str, page: int, per_page: int, server: str = ""
+        self, status: str, query: str, page: int, per_page: int, server: str = "", sort: str = "default"
     ) -> LeaderboardServerCheckPage:
-        self.calls.append(("list", status, query, page, per_page, server))
+        self.calls.append(("list", status, query, page, per_page, server, sort))
         return LeaderboardServerCheckPage(
             entries=[SERVER_CHECK_ENTRY],
             total=1,
@@ -408,7 +408,7 @@ def test_server_checks_route_defaults_to_flagged(monkeypatch: pytest.MonkeyPatch
     assert body["entries"] == [SERVER_CHECK_ENTRY.model_dump()]
     assert body["summary"]["flagged"] == 1
     assert body["rule"]["home_clusters"] == ["Singapore", "Mumbai"]
-    assert fake.calls == [("list", "flagged", "", 1, 20, "")]
+    assert fake.calls == [("list", "flagged", "", 1, 20, "", "default")]
 
 
 def test_server_checks_route_passes_status_query_and_paging(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -418,16 +418,17 @@ def test_server_checks_route_passes_status_query_and_paging(monkeypatch: pytest.
         "/api/v1/leaderboard/server-checks", params={"status": "cleared", "q": "playa", "page": 2, "per_page": 10}
     )
     assert resp.status_code == 200
-    assert fake.calls == [("list", "cleared", "playa", 2, 10, "")]
+    assert fake.calls == [("list", "cleared", "playa", 2, 10, "", "default")]
     assert client.get("/api/v1/leaderboard/server-checks", params={"status": "clear"}).status_code == 422
 
 
 def test_server_checks_route_lists_everyone_on_one_server(monkeypatch: pytest.MonkeyPatch) -> None:
     fake = _FakeServerCheckService()
     client = TestClient(_server_check_app(monkeypatch, fake))
-    resp = client.get("/api/v1/leaderboard/server-checks", params={"status": "all", "server": "Sydney"})
+    resp = client.get("/api/v1/leaderboard/server-checks", params={"status": "all", "server": "Sydney", "sort": "rank"})
     assert resp.status_code == 200
-    assert fake.calls == [("list", "all", "", 1, 20, "Sydney")]
+    assert fake.calls == [("list", "all", "", 1, 20, "Sydney", "rank")]
+    assert client.get("/api/v1/leaderboard/server-checks", params={"sort": "elo"}).status_code == 422
     assert client.get("/api/v1/leaderboard/server-checks", params={"server": "x" * 51}).status_code == 422
 
 

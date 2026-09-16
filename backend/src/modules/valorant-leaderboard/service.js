@@ -374,8 +374,8 @@ const mapServerCheck = (entry, names) => ({
   clearedBy: mapActor(entry.cleared_by, names),
 });
 
-const listAdminServerChecks = async ({ status, query, server, page, perPage, actorUserId }) => {
-  const raw = await fetchServerChecks({ status, query, server, page, perPage, actorUserId });
+const listAdminServerChecks = async ({ status, query, server, sort, page, perPage, actorUserId }) => {
+  const raw = await fetchServerChecks({ status, query, server, sort, page, perPage, actorUserId });
   const entries = raw.entries || [];
   const names = await loadActorNames(entries.map((entry) => entry.cleared_by));
   const summary = raw.summary || {};

@@ -301,3 +301,34 @@ async def test_server_filter_lists_players_on_that_server_most_matches_first(ses
     # The server filter narrows a status view too; the totals still cover everyone.
     assert [e.name for e in flagged.entries] == ["Many"]
     assert {t.cluster for t in flagged.summary.servers} == {"Sydney", "Mumbai", "Singapore"}
+
+
+async def test_sort_orders_any_view_with_missing_values_last(session_factory) -> None:
+    radiant = _player("Radiant", elo=2800, last_played_match=NOW - timedelta(days=5))
+    gold = _player("Gold", elo=1300, last_played_match=NOW - timedelta(hours=2))
+    unrated = _player("Unrated", elo=None, last_played_match=None)
+    iron = _player("Iron", elo=300, last_played_match=NOW - timedelta(days=1))
+    await _seed(session_factory, radiant, gold, unrated, iron)
+    await _record(session_factory, radiant.puuid, _matches("r", "Sydney", 6) + _matches("r", "Mumbai", 4))
+    await _record(session_factory, gold.puuid, _matches("g", "Sydney", 5))
+    await _record(session_factory, unrated.puuid, _matches("u", "Mumbai", 20))
+    await _record(session_factory, iron.puuid, _matches("i", "Singapore", 2))
+
+    async with session_factory() as session:
+        service = _service(session)
+
+        async def names(status, sort, server=""):
+            return [e.name for e in (await service.list_checks(status, "", 1, 20, server, sort)).entries]
+
+        assert await names("all", "rank") == ["Radiant", "Gold", "Iron", "Unrated"]
+        assert await names("all", "rank_low") == ["Iron", "Gold", "Radiant", "Unrated"]
+        assert await names("all", "matches") == ["Unrated", "Radiant", "Gold", "Iron"]
+        assert await names("all", "recent") == ["Gold", "Iron", "Radiant", "Unrated"]
+        assert await names("all", "away") == ["Gold", "Radiant", "Iron", "Unrated"]
+        assert await names("all", "name") == ["Gold", "Iron", "Radiant", "Unrated"]
+        # Flagged by default is most away first; by rank, highest first.
+        assert await names("flagged", "default") == ["Gold", "Radiant"]
+        assert await names("flagged", "rank") == ["Radiant", "Gold"]
+        # A server filter keeps its own order unless a sort is chosen.
+        assert await names("all", "default", "Sydney") == ["Radiant", "Gold"]
+        assert await names("all", "rank_low", "Sydney") == ["Gold", "Radiant"]

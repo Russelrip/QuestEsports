@@ -373,6 +373,19 @@ export type ValorantServerTotal = { cluster: string; matches: number; players: n
 
 export type ValorantServerCheckView = "flagged" | "cleared" | "all";
 
+export type ValorantServerCheckSort = "default" | "rank" | "rank_low" | "away" | "matches" | "recent" | "name";
+
+// "default" is each view's natural order, described per view in the label.
+export const SERVER_CHECK_SORT_OPTIONS: Array<{ value: ValorantServerCheckSort; label: string }> = [
+  { value: "default", label: "Suggested" },
+  { value: "rank", label: "Highest rank" },
+  { value: "rank_low", label: "Lowest rank" },
+  { value: "away", label: "Most away from home servers" },
+  { value: "matches", label: "Most matches" },
+  { value: "recent", label: "Recently played" },
+  { value: "name", label: "Name (A–Z)" },
+];
+
 export type ValorantServerCheckPage = {
   entries: ValorantServerCheck[];
   total: number;

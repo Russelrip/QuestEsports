@@ -7,6 +7,7 @@ import ValorantLoadingState from "@/components/admin/valorant/ValorantLoadingSta
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useValorantServerChecks } from "@/hooks/api/useValorant";
 import { useToastStore } from "@/hooks/useToastStore";
@@ -14,6 +15,7 @@ import { formatAdminCompactDateTime } from "@/lib/admin";
 import { formatSriLankaDate } from "@/lib/date-time";
 import { cn } from "@/lib/utils";
 import {
+  SERVER_CHECK_SORT_OPTIONS,
   buildValorantTrackerProfileUrl,
   describeServerCheckRule,
   serverCheckReasonLines,
@@ -22,6 +24,7 @@ import {
   type ValorantLeaderboardActor,
   type ValorantServerCheck,
   type ValorantServerCheckRule,
+  type ValorantServerCheckSort,
   type ValorantServerCheckView,
 } from "@/lib/valorant";
 import {
@@ -91,7 +94,8 @@ export default function ValorantLeaderboardServerCheckPanel({
   const [search, setSearch] = useState("");
   const [query, setQuery] = useState("");
   const [server, setServer] = useState("");
-  const checksQuery = useValorantServerChecks(view, page, query, server);
+  const [sort, setSort] = useState<ValorantServerCheckSort>("default");
+  const checksQuery = useValorantServerChecks(view, page, query, server, sort);
   const { refetch } = checksQuery;
   const entries = checksQuery.data?.entries ?? [];
   const totalPages = checksQuery.data?.totalPages ?? 1;
@@ -261,6 +265,33 @@ export default function ValorantLeaderboardServerCheckPanel({
             </Button>
           ))}
         </div>
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+        <label className="flex min-w-0 items-center gap-2 whitespace-nowrap text-sm text-slate-400">
+          Sort by
+          <Select
+            value={sort}
+            onChange={(event) => {
+              closeAction();
+              setPage(1);
+              setSort(event.target.value as ValorantServerCheckSort);
+            }}
+            className="h-10 w-auto rounded-xl py-0"
+          >
+            {SERVER_CHECK_SORT_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.value === "default"
+                  ? view === "flagged" && !server
+                    ? "Suggested (most away first)"
+                    : view === "cleared" && !server
+                      ? "Suggested (latest kept first)"
+                      : server
+                        ? `Suggested (most matches on ${server})`
+                        : "Suggested (name)"
+                  : option.label}
+              </option>
+            ))}
+          </Select>
+        </label>
         <form className="flex min-w-0 gap-2" onSubmit={handleSearch} role="search">
           <Input
             value={search}
@@ -273,6 +304,7 @@ export default function ValorantLeaderboardServerCheckPanel({
             Search
           </Button>
         </form>
+        </div>
       </div>
 
       {filtered ? (
