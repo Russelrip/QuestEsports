@@ -10,7 +10,7 @@
 
 This document covers the admin UI and API workflows for tournament/event configuration, entrance tickets, registrations, payments, merchandise, recruitment, exports, deletion, and bracket effects.
 
-All admin routes require a valid session and `user.role === "admin"`.
+Admin routes require a valid session and either `user.role === "admin"` or a staff role that grants the area; see [Super Admins and Staff Roles](#super-admins-and-staff-roles).
 
 ## Admin UI Routes
 
@@ -63,34 +63,82 @@ were stored and stay redacted here. An actor shown as "System or deleted
 account" means no account is attached — automation, or an account deleted
 since. Source "Not recorded" means the entry predates source tracking.
 
-## Staff Access (Delegated Admin Areas)
+## Super Admins and Staff Roles
 
-`users.role` is still all-or-nothing: an `admin` opens every admin page and
-route. To let someone manage one area without making them an admin, give them
-**staff access** to that area:
+Admin access has three tiers:
 
-1. Open `/admin/users`, find the user, and click **Edit**.
-2. In the **Staff Access** card, tick the areas they should manage and click
-   **Save staff access**.
+- **Super admin**: an admin with `users.is_super_admin`. The only accounts that
+  can make or remove admins, edit or delete another admin's account, and create,
+  edit, delete or hand out staff roles.
+- **Admin** (`users.role = admin`): opens every admin page and route, and
+  manages ordinary user accounts. Can see staff roles but not change them.
+- **Staff**: a user who is not an admin but holds one or more **staff roles**.
+  They open only the areas their roles grant.
 
-The change applies on their next request; no re-login is needed. They reach
-the admin panel from the usual **Admin Panel** link, see only their areas in
-the navigation, and are sent back to their area from any other admin page.
-Every admin API route outside their areas still returns 403. Granting and
-revoking access is admin-only and audited as
-`admin.user.staff_permissions.updated` with the before and after lists.
+### Staff roles
+
+Staff roles work like Discord roles: a named, coloured set of admin areas, and
+a person can hold several.
+
+1. As a super admin, open **People → Roles** (`/admin/roles`), click
+   **Create role**, name it, pick a colour, switch on its areas, and save.
+2. Open **Users**, click **Edit** on the person, and pick the role from
+   **+ Add role** in the **Roles** card. Remove a role with the × on its chip.
+   Each change saves straight away.
+
+Changes apply on the holder's next request; no re-login is needed. Editing a
+role's areas changes what every holder can open, and deleting a role removes it
+from everyone. Staff reach the admin panel from the usual **Admin Panel** link,
+see only their areas in the navigation, and are sent back to one of them from
+any other admin page. Every admin API route outside their areas still returns
+403.
+
+Audited as `admin.staff_role.created`, `admin.staff_role.updated`,
+`admin.staff_role.deleted`, and `admin.user.staff_roles.updated`.
 
 | Area | Key | What it opens |
 | --- | --- | --- |
-| VALORANT leaderboard | `valorant_leaderboard` | Admin → Valorant → **Leaderboard Players**: search registrations, remove players, and restore removed ones. The other Valorant tabs stay admin-only. |
+| Tournaments and events | `tournaments` | Tournaments (including sponsors, brackets and the Challonge panel), Events, Event Series |
+| Registrations | `registrations` | Registrations: review, approve, correct, export and delete |
+| Rulebooks | `rulebooks` | Rulebooks |
+| Games | `games` | Games (categories and artwork) |
+| Media and posters | `media` | Media, Albums, and the poster tools on `/posters` |
+| Teams | `teams` | Teams |
+| Recruitment | `recruitment` | Recruitment |
+| Contact messages | `contact_messages` | Messages |
+| Ticketing | `tickets` | Ticketing, including scanning and check-in |
+| Shop | `shop` | Products and Orders |
+| Payments | `payments` | Payments |
+| Expenses | `expenses` | Expenses |
+| Account changes | `game_accounts` | Account Changes |
+| VALORANT leaderboard | `valorant_leaderboard` | Admin → Valorant → **Leaderboard Players**. The other Valorant tabs stay admin-only |
 
-Adding an area: add the value to the `StaffPermission` enum (Prisma schema and
-a migration), add it to the catalog in
+Never delegable: Overview, Users, Roles, Audit Log, Support Queue, Match Rooms,
+Veto Rooms (those two run on tournament staff assignments), the rest of
+Valorant, and the legacy media migrations.
+
+Adding an area: add it to the catalog in
 `backend/src/modules/permissions/staff-permission.service.js` and
-`frontend/lib/staff-permissions.ts`, guard its routes with
-`requireStaffPermission("<key>")` declared before any blanket `requireAdmin`
-for the same prefix, and set `permission` on its navigation link (and tab, if
-it shares a page).
+`frontend/lib/staff-permissions.ts` (a backend test fails if the two differ),
+guard its routes with `requireStaffPermission("<key>")`, and set `permission` on
+its navigation link (and tab, if it shares a page). Role areas are stored as
+text, so no migration is needed. `backend/tests/admin-route-guards.test.js`
+fails on any `/api` admin route that names no guard.
+
+### Making someone a super admin
+
+There is no dashboard control for this, on purpose: it takes shell access to
+the server. The account must already be an admin. In production:
+
+```bash
+ssh quest-vps-shell
+docker exec quest-prod-backend-1 node scripts/set-super-admin.js --email owner@example.com
+```
+
+Add `--revoke` to remove it. The script refuses to revoke the last super admin
+and writes `admin.user.super_admin.granted` or `.revoked` to the audit log with
+source `system`. A super admin cannot be demoted or deleted from the dashboard
+until the flag is revoked.
 
 ## Media Library
 

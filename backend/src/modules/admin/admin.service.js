@@ -37,6 +37,7 @@ const {
   isPasswordWithinBcryptLimit,
 } = require("../../lib/validation");
 const { mapUserForResponse, validateUserBasics } = require("../auth/auth.service");
+const { isSuperAdmin } = require("../permissions/staff-permission.service");
 const {
   allocateLowestAvailableSlot,
   countTournamentCapacityUsage,
@@ -168,6 +169,7 @@ const ADMIN_USER_SELECT = {
   email: true,
   username: true,
   role: true,
+  isSuperAdmin: true,
   phone: true,
   discordTag: true,
   emailVerified: true,
@@ -579,9 +581,9 @@ const listAdminUsers = async ({ page, pageSize, search, role }) => {
   if (USER_ROLES.has(normalizedRole)) {
     where.role = normalizedRole;
   } else if (normalizedRole === "staff") {
-    // Not a role: users who are not admins but hold at least one delegated area.
+    // Not a role: users who are not admins but hold at least one staff role.
     where.role = "user";
-    where.staffPermissions = { some: {} };
+    where.staffRoles = { some: {} };
   }
 
   const [total, users] = await prisma.$transaction([
@@ -591,14 +593,20 @@ const listAdminUsers = async ({ page, pageSize, search, role }) => {
       orderBy: { createdAt: "desc" },
       skip: (pagination.page - 1) * pagination.pageSize,
       take: pagination.pageSize,
-      select: { ...ADMIN_USER_SELECT, staffPermissions: { select: { permission: true } } },
+      select: {
+        ...ADMIN_USER_SELECT,
+        staffRoles: {
+          orderBy: { role: { name: "asc" } },
+          select: { role: { select: { id: true, name: true, color: true } } },
+        },
+      },
     }),
   ]);
 
   return buildPagedResponse({
     items: users.map((user) => ({
       ...mapUserForResponse(user),
-      staffPermissions: (user.staffPermissions ?? []).map((grant) => grant.permission).sort(),
+      staffRoles: (user.staffRoles ?? []).map((holding) => holding.role),
     })),
     total,
     page: pagination.page,
@@ -619,7 +627,11 @@ const getAdminUserById = async (userId) => {
   return mapUserForResponse(user);
 };
 
-const createAdminUser = async ({ body }) => {
+// Admin accounts can open every admin area, so making one, unmaking one, or
+// changing another admin's email or password is reserved for super admins.
+const SUPER_ADMIN_ONLY_MESSAGE = "Only a super admin can do this to an admin account.";
+
+const createAdminUser = async ({ body, currentUser }) => {
   const firstName = normalizeText(body.firstName);
   const lastName = normalizeText(body.lastName);
   const email = normalizeEmail(body.email);
@@ -631,6 +643,10 @@ const createAdminUser = async ({ body }) => {
   const role = USER_ROLES.has(normalizeText(body.role).toLowerCase())
     ? normalizeText(body.role).toLowerCase()
     : "user";
+
+  if (role === "admin" && !isSuperAdmin(currentUser)) {
+    throw new HttpError(403, "Only a super admin can create an admin account.");
+  }
 
   const fieldErrors = validateUserBasics({
     firstName,
@@ -707,11 +723,17 @@ const updateAdminUser = async ({ userId, body, currentUser }) => {
     select: {
       id: true,
       role: true,
+      isSuperAdmin: true,
     },
   });
 
   if (!existingUser) {
     throw new HttpError(404, "User not found.");
+  }
+
+  const editingAnotherAdmin = existingUser.role === "admin" && currentUser?.id !== userId;
+  if (editingAnotherAdmin && !isSuperAdmin(currentUser)) {
+    throw new HttpError(403, SUPER_ADMIN_ONLY_MESSAGE);
   }
 
   const firstName = normalizeText(body.firstName);
@@ -725,6 +747,10 @@ const updateAdminUser = async ({ userId, body, currentUser }) => {
   const role = USER_ROLES.has(normalizeText(body.role).toLowerCase())
     ? normalizeText(body.role).toLowerCase()
     : existingUser.role;
+
+  if (role !== existingUser.role && !isSuperAdmin(currentUser)) {
+    throw new HttpError(403, "Only a super admin can make someone an admin or remove admin access.");
+  }
 
   const fieldErrors = validateUserBasics({
     firstName,
@@ -752,6 +778,8 @@ const updateAdminUser = async ({ userId, body, currentUser }) => {
 
   if (currentUser.id === userId && role !== "admin") {
     fieldErrors.role = "You cannot remove your own admin access.";
+  } else if (existingUser.isSuperAdmin && role !== "admin") {
+    fieldErrors.role = "A super admin stays an admin. Remove super admin on the server first.";
   }
 
   if (Object.keys(fieldErrors).length > 0) {
@@ -821,6 +849,17 @@ const updateAdminUser = async ({ userId, body, currentUser }) => {
 const deleteAdminUser = async ({ userId, currentUser }) => {
   if (currentUser.id === userId) {
     throw new HttpError(400, "You cannot delete your own account.");
+  }
+
+  const target = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { role: true, isSuperAdmin: true },
+  });
+  if (target?.isSuperAdmin) {
+    throw new HttpError(400, "A super admin cannot be deleted. Remove super admin on the server first.");
+  }
+  if (target?.role === "admin" && !isSuperAdmin(currentUser)) {
+    throw new HttpError(403, SUPER_ADMIN_ONLY_MESSAGE);
   }
 
   const deleted = await prisma.user.deleteMany({

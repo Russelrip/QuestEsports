@@ -1,5 +1,5 @@
 const express = require("express");
-const { requireAdmin } = require("../auth/auth.middleware");
+const { requireStaffPermission } = require("../permissions/permission.middleware");
 const { cachePublicData } = require("../../middleware/cache-control");
 const { cacheJson } = require("../../middleware/response-cache");
 const { env } = require("../../config/env");
@@ -14,6 +14,6 @@ router.get(
   cacheJson({ ttlSeconds: env.CACHE_TTL_SECONDS, tags: ["games"] }),
   controller.getPublicGames,
 );
-router.get("/admin/games", requireAdmin, controller.getAdminGames);
+router.get("/admin/games", requireStaffPermission("games", "tournaments"), controller.getAdminGames);
 
 module.exports = router;

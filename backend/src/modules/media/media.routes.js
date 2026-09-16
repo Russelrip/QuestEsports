@@ -1,5 +1,5 @@
 const express = require("express");
-const { requireAdmin } = require("../auth/auth.middleware");
+const { requireStaffPermission } = require("../permissions/permission.middleware");
 const { dbImageUpload, createUploadRequestSizeGuard } = require("../../middleware/upload");
 const { cacheJson, invalidateCache } = require("../../middleware/response-cache");
 const { cachePublicData } = require("../../middleware/cache-control");
@@ -48,50 +48,50 @@ router.get("/event-albums", eventAlbumPublicCache, eventAlbumCache, getEventAlbu
 router.get("/event-albums/:slug/photos/:photoId/image", streamEventAlbumPhoto);
 router.get("/event-albums/:slug", eventAlbumPublicCache, eventAlbumCache, getEventAlbum);
 
-router.get("/images", requireAdmin, getImages);
-router.get("/admin/media/files", requireAdmin, getPublicUploadFiles);
-router.get("/images/:imageId", requireAdmin, getImage);
-router.get("/images/:imageId/binary", requireAdmin, streamImage);
+router.get("/images", requireStaffPermission("media", "shop"), getImages);
+router.get("/admin/media/files", requireStaffPermission("media"), getPublicUploadFiles);
+router.get("/images/:imageId", requireStaffPermission("media", "shop"), getImage);
+router.get("/images/:imageId/binary", requireStaffPermission("media", "shop"), streamImage);
 router.post(
   "/images",
-  requireAdmin,
+  requireStaffPermission("media", "shop"),
   createUploadRequestSizeGuard(35 * 1024 * 1024),
   dbImageUpload.array("images", 10),
   uploadImages
 );
-router.delete("/images/:imageId", requireAdmin, deleteImage);
-router.post("/posters", requireAdmin, invalidateCache("tournaments", "foundation"), createPosterEntry);
-router.patch("/posters/:posterId", requireAdmin, invalidateCache("tournaments", "foundation"), updatePoster);
-router.delete("/posters/:posterId", requireAdmin, invalidateCache("tournaments", "foundation"), deletePoster);
+router.delete("/images/:imageId", requireStaffPermission("media", "shop"), deleteImage);
+router.post("/posters", requireStaffPermission("media"), invalidateCache("tournaments", "foundation"), createPosterEntry);
+router.patch("/posters/:posterId", requireStaffPermission("media"), invalidateCache("tournaments", "foundation"), updatePoster);
+router.delete("/posters/:posterId", requireStaffPermission("media"), invalidateCache("tournaments", "foundation"), deletePoster);
 
-router.get("/admin/event-albums", requireAdmin, getAdminEventAlbums);
+router.get("/admin/event-albums", requireStaffPermission("media"), getAdminEventAlbums);
 router.get(
   "/admin/event-albums/:albumId/photos/:photoId/image",
-  requireAdmin,
+  requireStaffPermission("media"),
   streamAdminEventAlbumPhoto
 );
-router.get("/admin/event-albums/:albumId", requireAdmin, getAdminEventAlbum);
+router.get("/admin/event-albums/:albumId", requireStaffPermission("media"), getAdminEventAlbum);
 router.post(
   "/admin/event-albums",
-  requireAdmin,
+  requireStaffPermission("media"),
   invalidateCache("event-albums", "tournaments", "foundation"),
   createAdminEventAlbum
 );
 router.patch(
   "/admin/event-albums/:albumId",
-  requireAdmin,
+  requireStaffPermission("media"),
   invalidateCache("event-albums", "tournaments", "foundation"),
   updateAdminEventAlbum
 );
 router.delete(
   "/admin/event-albums/:albumId",
-  requireAdmin,
+  requireStaffPermission("media"),
   invalidateCache("event-albums", "tournaments", "foundation"),
   deleteAdminEventAlbum
 );
 router.post(
   "/admin/event-albums/:albumId/photos",
-  requireAdmin,
+  requireStaffPermission("media"),
   invalidateCache("event-albums", "tournaments", "foundation"),
   createUploadRequestSizeGuard(25 * 1024 * 1024),
   dbImageUpload.array("photos", 10),
@@ -99,13 +99,13 @@ router.post(
 );
 router.patch(
   "/admin/event-albums/:albumId/photos/reorder",
-  requireAdmin,
+  requireStaffPermission("media"),
   invalidateCache("event-albums", "tournaments", "foundation"),
   reorderAdminEventAlbumPhotos
 );
 router.delete(
   "/admin/event-albums/:albumId/photos/:photoId",
-  requireAdmin,
+  requireStaffPermission("media"),
   invalidateCache("event-albums", "tournaments", "foundation"),
   deleteAdminEventAlbumPhoto
 );

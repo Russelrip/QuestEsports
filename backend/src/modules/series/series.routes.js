@@ -3,7 +3,7 @@ const { tournamentBannerUpload } = require("../../middleware/upload");
 const { cachePublicData } = require("../../middleware/cache-control");
 const { cacheJson, invalidateCache } = require("../../middleware/response-cache");
 const { env } = require("../../config/env");
-const { requireAdmin } = require("../auth/auth.middleware");
+const { requireStaffPermission } = require("../permissions/permission.middleware");
 const controller = require("./series.controller");
 
 const router = express.Router();
@@ -16,31 +16,31 @@ const eventUpload = tournamentBannerUpload.fields([
 
 router.get("/events", publicSeriesCache, publicEventResponseCache, controller.getPublicEvents);
 router.get("/events/:slug", publicSeriesCache, publicEventResponseCache, controller.getPublicEventDetail);
-router.get("/admin/events", requireAdmin, controller.getAdminEvents);
-router.get("/admin/events/:eventId/registrations", requireAdmin, controller.getEventRegistrations);
+router.get("/admin/events", requireStaffPermission("tournaments"), controller.getAdminEvents);
+router.get("/admin/events/:eventId/registrations", requireStaffPermission("tournaments", "registrations"), controller.getEventRegistrations);
 router.post(
   "/admin/events",
-  requireAdmin,
+  requireStaffPermission("tournaments"),
   invalidateCache("events", "tournaments", "foundation"),
   eventUpload,
   controller.createEvent
 );
 router.patch(
   "/admin/events/:eventId",
-  requireAdmin,
+  requireStaffPermission("tournaments"),
   invalidateCache("events", "tournaments", "foundation"),
   eventUpload,
   controller.updateEvent
 );
 router.post(
   "/admin/events/:eventId/archive",
-  requireAdmin,
+  requireStaffPermission("tournaments"),
   invalidateCache("events", "tournaments", "foundation"),
   controller.archiveEvent
 );
 router.post(
   "/admin/events/:eventId/tournaments",
-  requireAdmin,
+  requireStaffPermission("tournaments"),
   invalidateCache("events", "tournaments", "foundation"),
   eventUpload,
   controller.createEventTournament
@@ -48,9 +48,9 @@ router.post(
 
 router.get("/event-series", publicSeriesCache, controller.getPublicSeries);
 router.get("/event-series/:slug", publicSeriesCache, controller.getPublicSeriesDetail);
-router.get("/admin/event-series", requireAdmin, controller.getAdminSeries);
-router.post("/admin/event-series", requireAdmin, invalidateCache("events", "tournaments", "foundation"), tournamentBannerUpload.single("heroImage"), controller.createSeries);
-router.patch("/admin/event-series/:seriesId", requireAdmin, invalidateCache("events", "tournaments", "foundation"), tournamentBannerUpload.single("heroImage"), controller.updateSeries);
-router.delete("/admin/event-series/:seriesId", requireAdmin, invalidateCache("events", "tournaments", "foundation"), controller.deleteSeries);
+router.get("/admin/event-series", requireStaffPermission("tournaments", "tickets"), controller.getAdminSeries);
+router.post("/admin/event-series", requireStaffPermission("tournaments"), invalidateCache("events", "tournaments", "foundation"), tournamentBannerUpload.single("heroImage"), controller.createSeries);
+router.patch("/admin/event-series/:seriesId", requireStaffPermission("tournaments"), invalidateCache("events", "tournaments", "foundation"), tournamentBannerUpload.single("heroImage"), controller.updateSeries);
+router.delete("/admin/event-series/:seriesId", requireStaffPermission("tournaments"), invalidateCache("events", "tournaments", "foundation"), controller.deleteSeries);
 
 module.exports = router;

@@ -3,7 +3,8 @@
 import { formatSriLankaDateTime } from "@/lib/date-time";
 import { useEffect, useState } from "react";
 import AdminShell from "@/components/admin/AdminShell";
-import AdminUserStaffAccess from "@/components/admin/AdminUserStaffAccess";
+import AdminUserStaffRoles, { StaffRoleChip } from "@/components/admin/AdminUserStaffRoles";
+import { useAuth } from "@/components/auth/AuthProvider";
 import EmptyState from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -21,7 +22,7 @@ import {
   getAdminPaginationSummary,
   initialUserFormValues,
 } from "@/lib/admin";
-import { STAFF_PERMISSIONS } from "@/lib/staff-permissions";
+import { isSuperAdmin } from "@/lib/staff-permissions";
 
 export default function AdminUsersManager() {
   const [search, setSearch] = useState("");
@@ -38,6 +39,15 @@ export default function AdminUsersManager() {
     page
   );
   const showToast = useToastStore((state) => state.showToast);
+  const { user: viewer } = useAuth();
+  // Admin accounts open every area, so only a super admin can create, edit,
+  // promote, demote or delete one. The backend enforces this; the page just
+  // does not offer what would be refused.
+  const viewerIsSuperAdmin = isSuperAdmin(viewer);
+  const canManageAccount = (user: AdminUser) =>
+    user.role !== "admin" || viewerIsSuperAdmin || user.id === viewer?.id;
+  const canDeleteAccount = (user: AdminUser) =>
+    !user.isSuperAdmin && user.id !== viewer?.id && (user.role !== "admin" || viewerIsSuperAdmin);
 
   const users = data?.users || [];
   const pagination = data?.pagination;
@@ -156,8 +166,18 @@ export default function AdminUsersManager() {
           <FormField label="Discord Tag" htmlFor="discordTag" hint="From the user's connected account">
             <Input id="discordTag" disabled value={formValues.discordTag || "Not connected"} />
           </FormField>
-          <FormField label="Role" htmlFor="role" required>
-            <Select id="role" value={formValues.role} onChange={(event) => updateField("role", event.target.value as UserFormValues["role"])}>
+          <FormField
+            label="Role"
+            htmlFor="role"
+            required
+            hint={viewerIsSuperAdmin ? undefined : "Only a super admin can make someone an admin or remove admin access."}
+          >
+            <Select
+              id="role"
+              value={formValues.role}
+              disabled={!viewerIsSuperAdmin}
+              onChange={(event) => updateField("role", event.target.value as UserFormValues["role"])}
+            >
               <option value="user">User</option>
               <option value="admin">Admin</option>
             </Select>
@@ -178,10 +198,11 @@ export default function AdminUsersManager() {
       </Card>
 
       {editingUserId ? (
-        <AdminUserStaffAccess
+        <AdminUserStaffRoles
           userId={editingUserId}
           username={formValues.username}
           isAdmin={users.find((user) => user.id === editingUserId)?.role === "admin"}
+          canManage={viewerIsSuperAdmin}
           onSaved={() => void refetch()}
         />
       ) : null}
@@ -197,7 +218,7 @@ export default function AdminUsersManager() {
             <Select value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)}>
               <option value="">All roles</option>
               <option value="user">Users</option>
-              <option value="staff">Staff (non-admins with admin areas)</option>
+              <option value="staff">Staff (non-admins with roles)</option>
               <option value="admin">Admins</option>
             </Select>
           </div>
@@ -219,19 +240,16 @@ export default function AdminUsersManager() {
                   <p className="break-all text-sm text-slate-500">{user.email}</p>
                 </div>
                 <div className="grid gap-1 text-sm text-slate-400">
-                  <p>Role: <span className="text-white">{user.role}</span></p>
+                  <p>
+                    Role: <span className="text-white">{user.isSuperAdmin ? "super admin" : user.role}</span>
+                  </p>
                   {user.role === "admin" ? (
-                    <p>Staff access: <span className="text-white">All areas</span></p>
-                  ) : user.staffPermissions && user.staffPermissions.length > 0 ? (
+                    <p>Admin areas: <span className="text-white">All areas</span></p>
+                  ) : user.staffRoles && user.staffRoles.length > 0 ? (
                     <div className="flex flex-wrap items-center gap-1.5">
-                      <span>Staff access:</span>
-                      {user.staffPermissions.map((permission) => (
-                        <span
-                          key={permission}
-                          className="rounded-full border border-violet-300/25 bg-violet-400/10 px-2 py-0.5 text-xs text-violet-100"
-                        >
-                          {STAFF_PERMISSIONS[permission]?.label ?? permission}
-                        </span>
+                      <span>Staff roles:</span>
+                      {user.staffRoles.map((role) => (
+                        <StaffRoleChip key={role.id} name={role.name} color={role.color} />
                       ))}
                     </div>
                   ) : null}
@@ -243,8 +261,14 @@ export default function AdminUsersManager() {
                   <p>Discord: {user.discordTag || "N/A"}</p>
                 </div>
                 <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap xl:justify-end">
-                  <Button className="w-full sm:w-auto" type="button" variant="secondary" onClick={() => startEdit(user)}>Edit</Button>
-                  <Button className="w-full sm:w-auto" type="button" variant="danger" onClick={() => handleDelete(user.id)}>Delete</Button>
+                  {canManageAccount(user) ? (
+                    <Button className="w-full sm:w-auto" type="button" variant="secondary" onClick={() => startEdit(user)}>Edit</Button>
+                  ) : (
+                    <p className="col-span-2 text-xs text-slate-500">Managed by super admins</p>
+                  )}
+                  {canDeleteAccount(user) ? (
+                    <Button className="w-full sm:w-auto" type="button" variant="danger" onClick={() => handleDelete(user.id)}>Delete</Button>
+                  ) : null}
                 </div>
               </div>
             ))}

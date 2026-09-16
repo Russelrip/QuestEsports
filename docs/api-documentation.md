@@ -1303,16 +1303,53 @@ Quest admin routes for the VALORANT platform integration. Every route lives unde
 
 Responses follow the standard envelope `{ success: true, data: <payload>, meta: { serverNow } }`; errors go through `errorHandler` with `body.error.code`.
 
-The four leaderboard routes are the only `/api/v1/admin/valorant/*` routes that are not admin-only: they are declared before the `requireAdmin` guard and use `requireStaffPermission("valorant_leaderboard")` instead.
+The leaderboard routes are the only `/api/v1/admin/valorant/*` routes that are not admin-only: they are declared before the `requireAdmin` guard and use `requireStaffPermission("valorant_leaderboard")` instead.
 
-### Staff permissions
+### Staff roles
+
+Staff roles work like Discord roles: a named, coloured set of admin areas. A user
+who is not an admin can open every area granted by any role they hold. Every
+admin can read roles; only a **super admin** (`users.is_super_admin`, always an
+admin too) can change a role or who holds one.
 
 | Method | Route | Notes |
 |---|---|---|
-| `GET` | `/api/v1/admin/users/{userId}/staff-permissions` | Admin only. `{ catalog: [{ key, label, description }], permissions: [key] }` |
-| `PUT` | `/api/v1/admin/users/{userId}/staff-permissions` | Admin only. Body `{ permissions: [key] }` replaces the user's grants; unknown keys are 400. Audited as `admin.user.staff_permissions.updated` when anything changes |
+| `GET` | `/api/v1/admin/staff-roles` | Admin. `{ catalog: [{ key, group, label, description }], roles: [role] }`, where a role is `{ id, name, description, color, permissions: [key], memberCount, createdAt, updatedAt }` |
+| `POST` | `/api/v1/admin/staff-roles` | Super admin. Body `{ name, description?, color?, permissions: [key] }`. Name is 1–40 characters and unique ignoring case (`409`); colour is `#rrggbb`; unknown keys are `400`. Audited as `admin.staff_role.created` |
+| `GET` | `/api/v1/admin/staff-roles/{roleId}` | Admin. The role plus `members: [{ id, username, firstName, lastName, role, assignedAt }]` |
+| `PATCH` | `/api/v1/admin/staff-roles/{roleId}` | Super admin. Same body as create; replaces the role's fields. Takes effect for every holder on their next request. Audited as `admin.staff_role.updated` with before and after |
+| `DELETE` | `/api/v1/admin/staff-roles/{roleId}` | Super admin. Removes the role from everyone who holds it. Audited as `admin.staff_role.deleted` with the member count |
+| `GET` | `/api/v1/admin/users/{userId}/staff-roles` | Admin. `{ roles: [role] }` held by the user |
+| `PUT` | `/api/v1/admin/users/{userId}/staff-roles` | Super admin. Body `{ roleIds: [id] }` replaces the roles the user holds; a missing role is `400`. Audited as `admin.user.staff_roles.updated` (role names added and removed) when anything changes |
 
-`GET /api/me` (and `/api/mobile/auth/me`) include `user.permissions`: every area for an admin, the granted areas otherwise.
+`GET /api/me` (and `/api/mobile/auth/me`) include `user.isSuperAdmin` and
+`user.permissions`: every area for an admin, the union of their roles' areas
+otherwise.
+
+Areas and the admin routes they open (`requireStaffPermission`, which admins
+always pass). Anything not listed stays `requireAdmin`:
+
+| Area key | Routes |
+|---|---|
+| `tournaments` | `/api/admin/tournaments/*` (sponsors, brackets), `/api/admin/events*`, `/api/admin/event-series*`, and tournament administration on `/api/v1/admin/tournaments/{id}/challonge*` |
+| `registrations` | `/api/admin/team-registrations*`, `/api/admin/tournaments/{id}/registrations` |
+| `rulebooks` | `/api/admin/rulebooks*` |
+| `games` | `/api/admin/game-categories*` |
+| `media` | `/api/images*`, poster writes on `/api/posters*`, `/api/admin/media/files`, `/api/admin/event-albums*` |
+| `teams` | `/api/admin/teams*` |
+| `recruitment` | `/api/admin/recruitment-applications*` |
+| `contact_messages` | `/api/admin/contact-messages*` |
+| `tickets` | `/api/admin/ticket-events*`, `/api/admin/tickets*` |
+| `shop` | `/api/admin/products*`, `/api/admin/orders*`, and `/api/images*` for product images |
+| `payments` | `/api/admin/payments*` |
+| `expenses` | `/api/admin/expenses*`, `/api/admin/expense-targets` |
+| `game_accounts` | `/api/v1/admin/game-accounts/change-requests*` |
+| `valorant_leaderboard` | `/api/v1/admin/valorant/leaderboard/*` |
+
+Shared reads accept any of several areas: `GET /api/admin/tournaments` (tournaments,
+registrations, media), `GET /api/admin/events/{id}/registrations` (tournaments,
+registrations), `GET /api/admin/event-series` (tournaments, tickets),
+`GET /api/admin/game-categories` and `GET /api/admin/games` (games, tournaments).
 
 ### Audit log
 

@@ -3905,12 +3905,13 @@ test("listTeamRegistrations matches a tournament id only when the value is a uui
   ]);
 });
 
-test("listAdminUsers reports each user's staff areas and filters to staff", async () => {
+test("listAdminUsers reports each user's staff roles and filters to staff", async () => {
   const calls = [];
+  const media = { id: "role-media", name: "Media", color: "#5865f2" };
   const rows = [
-    { id: "u-1", role: "user", staffPermissions: [{ permission: "valorant_leaderboard" }] },
-    { id: "u-2", role: "user", staffPermissions: [] },
-    { id: "u-3", role: "admin" },
+    { id: "u-1", role: "user", staffRoles: [{ role: media }] },
+    { id: "u-2", role: "user", staffRoles: [] },
+    { id: "u-3", role: "admin", isSuperAdmin: true },
   ];
   const prisma = {
     user: {
@@ -3923,18 +3924,113 @@ test("listAdminUsers reports each user's staff areas and filters to staff", asyn
 
   const all = await service.listAdminUsers({ page: 1, pageSize: 10 });
   const users = all.items ?? all.users;
-  assert.deepEqual(users.map((user) => [user.id, user.staffPermissions]), [
-    ["u-1", ["valorant_leaderboard"]],
-    ["u-2", []],
-    ["u-3", []],
+  assert.deepEqual(users.map((user) => [user.id, user.staffRoles, Boolean(user.isSuperAdmin)]), [
+    ["u-1", [media], false],
+    ["u-2", [], false],
+    ["u-3", [], true],
   ]);
   const findMany = calls.find(([name]) => name === "findMany")[1];
-  assert.deepEqual(findMany.select.staffPermissions, { select: { permission: true } });
+  assert.deepEqual(findMany.select.staffRoles.select, { role: { select: { id: true, name: true, color: true } } });
+  assert.equal(findMany.select.isSuperAdmin, true);
 
   calls.length = 0;
   await service.listAdminUsers({ page: 1, pageSize: 10, role: "Staff" });
   for (const [, args] of calls) {
     assert.equal(args.where.role, "user");
-    assert.deepEqual(args.where.staffPermissions, { some: {} });
+    assert.deepEqual(args.where.staffRoles, { some: {} });
   }
+});
+
+const OWNER = { id: "owner-1", role: "admin", isSuperAdmin: true };
+const ADMIN = { id: "admin-1", role: "admin", isSuperAdmin: false };
+
+const userForm = (overrides = {}) => ({
+  firstName: "Kavi",
+  lastName: "Silva",
+  email: "kavi@example.com",
+  username: "kavi",
+  password: "password-123",
+  confirmPassword: "password-123",
+  role: "user",
+  ...overrides,
+});
+
+const userManagementPrisma = (targets) => {
+  const updates = [];
+  const deletes = [];
+  const tx = {
+    user: { update: async (args) => { updates.push(args); return { id: args.where.id, ...args.data }; } },
+    session: { deleteMany: async () => ({ count: 0 }) },
+  };
+  const prisma = {
+    updates,
+    deletes,
+    user: {
+      findUnique: async ({ where }) => targets[where.id] ?? null,
+      findFirst: async () => null,
+      create: async (args) => ({ id: "created", ...args.data }),
+      deleteMany: async (args) => { deletes.push(args); return { count: targets[args.where.id] ? 1 : 0 }; },
+    },
+    $transaction: async (callback) => callback(tx),
+  };
+  return prisma;
+};
+
+test("only a super admin can create an admin account", async () => {
+  const { module: service } = loadAdminService(userManagementPrisma({}));
+  await assert.rejects(service.createAdminUser({ body: userForm({ role: "admin" }), currentUser: ADMIN }), { statusCode: 403 });
+  const created = await service.createAdminUser({ body: userForm({ role: "admin" }), currentUser: OWNER });
+  assert.equal(created.role, "admin");
+  const player = await service.createAdminUser({ body: userForm(), currentUser: ADMIN });
+  assert.equal(player.role, "user");
+});
+
+test("only a super admin can change admin access or edit another admin's account", async () => {
+  const prisma = userManagementPrisma({
+    "user-1": { id: "user-1", role: "user", isSuperAdmin: false },
+    "admin-2": { id: "admin-2", role: "admin", isSuperAdmin: false },
+    "owner-2": { id: "owner-2", role: "admin", isSuperAdmin: true },
+    [ADMIN.id]: { id: ADMIN.id, role: "admin", isSuperAdmin: false },
+  });
+  const { module: service } = loadAdminService(prisma);
+  const update = (userId, currentUser, overrides) => service.updateAdminUser({ userId, currentUser, body: userForm(overrides) });
+
+  // Promoting and demoting are super admin only.
+  await assert.rejects(update("user-1", ADMIN, { role: "admin" }), { statusCode: 403 });
+  await assert.rejects(update("admin-2", ADMIN, { role: "user" }), { statusCode: 403 });
+  // So is changing another admin's details, password included.
+  await assert.rejects(update("admin-2", ADMIN, { role: "admin" }), { statusCode: 403 });
+  assert.equal(prisma.updates.length, 0);
+
+  // An admin still manages ordinary users and their own account.
+  await update("user-1", ADMIN, { role: "user" });
+  await update(ADMIN.id, ADMIN, { role: "admin" });
+  assert.equal(prisma.updates.length, 2);
+
+  // A super admin can do both, but cannot demote a super admin from here.
+  await update("user-1", OWNER, { role: "admin" });
+  await update("admin-2", OWNER, { role: "user" });
+  await assert.rejects(update("owner-2", OWNER, { role: "user" }), (error) => {
+    assert.equal(error.statusCode, 400);
+    assert.match(error.details.fieldErrors.role, /super admin stays an admin/);
+    return true;
+  });
+  assert.deepEqual(prisma.updates.slice(2).map((call) => [call.where.id, call.data.role]), [["user-1", "admin"], ["admin-2", "user"]]);
+});
+
+test("only a super admin can delete an admin, and nobody can delete a super admin from the dashboard", async () => {
+  const prisma = userManagementPrisma({
+    "user-1": { id: "user-1", role: "user", isSuperAdmin: false },
+    "admin-2": { id: "admin-2", role: "admin", isSuperAdmin: false },
+    "owner-2": { id: "owner-2", role: "admin", isSuperAdmin: true },
+  });
+  const { module: service } = loadAdminService(prisma);
+
+  await assert.rejects(service.deleteAdminUser({ userId: "admin-2", currentUser: ADMIN }), { statusCode: 403 });
+  await assert.rejects(service.deleteAdminUser({ userId: "owner-2", currentUser: OWNER }), { statusCode: 400 });
+  assert.equal(prisma.deletes.length, 0);
+
+  await service.deleteAdminUser({ userId: "user-1", currentUser: ADMIN });
+  await service.deleteAdminUser({ userId: "admin-2", currentUser: OWNER });
+  assert.deepEqual(prisma.deletes.map((call) => call.where.id), ["user-1", "admin-2"]);
 });

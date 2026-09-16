@@ -149,7 +149,7 @@ test("event registration summaries map only safe fields and isolate returned ite
   }
 });
 
-test("event registration route remains admin-only and points at the series controller alias", () => {
+test("event registration route is gated to the tournaments or registrations staff areas and points at the series controller alias", () => {
   const routesPath = path.join(__dirname, "../src/modules/series/series.routes.js");
   const authPath = path.join(__dirname, "../src/modules/auth/auth.middleware.js");
   const uploadPathForRoutes = path.join(__dirname, "../src/middleware/upload.js");
@@ -157,11 +157,18 @@ test("event registration route remains admin-only and points at the series contr
   const cacheControlPath = path.join(__dirname, "../src/middleware/cache-control.js");
   const envPath = path.join(__dirname, "../src/config/env.js");
   const controllerPath = path.join(__dirname, "../src/modules/series/series.controller.js");
-  const requireAdmin = function requireAdmin(_req, _res, next) { next(); };
+  const permissionPath = path.join(__dirname, "../src/modules/permissions/permission.middleware.js");
+  const staffGuards = new Map();
+  const requireStaffPermission = (...areas) => {
+    const key = areas.join("|");
+    if (!staffGuards.has(key)) staffGuards.set(key, function staffGuard(_req, _res, next) { next(); });
+    return staffGuards.get(key);
+  };
   const registrationHandler = function getEventRegistrations(_req, _res, next) { next(); };
   const controller = new Proxy({}, { get: (target, key) => key === "getEventRegistrations" ? registrationHandler : (target[key] || (() => {})) });
   const { module: router, restore } = loadModuleWithMocks(routesPath, {
-    [authPath]: { requireAdmin },
+    [authPath]: {},
+    [permissionPath]: { requireStaffPermission },
     [uploadPathForRoutes]: { tournamentBannerUpload: { fields: () => (_req, _res, next) => next(), single: () => (_req, _res, next) => next() } },
     [cachePath]: { cacheJson: () => (_req, _res, next) => next(), invalidateCache: () => (_req, _res, next) => next() },
     [cacheControlPath]: { cachePublicData: () => (_req, _res, next) => next() },
@@ -174,7 +181,7 @@ test("event registration route remains admin-only and points at the series contr
     assert.ok(route);
     assert.equal(route.route.methods.get, true);
     const handlers = route.route.stack.map((layer) => layer.handle);
-    assert.ok(handlers.includes(requireAdmin));
+    assert.ok(handlers.includes(staffGuards.get("tournaments|registrations")));
     assert.ok(handlers.includes(registrationHandler));
   } finally {
     restore();

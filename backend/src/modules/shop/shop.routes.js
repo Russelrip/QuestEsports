@@ -1,5 +1,5 @@
 const express = require("express");
-const { requireAdmin } = require("../auth/auth.middleware");
+const { requireStaffPermission } = require("../permissions/permission.middleware");
 const { createRateLimiter } = require("../../middleware/rate-limit");
 const controller = require("./shop.controller");
 const { cacheJson, invalidateCache } = require("../../middleware/response-cache");
@@ -14,11 +14,11 @@ router.get("/products/:productId/images/:imageId", controller.streamProductImage
 router.post("/orders", orderLimiter, controller.createOrder);
 router.post("/orders/quote", orderLimiter, controller.quoteOrder);
 router.get("/orders/status", controller.getOrder);
-router.get("/admin/products", requireAdmin, controller.getAdminProducts);
-router.post("/admin/products", requireAdmin, invalidateCache("products"), controller.createProduct);
-router.patch("/admin/products/:productId", requireAdmin, invalidateCache("products"), controller.updateProduct);
-router.delete("/admin/products/:productId", requireAdmin, invalidateCache("products"), controller.deleteProduct);
-router.get("/admin/orders", requireAdmin, controller.getAdminOrders);
-router.patch("/admin/orders/:orderId", requireAdmin, controller.updateOrder);
+router.get("/admin/products", requireStaffPermission("shop"), controller.getAdminProducts);
+router.post("/admin/products", requireStaffPermission("shop"), invalidateCache("products"), controller.createProduct);
+router.patch("/admin/products/:productId", requireStaffPermission("shop"), invalidateCache("products"), controller.updateProduct);
+router.delete("/admin/products/:productId", requireStaffPermission("shop"), invalidateCache("products"), controller.deleteProduct);
+router.get("/admin/orders", requireStaffPermission("shop"), controller.getAdminOrders);
+router.patch("/admin/orders/:orderId", requireStaffPermission("shop"), controller.updateOrder);
 
 module.exports = router;

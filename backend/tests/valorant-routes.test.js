@@ -109,7 +109,16 @@ test("v1 router guards /admin/valorant with requireAdmin and declares every prox
         `${layer.route.path} must be gated by the valorant_leaderboard staff permission`,
       );
     }
-    assert.deepEqual([...staffPermissionGuards.keys()], ["valorant_leaderboard"]);
+    assert.deepEqual([...staffPermissionGuards.keys()].sort(), ["game_accounts", "valorant_leaderboard"]);
+    const gameAccountsGuard = staffPermissionGuards.get("game_accounts");
+    const changeRequestLayers = router.stack.filter((layer) => layer.route?.path.startsWith("/admin/game-accounts/change-requests"));
+    assert.equal(changeRequestLayers.length, 2);
+    for (const layer of changeRequestLayers) {
+      assert.ok(
+        layer.route.stack.some((routeLayer) => routeLayer.handle === gameAccountsGuard),
+        `${layer.route.path} must be gated by the game_accounts staff permission`,
+      );
+    }
 
     const routes = new Set(
       router.stack

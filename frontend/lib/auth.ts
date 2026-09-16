@@ -13,8 +13,11 @@ export type AuthUser = {
   discordId?: string | null;
   discordTag?: string | null;
   role: "admin" | "user";
-  // Admin areas this user can open. Every area for an admin; granted areas only
-  // for anyone else. Reported by /api/me.
+  // The owner tier above admin. Only a super admin manages admins and staff
+  // roles.
+  isSuperAdmin?: boolean;
+  // Admin areas this user can open. Every area for an admin; the areas their
+  // staff roles grant for anyone else. Reported by /api/me.
   permissions?: StaffPermission[];
   pendingEmail?: string | null;
   emailVerified: boolean;

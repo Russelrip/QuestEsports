@@ -1,7 +1,5 @@
 const express = require("express");
-const {
-  requireAdmin,
-} = require("../auth/auth.middleware");
+const { requireStaffPermission } = require("../permissions/permission.middleware");
 const { paymentProofUpload } = require("../../middleware/upload");
 const {
   notifyPayHere,
@@ -42,36 +40,36 @@ router.post(
   paymentProofUpload.single("proof"),
   uploadBankTransferProof
 );
-router.get("/admin/payments", requireAdmin, getAdminPayments);
-router.get("/admin/payments/:transactionId", requireAdmin, getAdminPayment);
+router.get("/admin/payments", requireStaffPermission("payments"), getAdminPayments);
+router.get("/admin/payments/:transactionId", requireStaffPermission("payments"), getAdminPayment);
 router.get(
   "/admin/payments/:transactionId/bank-transfer-proof",
-  requireAdmin,
+  requireStaffPermission("payments"),
   downloadBankTransferProof
 );
 router.patch(
   "/admin/payments/:transactionId/bank-transfer-review",
-  requireAdmin,
+  requireStaffPermission("payments"),
   invalidatePaymentProjectionCache,
   express.json(),
   reviewBankTransferPayment
 );
 router.post(
   "/admin/payments/:transactionId/reopen",
-  requireAdmin,
+  requireStaffPermission("payments"),
   invalidatePaymentProjectionCache,
   reopenExpiredPayment
 );
 router.patch(
   "/admin/payments/:transactionId/payhere-reconciliation",
-  requireAdmin,
+  requireStaffPermission("payments"),
   invalidatePaymentProjectionCache,
   express.json(),
   reconcilePayHerePayment
 );
 router.patch(
   "/admin/payments/:transactionId/cash-reconciliation",
-  requireAdmin,
+  requireStaffPermission("payments"),
   express.json(),
   reconcileCashTicketPayment
 );

@@ -35,6 +35,7 @@ const PUBLIC_USER_SELECT = {
   discordTag: true,
   avatarImageName: true,
   role: true,
+  isSuperAdmin: true,
   pendingEmail: true,
   emailVerified: true,
   emailVerifiedAt: true,
@@ -57,6 +58,7 @@ const mapUserForResponse = (user) => ({
       ? user.avatarUrl
       : null,
   role: user.role,
+  isSuperAdmin: user.role === "admin" && user.isSuperAdmin === true,
   pendingEmail: user.pendingEmail || null,
   emailVerified: Boolean(user.emailVerified),
   emailVerifiedAt: user.emailVerifiedAt || null,

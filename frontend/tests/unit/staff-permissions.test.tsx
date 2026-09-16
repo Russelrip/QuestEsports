@@ -1,24 +1,27 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import AdminGuard from "../../components/admin/AdminGuard";
-import AdminUserStaffAccess from "../../components/admin/AdminUserStaffAccess";
+import AdminUserStaffRoles from "../../components/admin/AdminUserStaffRoles";
 import ValorantManagementPage from "../../components/admin/valorant/ValorantManagementPage";
-import { adminHomeFor, canOpenAdminPath, hasStaffPermission } from "../../lib/staff-permissions";
+import { adminHomeFor, canOpenAdminPath, hasStaffPermission, isSuperAdmin, staffPermissionGroups } from "../../lib/staff-permissions";
 
-// A leaderboard staff member is a normal user with one granted area. They must
-// land in that area, see only it, and be sent back to it from any other admin
-// page. The backend enforces the same boundary; these cover what the UI shows.
+// A staff member is a normal user whose roles grant some admin areas. They must
+// land in one of those areas, see only them, and be sent back from any other
+// admin page. The backend enforces the same boundary; these cover what the UI
+// shows.
 
 const mocks = vi.hoisted(() => ({
   auth: { user: null as unknown, isLoading: false, sessionError: "", refreshSession: vi.fn() },
   pathname: "/admin",
   replace: vi.fn(),
-  fetchPermissions: vi.fn(),
-  updatePermissions: vi.fn(),
+  fetchRoles: vi.fn(),
+  fetchUserRoles: vi.fn(),
+  updateUserRoles: vi.fn(),
   showToast: vi.fn(),
 }));
 
 vi.mock("@/components/auth/AuthProvider", () => ({ useAuth: () => mocks.auth }));
+vi.mock("next/link", () => ({ default: ({ children, href }: React.PropsWithChildren<{ href: string }>) => <a href={href}>{children}</a> }));
 vi.mock("next/navigation", () => ({
   usePathname: () => mocks.pathname,
   useRouter: () => ({ replace: mocks.replace, push: vi.fn() }),
@@ -28,7 +31,7 @@ vi.mock("@/hooks/useToastStore", () => ({
 }));
 vi.mock("@/lib/staff-permissions", async () => {
   const actual = await vi.importActual<typeof import("../../lib/staff-permissions")>("../../lib/staff-permissions");
-  return { ...actual, fetchUserStaffPermissions: mocks.fetchPermissions, updateUserStaffPermissions: mocks.updatePermissions };
+  return { ...actual, fetchStaffRoles: mocks.fetchRoles, fetchUserStaffRoles: mocks.fetchUserRoles, updateUserStaffRoles: mocks.updateUserRoles };
 });
 // Render the page's tab strip without its data-loading children.
 vi.mock("@/components/admin/AdminShell", () => ({ default: ({ children }: React.PropsWithChildren) => <div>{children}</div> }));
@@ -39,7 +42,13 @@ const admin = { id: "admin-1", role: "admin" as const, permissions: ["valorant_l
 const staff = { id: "staff-1", role: "user" as const, permissions: ["valorant_leaderboard"] };
 const player = { id: "player-1", role: "user" as const, permissions: [] };
 
-const catalog = [{ key: "valorant_leaderboard", label: "VALORANT leaderboard", description: "Search and remove players." }];
+const mediaStaff = { id: "media-1", role: "user" as const, permissions: ["media", "shop"] };
+
+const role = (id: string, name: string, permissions: string[], color: string | null = "#5865f2") => ({
+  id, name, description: null, color, permissions, memberCount: 1, createdAt: "", updatedAt: "",
+});
+const leaderboardRole = role("role-lb", "VALORANT Leaderboard", ["valorant_leaderboard"]);
+const mediaRole = role("role-media", "Media Team", ["media", "games"], null);
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -63,6 +72,29 @@ describe("staff permission helpers", () => {
       expect(canOpenAdminPath(staff, path), path).toBe(false);
     }
     expect(adminHomeFor(staff)).toBe("/admin/valorant");
+  });
+
+  it("opens every area a role grants, including sub-pages, and nothing else", () => {
+    for (const path of ["/admin/media", "/admin/event-albums", "/admin/products", "/admin/orders", "/admin/orders/o-1"]) {
+      expect(canOpenAdminPath(mediaStaff, path), path).toBe(true);
+    }
+    for (const path of ["/admin", "/admin/users", "/admin/roles", "/admin/payments", "/admin/tournaments", "/admin/audit-log"]) {
+      expect(canOpenAdminPath(mediaStaff, path), path).toBe(false);
+    }
+    expect(adminHomeFor(mediaStaff)).toBe("/admin/media");
+  });
+
+  it("treats super admin as an admin with the flag, and nothing else", () => {
+    expect(isSuperAdmin({ role: "admin", isSuperAdmin: true })).toBe(true);
+    expect(isSuperAdmin({ role: "admin", isSuperAdmin: false })).toBe(false);
+    expect(isSuperAdmin({ role: "user", isSuperAdmin: true })).toBe(false);
+    expect(isSuperAdmin(null)).toBe(false);
+  });
+
+  it("groups every area for the role editor", () => {
+    const groups = staffPermissionGroups();
+    expect(groups.map((group) => group.label)).toEqual(["Competition", "Content", "People", "Commerce", "Game Operations"]);
+    expect(groups.flatMap((group) => group.areas).length).toBe(14);
   });
 
   it("opens nothing for a player", () => {
@@ -118,37 +150,60 @@ describe("ValorantManagementPage tabs", () => {
   });
 });
 
-describe("AdminUserStaffAccess", () => {
-  it("grants the leaderboard area and saves exactly the ticked areas", async () => {
-    mocks.fetchPermissions.mockResolvedValue({ catalog, permissions: [] });
-    mocks.updatePermissions.mockResolvedValue({ catalog, permissions: ["valorant_leaderboard"] });
-    render(<AdminUserStaffAccess userId="player-1" username="sahan" isAdmin={false} />);
+describe("AdminUserStaffRoles", () => {
+  it("lets a super admin add a role, saves the full list, and shows the areas it opens", async () => {
+    mocks.fetchRoles.mockResolvedValue([leaderboardRole, mediaRole]);
+    mocks.fetchUserRoles.mockResolvedValue([leaderboardRole]);
+    mocks.updateUserRoles.mockResolvedValue([leaderboardRole, mediaRole]);
+    const onSaved = vi.fn();
+    render(<AdminUserStaffRoles userId="player-1" username="sahan" isAdmin={false} canManage onSaved={onSaved} />);
 
-    const checkbox = (await screen.findByRole("checkbox", { name: /VALORANT leaderboard/ })) as HTMLInputElement;
-    const save = screen.getByRole("button", { name: "Save staff access" }) as HTMLButtonElement;
-    expect(checkbox.checked).toBe(false);
-    expect(save.disabled).toBe(true);
+    expect(await screen.findByText("VALORANT Leaderboard")).toBeTruthy();
+    expect(screen.getByText("VALORANT leaderboard")).toBeTruthy();
+    fireEvent.change(screen.getByRole("combobox", { name: "Add a role" }), { target: { value: "role-media" } });
 
-    fireEvent.click(checkbox);
-    expect(save.disabled).toBe(false);
-    fireEvent.click(save);
-
-    await waitFor(() => expect(mocks.updatePermissions).toHaveBeenCalledWith("player-1", ["valorant_leaderboard"]));
+    await waitFor(() => expect(mocks.updateUserRoles).toHaveBeenCalledWith("player-1", ["role-lb", "role-media"]));
     await waitFor(() => expect(mocks.showToast).toHaveBeenCalledWith(expect.objectContaining({ tone: "success" })));
-    expect((screen.getByRole("button", { name: "Save staff access" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(onSaved).toHaveBeenCalled();
+    expect(screen.getByText("Media Team")).toBeTruthy();
+    // Every role is now held, so there is nothing left to add.
+    expect(screen.queryByRole("combobox", { name: "Add a role" })).toBeNull();
+    expect(screen.getByText("Games, Media and posters, VALORANT leaderboard")).toBeTruthy();
   });
 
-  it("does not offer areas to an admin, who already has them all", () => {
-    mocks.fetchPermissions.mockResolvedValue({ catalog, permissions: [] });
-    render(<AdminUserStaffAccess userId="admin-1" username="russel" isAdmin />);
-    expect(screen.getByText(/already open every area/)).toBeTruthy();
-    expect(screen.queryByRole("checkbox")).toBeNull();
+  it("removes a role with the chip's remove button", async () => {
+    mocks.fetchRoles.mockResolvedValue([leaderboardRole, mediaRole]);
+    mocks.fetchUserRoles.mockResolvedValue([leaderboardRole, mediaRole]);
+    mocks.updateUserRoles.mockResolvedValue([mediaRole]);
+    render(<AdminUserStaffRoles userId="player-1" username="sahan" isAdmin={false} canManage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Remove VALORANT Leaderboard" }));
+    await waitFor(() => expect(mocks.updateUserRoles).toHaveBeenCalledWith("player-1", ["role-media"]));
   });
 
-  it("reports a load failure instead of showing empty access", async () => {
-    mocks.fetchPermissions.mockRejectedValue(new Error("Admin access is required."));
-    render(<AdminUserStaffAccess userId="player-1" username="sahan" isAdmin={false} />);
+  it("shows roles read-only to an admin who is not a super admin", async () => {
+    mocks.fetchRoles.mockResolvedValue([leaderboardRole, mediaRole]);
+    mocks.fetchUserRoles.mockResolvedValue([leaderboardRole]);
+    render(<AdminUserStaffRoles userId="player-1" username="sahan" isAdmin={false} canManage={false} />);
+
+    expect(await screen.findByText("VALORANT Leaderboard")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Remove/ })).toBeNull();
+    expect(screen.queryByRole("combobox", { name: "Add a role" })).toBeNull();
+    expect(screen.getByText("Only a super admin can change roles.")).toBeTruthy();
+  });
+
+  it("explains that roles do not add anything for an admin", async () => {
+    mocks.fetchRoles.mockResolvedValue([leaderboardRole]);
+    mocks.fetchUserRoles.mockResolvedValue([]);
+    render(<AdminUserStaffRoles userId="admin-1" username="russel" isAdmin canManage />);
+    expect(await screen.findByText(/already open every area/)).toBeTruthy();
+  });
+
+  it("reports a load failure instead of showing no roles", async () => {
+    mocks.fetchRoles.mockRejectedValue(new Error("Admin access is required."));
+    mocks.fetchUserRoles.mockResolvedValue([]);
+    render(<AdminUserStaffRoles userId="player-1" username="sahan" isAdmin={false} canManage />);
     expect((await screen.findByRole("alert")).textContent).toContain("Admin access is required.");
-    expect(screen.queryByRole("checkbox")).toBeNull();
+    expect(screen.queryByRole("combobox")).toBeNull();
   });
 });

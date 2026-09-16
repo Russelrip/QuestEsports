@@ -409,6 +409,11 @@ model User {
   emailVerified                Boolean                     @default(false) @map("email_verified")
   emailVerifiedAt              DateTime?                   @map("email_verified_at")
   role                         UserRole                    @default(user)
+  // The owner tier. Always an admin as well (a database check enforces it), so
+  // every admin guard still admits a super admin; on top of that only a super
+  // admin can make or unmake admins and hand out staff roles. Set from the
+  // server with scripts/set-super-admin.js, never from the dashboard.
+  isSuperAdmin                 Boolean                     @default(false) @map("is_super_admin")
   phone                        String?
   discordTag                   String?                     @map("discord_tag")
   avatarImageName              String?                     @map("avatar_image_name")
@@ -461,6 +466,9 @@ model User {
   gameAccountChangesReviewed   GameAccountChangeRequest[]  @relation("GameAccountChangeReviewer")
   staffPermissions             UserStaffPermission[]       @relation("StaffPermissionHolder")
   staffPermissionsGranted      UserStaffPermission[]       @relation("StaffPermissionGranter")
+  staffRoles                   UserStaffRole[]             @relation("StaffRoleHolder")
+  staffRolesGranted            UserStaffRole[]             @relation("StaffRoleGranter")
+  staffRolesCreated            StaffRole[]                 @relation("StaffRoleCreator")
 
   @@index([role])
   @@index([createdAt])
@@ -1001,7 +1009,9 @@ model TournamentBracket {
   @@map("tournament_brackets")
 }
 
-// A site-wide grant of one admin area to a user who is not an admin.
+// Superseded by staff roles and no longer read. The migration that added roles
+// copied every grant into one; the table stays for a release so the previous
+// build can still run, and is dropped in a later migration.
 model UserStaffPermission {
   id              String          @id @default(uuid()) @db.Uuid
   userId          String          @map("user_id") @db.Uuid
@@ -1014,6 +1024,41 @@ model UserStaffPermission {
   @@unique([userId, permission])
   @@index([permission])
   @@map("user_staff_permissions")
+}
+
+// A named bundle of admin areas, like a Discord role. Users hold any number of
+// roles and can open every area any of them grants. `permissions` holds keys
+// from the catalog in backend/src/modules/permissions/staff-permission.service.js;
+// it is text rather than an enum so adding an area needs no migration, and keys
+// the catalog no longer knows are ignored on read.
+model StaffRole {
+  id              String          @id @default(uuid()) @db.Uuid
+  name            String          @unique
+  description     String?
+  color           String?
+  permissions     String[]        @default([])
+  createdByUserId String?         @map("created_by_user_id") @db.Uuid
+  createdAt       DateTime        @default(now()) @map("created_at")
+  updatedAt       DateTime        @updatedAt @map("updated_at")
+  createdBy       User?           @relation("StaffRoleCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  members         UserStaffRole[]
+
+  @@map("staff_roles")
+}
+
+model UserStaffRole {
+  id              String    @id @default(uuid()) @db.Uuid
+  userId          String    @map("user_id") @db.Uuid
+  roleId          String    @map("role_id") @db.Uuid
+  grantedByUserId String?   @map("granted_by_user_id") @db.Uuid
+  createdAt       DateTime  @default(now()) @map("created_at")
+  user            User      @relation("StaffRoleHolder", fields: [userId], references: [id], onDelete: Cascade)
+  role            StaffRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  grantedBy       User?     @relation("StaffRoleGranter", fields: [grantedByUserId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, roleId])
+  @@index([roleId])
+  @@map("user_staff_roles")
 }
 
 model TournamentStaffAssignment {

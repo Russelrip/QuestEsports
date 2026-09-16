@@ -1457,9 +1457,18 @@ const additionalPaths = {
   "/api/v1/admin/audit-logs/facets": {
     get: createOperation("Admin", "List the distinct audit actions and target types with counts, for filter menus (admin only)", { authenticated: true }),
   },
-  "/api/v1/admin/users/{userId}/staff-permissions": {
-    get: createOperation("Admin", "List the delegated admin areas granted to a user, with the area catalog", { authenticated: true }),
-    put: createOperation("Admin", "Replace the delegated admin areas granted to a user (admin only, audited)", { authenticated: true }),
+  "/api/v1/admin/staff-roles": {
+    get: createOperation("Admin", "List staff roles with their admin areas and member counts, plus the area catalog (admin only)", { authenticated: true }),
+    post: createOperation("Admin", "Create a staff role (super admin only, audited)", { authenticated: true }),
+  },
+  "/api/v1/admin/staff-roles/{roleId}": {
+    get: createOperation("Admin", "Get a staff role with the users who hold it (admin only)", { authenticated: true }),
+    patch: createOperation("Admin", "Rename a staff role or change its colour, description or admin areas (super admin only, audited)", { authenticated: true }),
+    delete: createOperation("Admin", "Delete a staff role and remove it from everyone who holds it (super admin only, audited)", { authenticated: true }),
+  },
+  "/api/v1/admin/users/{userId}/staff-roles": {
+    get: createOperation("Admin", "List the staff roles a user holds (admin only)", { authenticated: true }),
+    put: createOperation("Admin", "Replace the staff roles a user holds (super admin only, audited)", { authenticated: true }),
   },
   "/api/v1/admin/valorant/rankings": {
     get: createOperation("valorant", "List VALORANT team rankings", { authenticated: true }),
