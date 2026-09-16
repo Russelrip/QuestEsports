@@ -4,9 +4,26 @@ SITE-97. Who can create tournaments, upload posters, manage matches, approve
 teams, and open the admin tools, and how that maps onto the access checks the
 backend already runs.
 
-Status: **proposed**. The "Today" columns describe what the code enforces on
-`main`. The "Decision" columns are the recommendation. Items under
-[Open questions](#open-questions) need an owner's call before anything is built.
+Status: **proposed, partly decided**. The "Today" columns describe what the code
+enforced on `main` when this was written. The "Decision" columns are the
+recommendation. Items under [Open questions](#open-questions) need an owner's
+call before anything is built.
+
+**Decided on 2026-09-16 and built in #193:**
+
+- **Super admin tier.** Answers open question 1. Only super admins make or remove
+  admins, edit other admins' accounts, and manage staff roles. Super admin is
+  granted from the server, never from the dashboard.
+- **Discord-style staff roles** replace per-user staff access. A super admin
+  builds named roles from admin areas and gives them to people.
+- **Admins keep full access.** The admin role stays all-or-nothing.
+- **Fourteen delegable areas**, including tournaments, registrations, media,
+  tickets, shop and payments. Who gets which area is now the super admin's
+  choice per role, not a fixed rule. Where this document says "Admin" for
+  delegable work, read "admin or a role with that area".
+
+The per-tournament proposals below (tournament admins reviewing registrations,
+the tournament staff UI) are still open.
 
 ## Principles
 
