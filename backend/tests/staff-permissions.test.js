@@ -480,7 +480,8 @@ test("a super admin builds a role, assigns it, and edits or deletes it with imme
 
 test("the frontend area catalog mirrors the backend one exactly", () => {
   const fs = require("node:fs");
-  const source = fs.readFileSync(path.join(__dirname, "../../frontend/lib/staff-permissions.ts"), "utf8");
+  // Normalised because a Windows checkout may carry CRLF line endings.
+  const source = fs.readFileSync(path.join(__dirname, "../../frontend/lib/staff-permissions.ts"), "utf8").replace(/\r\n/g, "\n");
   const block = source.slice(source.indexOf("export const STAFF_PERMISSIONS = {"), source.indexOf("} as const;"));
   const frontend = [...block.matchAll(/^ {2}(\w+): \{\n {4}group: "([^"]+)",\n {4}label: "([^"]+)",\n {4}description: "([^"]+)",\n {2}\},/gm)]
     .map(([, key, group, label, description]) => ({ key, group, label, description }));

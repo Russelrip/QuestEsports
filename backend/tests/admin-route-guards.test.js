@@ -1,8 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const path = require("node:path");
-
-const { loadModuleWithMocks } = require("./helpers/load-module-with-mocks");
+const { spawnSync } = require("node:child_process");
 
 // The /api router used to guard every /admin route with one blanket
 // `router.use("/admin", requireAdmin)`. Staff roles replaced it with a guard on
@@ -10,43 +9,53 @@ const { loadModuleWithMocks } = require("./helpers/load-module-with-mocks");
 // real mounted routers and fails on any admin route that names no guard, and
 // pins which staff areas open the routes that are delegable.
 
-const indexPath = path.join(__dirname, "../src/routes/index.js");
-const authPath = path.join(__dirname, "../src/modules/auth/auth.middleware.js");
-const permissionPath = path.join(__dirname, "../src/modules/permissions/permission.middleware.js");
-
+// The walk runs in a child process. Loading the whole /api router pulls in every
+// controller, and this test only inspects wiring, so in-process it would add
+// thirty-odd files it never exercises to the coverage report. The child is
+// spawned without the parent's coverage directory, like write-freeze.test.js.
+const WALK_SCRIPT = `
+const path = require("node:path");
+const { loadModuleWithMocks } = require(${JSON.stringify(path.join(__dirname, "helpers/load-module-with-mocks"))});
+const backend = ${JSON.stringify(path.join(__dirname, ".."))};
 const pass = (_req, _res, next) => next();
 const requireAdmin = function requireAdmin(_req, _res, next) { next(); };
 const passThroughModule = (named) => new Proxy(named, { get: (target, key) => (key in target ? target[key] : pass) });
-
-const collectRoutes = () => {
-  const { module: router, restore } = loadModuleWithMocks(indexPath, {
-    [authPath]: passThroughModule({ requireAdmin }),
-    [permissionPath]: passThroughModule({
-      requireStaffPermission: (...areas) => Object.assign((_req, _res, next) => next(), { staffAreas: areas }),
-    }),
-  });
-  try {
-    const routes = new Map();
-    const walk = (stack) => {
-      for (const layer of stack) {
-        if (layer.route) {
-          const handles = layer.route.stack.map((routeLayer) => routeLayer.handle);
-          for (const method of Object.keys(layer.route.methods)) {
-            routes.set(`${method.toUpperCase()} ${layer.route.path}`, {
-              admin: handles.includes(requireAdmin),
-              areas: handles.find((handle) => handle.staffAreas)?.staffAreas ?? null,
-            });
-          }
-        } else if (layer.handle?.stack) {
-          walk(layer.handle.stack);
-        }
+const { module: router } = loadModuleWithMocks(path.join(backend, "src/routes/index.js"), {
+  [path.join(backend, "src/modules/auth/auth.middleware.js")]: passThroughModule({ requireAdmin }),
+  [path.join(backend, "src/modules/permissions/permission.middleware.js")]: passThroughModule({
+    requireStaffPermission: (...areas) => Object.assign((_req, _res, next) => next(), { staffAreas: areas }),
+  }),
+});
+const routes = {};
+const walk = (stack) => {
+  for (const layer of stack) {
+    if (layer.route) {
+      const handles = layer.route.stack.map((routeLayer) => routeLayer.handle);
+      for (const method of Object.keys(layer.route.methods)) {
+        routes[method.toUpperCase() + " " + layer.route.path] = {
+          admin: handles.includes(requireAdmin),
+          areas: handles.find((handle) => handle.staffAreas)?.staffAreas ?? null,
+        };
       }
-    };
-    walk(router.stack);
-    return routes;
-  } finally {
-    restore();
+    } else if (layer.handle?.stack) {
+      walk(layer.handle.stack);
+    }
   }
+};
+walk(router.stack);
+process.stdout.write("ROUTES:" + JSON.stringify(routes) + "\\n");
+process.exit(0);
+`;
+
+let collected;
+const collectRoutes = () => {
+  if (collected) return collected;
+  const environment = { ...process.env, DOTENV_CONFIG_QUIET: "true", NODE_V8_COVERAGE: "" };
+  const result = spawnSync(process.execPath, ["-e", WALK_SCRIPT], { cwd: path.join(__dirname, ".."), env: environment, encoding: "utf8" });
+  const line = (result.stdout || "").split("\n").find((entry) => entry.startsWith("ROUTES:"));
+  assert.ok(line, `route walk failed (exit ${result.status}): ${result.stderr}`);
+  collected = new Map(Object.entries(JSON.parse(line.slice("ROUTES:".length))));
+  return collected;
 };
 
 const isAdminSurface = (key) => {
