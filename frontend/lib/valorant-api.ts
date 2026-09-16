@@ -22,6 +22,7 @@ import type {
   ValorantLeaderboardRemovalPage,
   ValorantServerCheck,
   ValorantServerCheckPage,
+  ValorantServerCheckSort,
   ValorantLeaderboardRestore,
   ValorantMatchSummary,
   ValorantPlayerLeaderboardPage,
@@ -243,12 +244,20 @@ export const fetchValorantServerChecks = ({
   status = "flagged",
   query = "",
   server = "",
+  sort = "default",
   page = 1,
-}: { status?: "flagged" | "cleared" | "all"; query?: string; server?: string; page?: number } = {}) => {
+}: {
+  status?: "flagged" | "cleared" | "all";
+  query?: string;
+  server?: string;
+  sort?: ValorantServerCheckSort;
+  page?: number;
+} = {}) => {
   const params = new URLSearchParams();
   params.set("status", status);
   if (query) params.set("q", query);
   if (server) params.set("server", server);
+  if (sort !== "default") params.set("sort", sort);
   params.set("page", String(page));
   return valorantAdminRequest<ValorantServerCheckPage>(
     `/api/v1/admin/valorant/leaderboard/server-checks?${params.toString()}`

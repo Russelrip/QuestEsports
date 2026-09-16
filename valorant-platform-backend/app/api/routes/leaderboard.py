@@ -143,11 +143,12 @@ async def list_server_checks(
     status: Literal["flagged", "cleared", "all"] = Query("flagged"),
     q: str = Query("", max_length=100),
     server: str = Query("", max_length=50),
+    sort: Literal["default", "rank", "rank_low", "away", "matches", "recent", "name"] = Query("default"),
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
 ) -> LeaderboardServerCheckPage:
     """Players whose recent competitive servers need a review, the ones already cleared, or everyone."""
-    return await svc.list_checks(status, q, page, per_page, server)
+    return await svc.list_checks(status, q, page, per_page, server, sort)
 
 
 @router.post(

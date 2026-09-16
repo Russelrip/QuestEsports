@@ -34,10 +34,35 @@ from app.schemas.server_checks import (
 )
 
 ServerCheckFilter = Literal["flagged", "cleared", "all"]
+# "default" keeps each view's own order (see ``list_checks``).
+ServerCheckSort = Literal["default", "rank", "rank_low", "away", "matches", "recent", "name"]
 
 
 def _iso(value: datetime | None) -> str | None:
     return value.isoformat() if value else None
+
+
+def _sort_key(sort: ServerCheckSort):
+    """An explicit order. Players without the value (unrated, no matches) always
+    sort last, whichever way the order runs; ties fall back to name."""
+    def name(e: LeaderboardServerCheckEntry):
+        return (e.name.casefold(), e.tag.casefold(), e.puuid)
+
+    if sort == "rank":
+        return lambda e: (e.elo is None, -(e.elo or 0), *name(e))
+    if sort == "rank_low":
+        return lambda e: (e.elo is None, e.elo or 0, *name(e))
+    if sort == "away":
+        return lambda e: (e.away_share is None, -(e.away_share or 0), -e.away_matches, *name(e))
+    if sort == "matches":
+        return lambda e: (-e.known_matches, *name(e))
+    if sort == "recent":
+        return lambda e: (e.last_played_match is None, -_timestamp(e.last_played_match), *name(e))
+    return name
+
+
+def _timestamp(value: str | None) -> float:
+    return datetime.fromisoformat(value).timestamp() if value else 0.0
 
 
 def _matches_on(entry: LeaderboardServerCheckEntry, wanted: str) -> int:
@@ -72,10 +97,17 @@ class ServerCheckService:
         self._policy = ServerCheckPolicy.from_settings(settings)
 
     async def list_checks(
-        self, status: ServerCheckFilter, query: str, page: int, per_page: int, server: str = ""
+        self,
+        status: ServerCheckFilter,
+        query: str,
+        page: int,
+        per_page: int,
+        server: str = "",
+        sort: ServerCheckSort = "default",
     ) -> LeaderboardServerCheckPage:
         """Flagged players, most clearly away first; cleared ones, latest clearance first;
-        or every registration by name.
+        or every registration by name. ``sort`` other than ``default`` replaces
+        that order in any view, e.g. ``rank`` for highest ELO first.
 
         ``server`` keeps only players with a match on that server, most matches
         there first. The summary's ``servers`` covers every registration, so the
@@ -103,6 +135,9 @@ class ServerCheckService:
         wanted = server.strip().casefold()
         if wanted:
             selected = [entry for entry in selected if _matches_on(entry, wanted) > 0]
+        if sort != "default":
+            selected.sort(key=_sort_key(sort))
+        elif wanted:
             selected.sort(key=lambda e: (-_matches_on(e, wanted), e.name.casefold(), e.puuid))
         elif status == "flagged":
             selected.sort(key=lambda e: (-(e.away_share or 0), -e.away_matches, e.name.casefold(), e.puuid))

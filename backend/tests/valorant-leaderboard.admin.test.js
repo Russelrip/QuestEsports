@@ -459,9 +459,9 @@ test("listAdminServerChecks maps entries, summary and rule, and names who cleare
     prisma: { user: { findMany: async () => [{ id: ADMIN_ID, username: "Russel" }] } },
   });
 
-  const result = await service.listAdminServerChecks({ status: "cleared", query: "roo", server: "", page: 1, perPage: 20, actorUserId: ADMIN_ID });
+  const result = await service.listAdminServerChecks({ status: "cleared", query: "roo", server: "", sort: "rank", page: 1, perPage: 20, actorUserId: ADMIN_ID });
 
-  assert.deepEqual(seen, { status: "cleared", query: "roo", server: "", page: 1, perPage: 20, actorUserId: ADMIN_ID });
+  assert.deepEqual(seen, { status: "cleared", query: "roo", server: "", sort: "rank", page: 1, perPage: 20, actorUserId: ADMIN_ID });
   assert.deepEqual(result.entries[0], mappedServerCheck({
     status: "cleared",
     reasons: [],
@@ -510,12 +510,14 @@ test("listServerChecks defaults an unknown status to flagged and clamps paging",
 
   await run(controller.listServerChecks, { query: { status: "everything", q: "  roo ", page: "0", per_page: "500" }, user: { id: ADMIN_ID } });
   await run(controller.listServerChecks, { query: { status: "cleared" }, user: { id: ADMIN_ID } });
-  await run(controller.listServerChecks, { query: { status: "all", server: ` Sydney${"x".repeat(80)}` }, user: { id: ADMIN_ID } });
+  await run(controller.listServerChecks, { query: { status: "all", server: ` Sydney${"x".repeat(80)}`, sort: "rank" }, user: { id: ADMIN_ID } });
+  await run(controller.listServerChecks, { query: { sort: "elo; drop" }, user: { id: ADMIN_ID } });
 
   assert.deepEqual(seen, [
-    { status: "flagged", query: "roo", server: "", page: 1, perPage: 100, actorUserId: ADMIN_ID },
-    { status: "cleared", query: "", server: "", page: 1, perPage: 20, actorUserId: ADMIN_ID },
-    { status: "all", query: "", server: `Sydney${"x".repeat(44)}`, page: 1, perPage: 20, actorUserId: ADMIN_ID },
+    { status: "flagged", query: "roo", server: "", sort: "default", page: 1, perPage: 100, actorUserId: ADMIN_ID },
+    { status: "cleared", query: "", server: "", sort: "default", page: 1, perPage: 20, actorUserId: ADMIN_ID },
+    { status: "all", query: "", server: `Sydney${"x".repeat(44)}`, sort: "rank", page: 1, perPage: 20, actorUserId: ADMIN_ID },
+    { status: "flagged", query: "", server: "", sort: "default", page: 1, perPage: 20, actorUserId: ADMIN_ID },
   ]);
 });
 

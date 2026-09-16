@@ -147,7 +147,7 @@ describe("server check panel", () => {
     const section = serverCheckSection();
 
     expect(await within(section).findByText("Roo#SYD")).toBeTruthy();
-    expect(mocks.fetchServerChecks).toHaveBeenCalledWith({ status: "flagged", page: 1, query: "", server: "" });
+    expect(mocks.fetchServerChecks).toHaveBeenCalledWith({ status: "flagged", page: 1, query: "", server: "", sort: "default" });
     const servers = within(section).getByRole("list", { name: "Recent competitive matches by server" });
     expect(within(servers).getAllByRole("listitem").map((item) => item.textContent)).toEqual([
       "Sydney24",
@@ -202,7 +202,7 @@ describe("server check panel", () => {
     const section = serverCheckSection();
 
     fireEvent.click(await within(section).findByRole("button", { name: /^Kept/ }));
-    await waitFor(() => expect(mocks.fetchServerChecks).toHaveBeenCalledWith({ status: "cleared", page: 1, query: "", server: "" }));
+    await waitFor(() => expect(mocks.fetchServerChecks).toHaveBeenCalledWith({ status: "cleared", page: 1, query: "", server: "", sort: "default" }));
     expect(await within(section).findByText("by @Russel")).toBeTruthy();
 
     fireEvent.click(within(section).getByRole("button", { name: "Reopen" }));
@@ -239,14 +239,14 @@ describe("server check panel", () => {
 
     fireEvent.click(within(servers).getByRole("button", { name: /Sydney/ }));
     await waitFor(() =>
-      expect(mocks.fetchServerChecks).toHaveBeenCalledWith({ status: "all", page: 1, query: "", server: "Sydney" })
+      expect(mocks.fetchServerChecks).toHaveBeenCalledWith({ status: "all", page: 1, query: "", server: "Sydney", sort: "default" })
     );
     expect(within(section).getByRole("button", { name: /^All players/ }).getAttribute("aria-pressed")).toBe("true");
     expect(await within(section).findByText(/who played on/)).toBeTruthy();
 
     fireEvent.click(within(section).getByRole("button", { name: "Clear filters" }));
     await waitFor(() =>
-      expect(mocks.fetchServerChecks).toHaveBeenLastCalledWith({ status: "all", page: 1, query: "", server: "" })
+      expect(mocks.fetchServerChecks).toHaveBeenLastCalledWith({ status: "all", page: 1, query: "", server: "", sort: "default" })
     );
   });
 
@@ -265,7 +265,34 @@ describe("server check panel", () => {
     });
     fireEvent.click(within(section).getByRole("button", { name: "Search" }));
     await waitFor(() =>
-      expect(mocks.fetchServerChecks).toHaveBeenLastCalledWith({ status: "all", page: 1, query: "home", server: "" })
+      expect(mocks.fetchServerChecks).toHaveBeenLastCalledWith({ status: "all", page: 1, query: "home", server: "", sort: "default" })
+    );
+  });
+
+  it("sorts any view by rank and the other orders", async () => {
+    render(<ValorantLeaderboardPlayersManager />);
+    const section = serverCheckSection();
+
+    const sortBy = await within(section).findByRole("combobox", { name: /Sort by/ });
+    expect((sortBy as HTMLSelectElement).value).toBe("default");
+    expect(within(sortBy).getAllByRole("option").map((option) => option.textContent)).toEqual([
+      "Suggested (most away first)",
+      "Highest rank",
+      "Lowest rank",
+      "Most away from home servers",
+      "Most matches",
+      "Recently played",
+      "Name (A–Z)",
+    ]);
+
+    fireEvent.change(sortBy, { target: { value: "rank" } });
+    await waitFor(() =>
+      expect(mocks.fetchServerChecks).toHaveBeenLastCalledWith({ status: "flagged", page: 1, query: "", server: "", sort: "rank" })
+    );
+
+    fireEvent.click(within(section).getByRole("button", { name: /^All players/ }));
+    await waitFor(() =>
+      expect(mocks.fetchServerChecks).toHaveBeenLastCalledWith({ status: "all", page: 1, query: "", server: "", sort: "rank" })
     );
   });
 });

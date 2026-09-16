@@ -16,6 +16,7 @@ import {
   fetchValorantServerChecks,
   fetchValorantTeamSeries,
 } from "@/lib/valorant-api";
+import type { ValorantServerCheckSort } from "@/lib/valorant";
 
 export function useValorantBindings() {
   return useApiQuery(["valorant-bindings"], fetchValorantBindings);
@@ -37,10 +38,11 @@ export function useValorantServerChecks(
   status: "flagged" | "cleared" | "all",
   page: number,
   query = "",
-  server = ""
+  server = "",
+  sort: ValorantServerCheckSort = "default"
 ) {
-  return useApiQuery(["valorant-leaderboard-server-checks", status, page, query, server], () =>
-    fetchValorantServerChecks({ status, page, query, server })
+  return useApiQuery(["valorant-leaderboard-server-checks", status, page, query, server, sort], () =>
+    fetchValorantServerChecks({ status, page, query, server, sort })
   );
 }
 

@@ -579,7 +579,7 @@ Singapore and Mumbai servers. Admin → Valorant → **Leaderboard Players** →
 - **Account region**: the Riot account is not on the AP region at all (3 of 491
   registrations on 2026-09-14).
 
-The top of the panel shows **where the whole leaderboard plays**: each server's share of recent competitive matches, with player and match counts. Click a server to list every player who played there, most matches first. **All players** lists every registration with its servers and what the check made of them (home servers, too few matches, not checked yet), and the search box finds a player by Riot ID or Discord.
+The top of the panel shows **where the whole leaderboard plays**: each server's share of recent competitive matches, with player and match counts. Click a server to list every player who played there, most matches first. **All players** lists every registration with its servers and what the check made of them (home servers, too few matches, not checked yet), the search box finds a player by Riot ID or Discord, and **Sort by** reorders any view: highest or lowest rank, most away from the home servers, most matches, recently played, or name.
 
 It only flags. A Sri Lankan living abroad, or one who plays with friends on
 another server, looks exactly like someone who is not Sri Lankan, so review each
