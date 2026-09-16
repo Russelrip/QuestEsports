@@ -90,6 +90,7 @@ The legacy media migration routes (`/api/admin/media/import-legacy-posters`,
 | Match rooms: sync, moderate, answer support | Admin, tournament admin, referee, directly assigned staff | Unchanged |
 | Veto rooms: create, open, reset, rewind, cancel | Admin, tournament admin, referee | Unchanged |
 | Tournament veto config | Admin, tournament admin | Unchanged |
+| Veto map pools, rule presets, room templates | Admin (global); tournament admin (for their tournament) | Unchanged |
 | Global veto maps | Admin | Unchanged |
 | Challonge integration, sync, results | Admin, tournament admin | Unchanged |
 | Native bracket: generate, edit, publish (`/api/admin/tournaments/:id/bracket`) | Admin | **Admin + tournament admin** for their tournament |
@@ -149,19 +150,16 @@ above can work.
    `tournament_admin`, but the staff routes also run `requireSuperAdmin`, so
    only admins ever pass. Decision: only admins assign staff (principle 5), so
    remove the scope from `tournament_admin` rather than drop the admin guard.
-4. **Veto pool, preset and template creation are admin-only by accident.** They
-   run `requirePermission(VETO_CATALOG_CONFIG)` without a tournament to resolve,
-   so a tournament admin always gets a 403. Either scope them to a tournament
-   or mark them `requireAdmin`, so the guard says what it does.
-5. **Any admin can make anyone an admin.** The only safeguard is that an admin
+   Fixed in #192.
+4. **Any admin can make anyone an admin.** The only safeguard is that an admin
    cannot demote or delete themselves. See open question 1.
 
 ## Implementation order
 
 Each step ships on its own and is safe to stop after.
 
-1. Remove the dead scope and make the veto catalog guards explicit (gaps 3, 4).
-   No behaviour change.
+1. Remove the dead scope from `tournament_admin` (gap 3). No behaviour change.
+   Done in #192.
 2. Add the `media` staff area to posters, images and event albums.
 3. Tournament staff UI: assign staff on the tournament editor, and let tournament
    staff into `/admin` with only their tournaments, matches, match rooms and
