@@ -10,7 +10,7 @@
 
 This document covers the admin UI and API workflows for tournament/event configuration, entrance tickets, registrations, payments, merchandise, recruitment, exports, deletion, and bracket effects.
 
-All admin routes require a valid session and `user.role === "admin"`.
+All admin routes require a valid session and `user.role === "admin"`. The exceptions are delegated staff areas (below) and per-tournament staff; see [Roles and Permissions](./roles-and-permissions.md) for the full model.
 
 ## Admin UI Routes
 
