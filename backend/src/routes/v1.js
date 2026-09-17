@@ -192,7 +192,9 @@ router.post(
 );
 router.get("/users/me/game-accounts", requireAuth, gameAccountController.listMyGameAccounts);
 router.get("/teams/:teamId/registration-readiness", requireAuth, gameAccountController.getTeamRegistrationReadiness);
+router.get("/users/me/game-accounts/valorant/leaderboard-registration", requireAuth, gameAccountResolveLimiter, gameAccountController.getMyLeaderboardRegistration);
 router.post("/game-accounts/valorant/change-request", requireAuth, gameAccountResolveLimiter, gameAccountController.requestValorantChange);
+router.post("/game-accounts/valorant/change-request/withdraw", requireAuth, gameAccountController.withdrawValorantChange);
 
 router.get("/admin/tournaments/:id/challonge", requireAuth, tournamentAdmin, challongeController.getIntegration);
 router.patch("/admin/tournaments/:id/challonge", requireAuth, tournamentAdmin, invalidateCache("foundation"), challongeController.saveIntegration);

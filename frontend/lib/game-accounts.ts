@@ -44,8 +44,16 @@ export type ResolvedGameAccount = {
   available: boolean;
   linkedToYou: boolean;
   linkedElsewhere: boolean;
+  /** Held by a Quest player record with no account behind it. Implies linkedElsewhere. */
+  unclaimedRecord?: boolean;
   status?: GameAccountStatus;
   verificationStatus?: GameAccountVerification;
+  /**
+   * Whether this is the account the player's Discord is registered with on the
+   * leaderboard, compared by stable identifier on the server. Null when there is
+   * nothing to compare with — which is not a mismatch.
+   */
+  leaderboard?: { matches: boolean; riotId: string | null } | null;
 };
 
 export type ValorantPreview = {
@@ -55,9 +63,23 @@ export type ValorantPreview = {
   last_played_match?: string | null;
 };
 
+export type GameAccountChangeRequestStatus = "pending" | "approved" | "rejected" | "withdrawn";
+
+/** The player's latest account change: an open one, or a recent decision. */
+export type GameAccountChangeRequest = {
+  id: string;
+  status: GameAccountChangeRequestStatus;
+  requestedIdentity: string;
+  reason: string;
+  adminNote: string | null;
+  requestedAt: string;
+  reviewedAt: string | null;
+};
+
 export type GameAccountList = {
   playerPublicId: string | null;
   accounts: GameAccount[];
+  changeRequest?: GameAccountChangeRequest | null;
 };
 
 /**
@@ -109,7 +131,120 @@ export async function getMyGameAccounts(): Promise<GameAccountList> {
   );
   const message = getApiErrorMessage(response, data, "Could not load your game accounts.");
   if (message) throw new Error(message);
-  return unwrap<GameAccountList>(data) ?? { playerPublicId: null, accounts: [] };
+  return unwrap<GameAccountList>(data) ?? { playerPublicId: null, accounts: [], changeRequest: null };
+}
+
+/**
+ * The one answer to "is my VALORANT account sorted?", shared by the profile
+ * header and the panel so the two can never disagree.
+ *
+ * - `not_connected` — nothing linked yet.
+ * - `pending` — a change is waiting for an admin. The current account still
+ *   counts until then.
+ * - `attention` — something the player should act on or read: an imported
+ *   account nobody confirmed, a revoked account, or a change an admin declined.
+ * - `connected` — linked and in service, locked by a tournament or not.
+ */
+export type ValorantConnectionState = "not_connected" | "pending" | "attention" | "connected";
+
+export type ValorantConnectionSummary = {
+  state: ValorantConnectionState;
+  label: string;
+  detail: string;
+  riotId: string | null;
+};
+
+export function summarizeValorantConnection(
+  list: Pick<GameAccountList, "accounts" | "changeRequest"> | null | undefined,
+): ValorantConnectionSummary {
+  const account = findGameAccount(list?.accounts, "valorant");
+  const request = list?.changeRequest ?? null;
+  const riotId = gameAccountRiotId(account);
+
+  if (!account) {
+    return {
+      state: "not_connected",
+      label: "Not connected",
+      detail: "Connect your Riot ID to join team rosters and the VALORANT leaderboard.",
+      riotId: null,
+    };
+  }
+
+  if (account.status === "revoked" || account.verificationStatus === "revoked") {
+    return {
+      state: "attention",
+      label: "Needs attention",
+      detail: "This account was revoked. Contact support to connect an account again.",
+      riotId,
+    };
+  }
+
+  if (request?.status === "pending" || account.status === "change_requested") {
+    return {
+      state: "pending",
+      label: "Change pending",
+      detail: request
+        ? `Waiting for an admin to approve ${request.requestedIdentity}. ${riotId ?? "Your current account"} stays connected until then.`
+        : `Waiting for an admin to review your change. ${riotId ?? "Your current account"} stays connected until then.`,
+      riotId,
+    };
+  }
+
+  if (account.verificationStatus === "legacy_unverified") {
+    return {
+      state: "attention",
+      label: "Needs attention",
+      detail: "This account was imported from an older record and nobody has confirmed it is yours.",
+      riotId,
+    };
+  }
+
+  if (request?.status === "rejected") {
+    return {
+      state: "attention",
+      label: "Needs attention",
+      detail: `An admin declined your change to ${request.requestedIdentity}. ${riotId ?? "Your account"} is still connected.`,
+      riotId,
+    };
+  }
+
+  return {
+    state: "connected",
+    label: "Connected",
+    detail:
+      account.status === "locked"
+        ? `${riotId ?? "Your account"} · locked by a tournament roster`
+        : `${riotId ?? "Your account"} · ${verificationLabel(account.verificationStatus)}`,
+    riotId,
+  };
+}
+
+/** What the leaderboard holds for the signed-in user's Discord. */
+export type LeaderboardRegistrationLookup = {
+  discordConnected: boolean;
+  /** The leaderboard did not answer — not the same as "not registered". */
+  unavailable: boolean;
+  registration: {
+    riotId: string;
+    linkedToYou: boolean;
+    linkedElsewhere: boolean;
+    unclaimedRecord: boolean;
+  } | null;
+};
+
+export async function getMyValorantLeaderboardRegistration(): Promise<LeaderboardRegistrationLookup> {
+  const { response, data } = await apiFetchJson<{ data?: LeaderboardRegistrationLookup }>(
+    "/api/v1/users/me/game-accounts/valorant/leaderboard-registration",
+  );
+  const message = getApiErrorMessage(response, data, "Could not check the VALORANT leaderboard.");
+  if (message) throw new Error(message);
+  return (
+    unwrap<LeaderboardRegistrationLookup>(data) ?? {
+      discordConnected: false,
+      unavailable: true,
+      registration: null,
+    }
+  );
 }
 
 export async function resolveValorantAccount(riotId: string): Promise<ResolvedGameAccount> {
@@ -239,6 +374,16 @@ export function findGameAccount(
 export type AccountChangeResult =
   | { kind: "rename"; refreshed: boolean; account: GameAccount }
   | { kind: "replacement"; requestId: string; status: string };
+
+/** Take back a change request nobody has reviewed yet. */
+export async function withdrawValorantChange(): Promise<void> {
+  const { response, data } = await apiFetchJson<{ data?: unknown }>(
+    "/api/v1/game-accounts/valorant/change-request/withdraw",
+    { method: "POST", json: {} },
+  );
+  const message = getApiErrorMessage(response, data, "Could not withdraw your change request.");
+  if (message) throw new Error(message);
+}
 
 export async function requestValorantChange(
   riotId: string,

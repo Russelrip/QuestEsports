@@ -17,6 +17,7 @@ const FILTERS: { value: ChangeRequestStatus | "all"; label: string }[] = [
   { value: "pending", label: "Awaiting review" },
   { value: "approved", label: "Approved" },
   { value: "rejected", label: "Rejected" },
+  { value: "withdrawn", label: "Withdrawn" },
   { value: "all", label: "All" },
 ];
 

@@ -5,6 +5,7 @@ const { logger } = require("../../lib/logger");
 const { recordAuditInTransaction } = require("../../lib/audit");
 const {
   resolveValorantAccount,
+  conflictFor,
   fingerprint,
   publicView,
   VALORANT,
@@ -73,11 +74,6 @@ const refreshDisplayIdentity = async ({ account, resolved, actorUserId, audit = 
 // A player asks to swap the actual account behind their competitive identity.
 const requestAccountChange = async ({ userId, riotId, name, tag, reason, audit = {} }) => {
   const trimmedReason = String(reason || "").trim();
-  if (!trimmedReason) {
-    // An unexplained swap is not reviewable, so it is refused at the edge as
-    // well as by the database CHECK.
-    throw new HttpError(400, "Tell us why this account needs to change.");
-  }
   if (trimmedReason.length > MAX_REASON_LENGTH) {
     throw new HttpError(400, "That reason is too long.");
   }
@@ -115,10 +111,20 @@ const requestAccountChange = async ({ userId, riotId, name, tag, reason, audit =
     return { kind: "rename", ...result };
   }
 
+  // Moving back to an account this player used before is allowed — approval
+  // reactivates that row — so only somebody else's account is a conflict here.
   if (resolved.linkedElsewhere) {
+    throw conflictFor(resolved);
+  }
+
+  // Only now is a reason owed. A rename is a correction nobody reviews, so
+  // asking a renamed player to justify it is paperwork for its own sake; an
+  // unexplained swap, though, is not reviewable, so it is refused here as well
+  // as by the database CHECK.
+  if (!trimmedReason) {
     throw new HttpError(
-      409,
-      "That VALORANT account is already linked to another Quest account. If it is yours, contact support.",
+      400,
+      "That is a different Riot account, so an admin has to approve it. Tell us why it needs to change.",
     );
   }
 
@@ -177,6 +183,59 @@ const requestAccountChange = async ({ userId, riotId, name, tag, reason, audit =
   });
 
   return { kind: "replacement", requestId: request.id, status: request.status };
+};
+
+// A player takes back a change they asked for, before anyone has reviewed it.
+//
+// Without this a mistyped request is a dead end: the player cannot file the
+// right one until an admin gets round to rejecting the wrong one. Their account
+// was never swapped, so withdrawing only has to hand it back to service — and a
+// tournament lock, which requesting never cleared, is untouched.
+const withdrawAccountChange = async ({ userId, audit = {} }) => {
+  const player = await prisma.player.findUnique({
+    where: { userId },
+    select: { id: true },
+  });
+  const open = player
+    ? await prisma.gameAccountChangeRequest.findFirst({
+      where: { playerId: player.id, game: VALORANT, status: "pending" },
+      include: { currentAccount: { select: { id: true, status: true } } },
+    })
+    : null;
+  if (!open) {
+    throw new HttpError(409, "You have no account change waiting for review.");
+  }
+
+  await prisma.$transaction(async (tx) => {
+    // Conditional on still being pending, so a withdrawal racing an admin's
+    // decision cannot overwrite it.
+    const { count } = await tx.gameAccountChangeRequest.updateMany({
+      where: { id: open.id, status: "pending" },
+      data: { status: "withdrawn" },
+    });
+    if (count === 0) {
+      throw new HttpError(409, "That request has already been reviewed.");
+    }
+
+    if (open.currentAccount?.status === "change_requested") {
+      await tx.gameAccount.update({
+        where: { id: open.currentAccount.id },
+        data: { status: "active" },
+      });
+    }
+
+    await recordAuditInTransaction(tx, {
+      ...audit,
+      actorUserId: userId,
+      action: "game_account.change_withdrawn",
+      targetType: "GameAccountChangeRequest",
+      targetId: open.id,
+      beforeData: { status: "pending" },
+      afterData: { status: "withdrawn" },
+    });
+  });
+
+  return { status: "withdrawn" };
 };
 
 const requestView = (request) => ({
@@ -244,23 +303,49 @@ const reviewChangeRequest = async ({ requestId, approve, adminUserId, adminNote,
         });
       }
 
-      replacement = await tx.gameAccount.create({
-        data: {
-          id: crypto.randomUUID(),
-          playerId: request.playerId,
-          game: request.game,
-          externalId: request.requestedExternalId,
-          username: request.requestedUsername,
-          tagline: request.requestedTagline,
-          region: request.requestedRegion,
-          // An admin looked at evidence and decided. That is the one path to
-          // this state.
-          verificationStatus: "admin_verified",
-          status: "active",
-          verifiedAt: new Date(),
-          lastSyncedAt: new Date(),
+      // The requested account may already have a row. `(game, external_id)`
+      // is unique, so creating a second one would fail the whole approval.
+      const previous = await tx.gameAccount.findUnique({
+        where: {
+          game_externalId: { game: request.game, externalId: request.requestedExternalId },
         },
+        select: { id: true, playerId: true },
       });
+      if (previous && previous.playerId !== request.playerId) {
+        // Somebody else linked it while the request waited. Never re-parent an
+        // account between players from an approval screen.
+        throw new HttpError(
+          409,
+          "That account has since been linked to another player. Reject this request instead.",
+        );
+      }
+
+      const approved = {
+        username: request.requestedUsername,
+        tagline: request.requestedTagline,
+        region: request.requestedRegion,
+        // An admin looked at evidence and decided. That is the one path to
+        // this state.
+        verificationStatus: "admin_verified",
+        status: "active",
+        verifiedAt: new Date(),
+        lastSyncedAt: new Date(),
+      };
+
+      replacement = previous
+        // The player is moving back to an account they used before. Reactivate
+        // that row, so the tournament history already pointing at it stays
+        // theirs, rather than splitting one account across two rows.
+        ? await tx.gameAccount.update({ where: { id: previous.id }, data: approved })
+        : await tx.gameAccount.create({
+          data: {
+            id: crypto.randomUUID(),
+            playerId: request.playerId,
+            game: request.game,
+            externalId: request.requestedExternalId,
+            ...approved,
+          },
+        });
     } else if (request.currentAccountId && request.currentAccount?.status === "change_requested") {
       // Rejection returns the account to service exactly as it was.
       await tx.gameAccount.update({
@@ -337,6 +422,7 @@ module.exports = {
   classifyChange,
   refreshDisplayIdentity,
   requestAccountChange,
+  withdrawAccountChange,
   listChangeRequests,
   reviewChangeRequest,
   requestView,

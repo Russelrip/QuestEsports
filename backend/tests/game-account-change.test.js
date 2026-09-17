@@ -44,14 +44,24 @@ const loadService = ({
   resolved = { externalId: "puuid-new", username: "NewName", tagline: "2222", region: "ap", linkedElsewhere: false },
   openRequest = null,
   request = null,
+  previousAccount = null,
+  withdrawCount = 1,
   leaderboardOverride = null,
 } = {}) => {
-  const state = { accountUpdates: [], accountCreates: [], requests: [], audits: [], reviews: [] };
+  const state = {
+    accountUpdates: [],
+    accountCreates: [],
+    requests: [],
+    audits: [],
+    reviews: [],
+    withdrawals: [],
+  };
   const tx = {
     gameAccount: {
+      findUnique: async () => previousAccount,
       update: async (args) => {
         state.accountUpdates.push(args);
-        return { ...CURRENT, ...args.data };
+        return { ...CURRENT, ...args.data, id: args.where.id };
       },
       create: async ({ data }) => {
         state.accountCreates.push(data);
@@ -64,6 +74,10 @@ const loadService = ({
         return { ...data, status: "pending" };
       },
       findUnique: async () => request,
+      updateMany: async (args) => {
+        state.withdrawals.push(args);
+        return { count: withdrawCount };
+      },
       update: async (args) => {
         state.reviews.push(args);
         return { ...request, ...args.data };
@@ -74,6 +88,10 @@ const loadService = ({
   const loaded = loadModuleWithMocks(servicePath, {
     [gameAccountServicePath]: {
       resolveValorantAccount: async () => resolved,
+      conflictFor: (link) =>
+        Object.assign(new Error(link.unclaimedRecord ? "unclaimed record" : "linked elsewhere"), {
+          statusCode: 409,
+        }),
       fingerprint: (value) => `fp-${String(value).slice(0, 6)}`,
       publicView: (account) => ({ id: account.id, username: account.username, tagline: account.tagline }),
       VALORANT: "valorant",
@@ -220,6 +238,30 @@ test("a replacement requires an explanation", async () => {
   }
 });
 
+test("a rename is a correction and needs no reason", async () => {
+  const { module: service, state, restore } = loadService({
+    resolved: {
+      externalId: "puuid-old",
+      username: "RenamedName",
+      tagline: "1111",
+      region: "ap",
+      linkedToYou: true,
+      linkedElsewhere: false,
+    },
+  });
+  try {
+    const result = await service.requestAccountChange({
+      userId: "user-1",
+      riotId: "RenamedName#1111",
+      reason: "",
+    });
+    assert.equal(result.kind, "rename");
+    assert.equal(state.requests.length, 0);
+  } finally {
+    restore();
+  }
+});
+
 test("a player cannot queue two open requests", async () => {
   const { module: service, restore } = loadService({ openRequest: { id: "existing" } });
   try {
@@ -270,6 +312,33 @@ test("a replacement onto someone else's account is refused", async () => {
   }
 });
 
+test("a player can ask to move back to an account they used before", async () => {
+  // Their old row is `replaced`, so it is theirs but not current. That is not a
+  // conflict with anybody; approval reactivates it.
+  const { module: service, state, restore } = loadService({
+    resolved: {
+      externalId: "puuid-new",
+      username: "NewName",
+      tagline: "2222",
+      region: "ap",
+      linkedToYou: true,
+      linkedElsewhere: false,
+      status: "replaced",
+    },
+  });
+  try {
+    const result = await service.requestAccountChange({
+      userId: "user-1",
+      riotId: "NewName#2222",
+      reason: "Back to my main",
+    });
+    assert.equal(result.kind, "replacement");
+    assert.equal(state.requests.length, 1);
+  } finally {
+    restore();
+  }
+});
+
 const pendingRequest = (overrides = {}) => ({
   id: "request-1",
   playerId: "player-1",
@@ -301,6 +370,116 @@ test("approval retires the old account instead of deleting it", async () => {
     assert.equal(state.accountCreates[0].verificationStatus, "admin_verified");
     assert.equal(state.accountCreates[0].externalId, "puuid-new");
     assert.equal(result.status, "approved");
+  } finally {
+    restore();
+  }
+});
+
+test("approving a move back reactivates the old row instead of colliding with it", async () => {
+  // `(game, external_id)` is unique. Creating a second row for an account the
+  // player used before failed the whole approval; the old row, which their
+  // tournament history already points at, is the one to bring back.
+  const { module: service, state, restore } = loadService({
+    request: pendingRequest(),
+    previousAccount: { id: "account-0", playerId: "player-1" },
+  });
+  try {
+    const result = await service.reviewChangeRequest({
+      requestId: "request-1",
+      approve: true,
+      adminUserId: "admin-1",
+    });
+
+    assert.equal(result.status, "approved");
+    assert.equal(result.gameAccountId, "account-0");
+    assert.equal(state.accountCreates.length, 0);
+    const reactivated = state.accountUpdates.find((update) => update.where.id === "account-0");
+    assert.equal(reactivated.data.status, "active");
+    assert.equal(reactivated.data.verificationStatus, "admin_verified");
+    // The current account is retired first, so the one-active-account index
+    // never sees two active rows.
+    const order = state.accountUpdates.map((update) => update.where.id);
+    assert.ok(order.indexOf("account-1") < order.indexOf("account-0"));
+  } finally {
+    restore();
+  }
+});
+
+test("approval never moves an account another player linked in the meantime", async () => {
+  const { module: service, state, restore } = loadService({
+    request: pendingRequest(),
+    previousAccount: { id: "account-9", playerId: "player-2" },
+  });
+  try {
+    await assert.rejects(
+      () =>
+        service.reviewChangeRequest({ requestId: "request-1", approve: true, adminUserId: "admin-1" }),
+      (error) => error.statusCode === 409,
+    );
+    assert.equal(state.accountCreates.length, 0);
+    assert.ok(!state.accountUpdates.some((update) => update.where.id === "account-9"));
+  } finally {
+    restore();
+  }
+});
+
+test("a player can withdraw a pending change and gets their account back", async () => {
+  const { module: service, state, restore } = loadService({
+    openRequest: { id: "request-1", currentAccount: { id: "account-1", status: "change_requested" } },
+  });
+  try {
+    const result = await service.withdrawAccountChange({ userId: "user-1" });
+
+    assert.equal(result.status, "withdrawn");
+    // Conditional on still being pending, so it cannot overwrite a decision.
+    assert.deepEqual(state.withdrawals[0].where, { id: "request-1", status: "pending" });
+    assert.deepEqual(state.accountUpdates[0], {
+      where: { id: "account-1" },
+      data: { status: "active" },
+    });
+    assert.equal(state.audits[0].action, "game_account.change_withdrawn");
+  } finally {
+    restore();
+  }
+});
+
+test("withdrawing leaves a tournament lock exactly where it was", async () => {
+  const { module: service, state, restore } = loadService({
+    openRequest: { id: "request-1", currentAccount: { id: "account-1", status: "locked" } },
+  });
+  try {
+    await service.withdrawAccountChange({ userId: "user-1" });
+    assert.equal(state.accountUpdates.length, 0);
+  } finally {
+    restore();
+  }
+});
+
+test("there is nothing to withdraw without a pending request", async () => {
+  const { module: service, state, restore } = loadService({ openRequest: null });
+  try {
+    await assert.rejects(
+      () => service.withdrawAccountChange({ userId: "user-1" }),
+      (error) => error.statusCode === 409,
+    );
+    assert.equal(state.withdrawals.length, 0);
+  } finally {
+    restore();
+  }
+});
+
+test("a withdrawal that loses the race to an admin's review changes nothing", async () => {
+  const { module: service, state, restore } = loadService({
+    openRequest: { id: "request-1", currentAccount: { id: "account-1", status: "change_requested" } },
+    withdrawCount: 0,
+  });
+  try {
+    await assert.rejects(
+      () => service.withdrawAccountChange({ userId: "user-1" }),
+      (error) => error.statusCode === 409,
+    );
+    assert.equal(state.accountUpdates.length, 0);
+    assert.equal(state.audits.length, 0);
   } finally {
     restore();
   }

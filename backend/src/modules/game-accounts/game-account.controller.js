@@ -5,10 +5,14 @@ const {
   linkValorantAccount,
   importValorantAccountFromLeaderboard,
   listGameAccountsForUser,
+  findLeaderboardRegistration,
+  compareWithLeaderboard,
+  withoutExternalId,
 } = require("./game-account.service");
 const { getRegistrationReadiness } = require("./registration-readiness.service");
 const {
   requestAccountChange,
+  withdrawAccountChange,
   listChangeRequests,
   reviewChangeRequest,
 } = require("./game-account-change.service");
@@ -25,7 +29,17 @@ const resolveValorant = asyncHandler(async (req, res) => {
     tag: req.body?.tag,
     userId: req.user.id,
   });
-  respond(res, data);
+  // Whether this is the account the player's Discord is registered with on the
+  // leaderboard, so the confirmation card can warn before they connect a
+  // different one. Compared by stable identifier here because the browser never
+  // sees it.
+  const leaderboard = await compareWithLeaderboard({
+    userId: req.user.id,
+    externalId: data.externalId,
+  });
+  // The identifier is what made the comparison possible, not something the
+  // player needs; it stays on the server like everywhere else in this module.
+  respond(res, { ...withoutExternalId(data), leaderboard });
 });
 
 // The confirmation step. The browser sends the Riot ID it displayed, never a
@@ -68,6 +82,13 @@ const importValorantFromLeaderboard = asyncHandler(async (req, res) => {
   );
 });
 
+// Names the account a not-yet-connected player registered on the leaderboard,
+// so the profile can offer that exact account rather than a blind import.
+const getMyLeaderboardRegistration = asyncHandler(async (req, res) => {
+  const data = await findLeaderboardRegistration({ userId: req.user.id });
+  respond(res, data);
+});
+
 const listMyGameAccounts = asyncHandler(async (req, res) => {
   const data = await listGameAccountsForUser({ userId: req.user.id });
   respond(res, data);
@@ -98,6 +119,14 @@ const requestValorantChange = asyncHandler(async (req, res) => {
   respond(res, data, data.kind === "replacement" ? 202 : 200);
 });
 
+const withdrawValorantChange = asyncHandler(async (req, res) => {
+  const data = await withdrawAccountChange({
+    userId: req.user.id,
+    audit: requestAuditContext(req),
+  });
+  respond(res, data);
+});
+
 const listAdminChangeRequests = asyncHandler(async (req, res) => {
   const data = await listChangeRequests({
     status: req.query.status ? String(req.query.status) : "pending",
@@ -119,6 +148,8 @@ const reviewAdminChangeRequest = asyncHandler(async (req, res) => {
 module.exports = {
   resolveValorant,
   requestValorantChange,
+  withdrawValorantChange,
+  getMyLeaderboardRegistration,
   listAdminChangeRequests,
   reviewAdminChangeRequest,
   linkValorant,

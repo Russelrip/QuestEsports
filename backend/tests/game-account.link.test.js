@@ -244,6 +244,72 @@ test("an account held by someone else is refused without naming them", async () 
   }
 });
 
+test("an account on a player record nobody owns is explained, not handed over", async () => {
+  // A player row outlives an admin-deleted user. Telling the person who comes
+  // back that "another Quest account" holds their Riot account sends them
+  // looking for an account that does not exist — but resolving a Riot ID proves
+  // nothing about ownership, so it is still never claimed automatically.
+  const { module: service, state, restore } = loadService({
+    existingAccount: {
+      id: "account-9",
+      status: "active",
+      verificationStatus: "user_confirmed",
+      player: { userId: null },
+    },
+  });
+  try {
+    await assert.rejects(
+      () =>
+        service.linkValorantAccount({
+          riotId: "Russel#1234",
+          userId: "user-1",
+          displayName: "Russel",
+          audit: AUDIT,
+        }),
+      (error) => {
+        assert.equal(error.statusCode, 409);
+        assert.equal(error.message, service.UNCLAIMED_RECORD_MESSAGE);
+        return true;
+      },
+    );
+    assert.equal(state.created.length, 0);
+  } finally {
+    restore();
+  }
+});
+
+test("an account the user replaced is not reported as already connected", async () => {
+  // It does not show on their profile, so "already connected" would be a
+  // success message for something they cannot see.
+  const { module: service, state, restore } = loadService({
+    existingAccount: {
+      id: "account-0",
+      status: "replaced",
+      verificationStatus: "user_confirmed",
+      player: { userId: "user-1" },
+    },
+  });
+  try {
+    await assert.rejects(
+      () =>
+        service.linkValorantAccount({
+          riotId: "Russel#1234",
+          userId: "user-1",
+          displayName: "Russel",
+          audit: AUDIT,
+        }),
+      (error) => {
+        assert.equal(error.statusCode, 409);
+        assert.equal(error.message, service.PREVIOUS_ACCOUNT_MESSAGE);
+        return true;
+      },
+    );
+    assert.equal(state.created.length, 0);
+  } finally {
+    restore();
+  }
+});
+
 test("a race for the same account is decided by the database, not by the pre-check", async () => {
   const duplicate = new Error("unique constraint");
   duplicate.code = "P2002";
@@ -408,30 +474,56 @@ test("an import adopts the leaderboard account without asking for a Riot ID", as
   }
 });
 
-test("an import re-resolves rather than trusting what the leaderboard returned", async () => {
-  let resolvedWith = null;
-  const { module: service, restore } = loadService({
+test("an import never links a stranger who now holds the registered Riot name", async () => {
+  // The leaderboard stored "Russel#1234" on the day this player registered.
+  // Riot names are reusable: after a rename that name can resolve to somebody
+  // else. Linking by name alone connected that stranger's account at
+  // `user_confirmed`, without the player ever seeing it.
+  const { module: service, restore, state } = loadService({
     checkDiscord: async () => ({
       exists: true,
-      user: { puuid: "puuid-somebody-else", name: "Russel", tag: "1234" },
+      user: { puuid: "puuid-registered-before-rename", name: "Russel", tag: "1234" },
     }),
   });
 
+  try {
+    await assert.rejects(
+      () =>
+        service.importValorantAccountFromLeaderboard({
+          userId: "user-1",
+          displayName: "Russel",
+          audit: AUDIT,
+        }),
+      (error) => {
+        assert.equal(error.statusCode, 409);
+        assert.match(error.message, /Russel#1234/);
+        assert.match(error.message, /current Riot ID/);
+        return true;
+      },
+    );
+    assert.equal(state.created.length, 0);
+  } finally {
+    restore();
+  }
+});
+
+test("an import compares identifiers without caring about their case", async () => {
+  const { module: service, restore, state } = loadService({
+    checkDiscord: async () => ({
+      exists: true,
+      user: { puuid: "  PUUID-ABC ", name: "Russel", tag: "1234" },
+    }),
+  });
   try {
     await service.importValorantAccountFromLeaderboard({
       userId: "user-1",
       displayName: "Russel",
       audit: AUDIT,
     });
-    resolvedWith = true;
+    assert.equal(state.created[0].externalId, "puuid-abc");
   } finally {
     restore();
   }
-
-  // The upstream answer is a hint about *which* account to link, never the
-  // identifier itself: the PUUID written is the one the resolver returned for
-  // that Riot ID, not the one the leaderboard handed over.
-  assert.equal(resolvedWith, true);
 });
 
 test("an import refuses without a connected Discord, and says which step is missing", async () => {
@@ -583,6 +675,153 @@ test("a leaderboard entry pointing at an older account is surfaced, not swallowe
     assert.equal(result.leaderboard.state, "diverged");
     assert.equal(result.leaderboard.registeredName, "OldName");
     assert.equal(result.leaderboard.registeredTag, "0000");
+  } finally {
+    restore();
+  }
+});
+
+// The profile names the leaderboard account before offering it, so the player
+// confirms an account they can see rather than trusting a button.
+
+test("the leaderboard lookup names the account without exposing its identifier", async () => {
+  const { module: service, restore } = loadService({
+    checkDiscord: async () => ({
+      exists: true,
+      user: { puuid: "puuid-abc", name: "Russel", tag: "1234" },
+    }),
+  });
+  try {
+    const result = await service.findLeaderboardRegistration({ userId: "user-1" });
+    assert.deepEqual(result, {
+      discordConnected: true,
+      unavailable: false,
+      registration: {
+        riotId: "Russel#1234",
+        linkedToYou: false,
+        linkedElsewhere: false,
+        unclaimedRecord: false,
+      },
+    });
+    assert.doesNotMatch(JSON.stringify(result), /puuid-abc/);
+  } finally {
+    restore();
+  }
+});
+
+test("the leaderboard lookup separates no Discord, no registration and no answer", async () => {
+  const noDiscord = loadService({ discordAccount: null });
+  try {
+    const result = await noDiscord.module.findLeaderboardRegistration({ userId: "user-1" });
+    assert.equal(result.discordConnected, false);
+    assert.equal(result.registration, null);
+  } finally {
+    noDiscord.restore();
+  }
+
+  const notRegistered = loadService({ checkDiscord: async () => ({ exists: false, user: null }) });
+  try {
+    const result = await notRegistered.module.findLeaderboardRegistration({ userId: "user-1" });
+    assert.equal(result.discordConnected, true);
+    assert.equal(result.unavailable, false);
+    assert.equal(result.registration, null);
+  } finally {
+    notRegistered.restore();
+  }
+
+  const down = loadService({
+    checkDiscord: async () => {
+      throw Object.assign(new Error("down"), { status: 503 });
+    },
+  });
+  try {
+    const result = await down.module.findLeaderboardRegistration({ userId: "user-1" });
+    // "Could not check" is not "not registered".
+    assert.equal(result.unavailable, true);
+    assert.equal(result.registration, null);
+  } finally {
+    down.restore();
+  }
+});
+
+test("a looked-up account is compared with the leaderboard by identifier, not by name", async () => {
+  const { module: service, restore } = loadService({
+    checkDiscord: async () => ({
+      exists: true,
+      user: { puuid: "puuid-abc", name: "OldName", tag: "0001" },
+    }),
+  });
+  try {
+    // A renamed account is still the registered one.
+    assert.deepEqual(
+      await service.compareWithLeaderboard({ userId: "user-1", externalId: "PUUID-ABC" }),
+      { matches: true, riotId: "OldName#0001" },
+    );
+    assert.deepEqual(
+      await service.compareWithLeaderboard({ userId: "user-1", externalId: "puuid-other" }),
+      { matches: false, riotId: "OldName#0001" },
+    );
+  } finally {
+    restore();
+  }
+});
+
+test("nothing to compare with is never presented as a mismatch", async () => {
+  const noDiscord = loadService({ discordAccount: null });
+  try {
+    assert.equal(
+      await noDiscord.module.compareWithLeaderboard({ userId: "user-1", externalId: "puuid-abc" }),
+      null,
+    );
+  } finally {
+    noDiscord.restore();
+  }
+
+  const down = loadService({
+    checkDiscord: async () => {
+      throw new Error("down");
+    },
+  });
+  try {
+    assert.equal(
+      await down.module.compareWithLeaderboard({ userId: "user-1", externalId: "puuid-abc" }),
+      null,
+    );
+  } finally {
+    down.restore();
+  }
+});
+
+test("the profile shows a pending request, and a decision only while it is recent", () => {
+  const { module: service, restore } = loadService();
+  try {
+    const now = Date.parse("2026-09-17T00:00:00.000Z");
+    const base = {
+      id: "request-1",
+      requestedUsername: "NewName",
+      requestedTagline: "2222",
+      reason: "lost access",
+      adminNote: null,
+      createdAt: "2026-09-01T00:00:00.000Z",
+      reviewedAt: null,
+    };
+
+    assert.equal(
+      service.visibleChangeRequest({ ...base, status: "pending" }, now).requestedIdentity,
+      "NewName#2222",
+    );
+    const recent = {
+      ...base,
+      status: "rejected",
+      adminNote: "No evidence",
+      reviewedAt: "2026-09-10T00:00:00.000Z",
+    };
+    assert.equal(service.visibleChangeRequest(recent, now).adminNote, "No evidence");
+    assert.equal(
+      service.visibleChangeRequest({ ...recent, reviewedAt: "2026-08-01T00:00:00.000Z" }, now),
+      null,
+    );
+    assert.equal(service.visibleChangeRequest({ ...base, status: "withdrawn" }, now), null);
+    assert.equal(service.visibleChangeRequest(null, now), null);
   } finally {
     restore();
   }

@@ -76,9 +76,17 @@ const translateUpstreamError = (error) => {
   return new HttpError(503, UNAVAILABLE_MESSAGE);
 };
 
-// Whether this PUUID can still be claimed, and by whom. Deliberately returns a
-// boolean and the caller's own linkage only: telling one signed-in user which
+// Whether this PUUID can still be claimed, and by whom. Deliberately returns
+// booleans and the caller's own linkage only: telling one signed-in user which
 // other account holds a PUUID would turn this into a lookup directory.
+//
+// "Elsewhere" has two very different meanings and the player is owed the
+// difference. Another signed-in Quest user holding it is a dispute; a player row
+// with no Quest user behind it (left behind when an admin deletes a user) is a
+// record waiting to be reclaimed, and telling that person "another account has
+// it" sends them hunting for an account that does not exist. Neither is ever
+// handed over automatically — resolution cannot prove ownership — but the
+// explanation differs.
 const describeExistingLink = async ({ externalId, userId }) => {
   const existing = await prisma.gameAccount.findUnique({
     where: { game_externalId: { game: VALORANT, externalId } },
@@ -91,7 +99,7 @@ const describeExistingLink = async ({ externalId, userId }) => {
   });
 
   if (!existing) {
-    return { available: true, linkedToYou: false, linkedElsewhere: false };
+    return { available: true, linkedToYou: false, linkedElsewhere: false, unclaimedRecord: false };
   }
 
   const linkedToYou = Boolean(userId) && existing.player?.userId === userId;
@@ -99,9 +107,36 @@ const describeExistingLink = async ({ externalId, userId }) => {
     available: false,
     linkedToYou,
     linkedElsewhere: !linkedToYou,
+    unclaimedRecord: !linkedToYou && !existing.player?.userId,
     status: linkedToYou ? existing.status : undefined,
     verificationStatus: linkedToYou ? existing.verificationStatus : undefined,
   };
+};
+
+// The statuses in which an account is the player's CURRENT one. `replaced` and
+// `revoked` rows stay in the table so tournament history keeps pointing at
+// them, but they are the past, and a player must never be told "already
+// connected" about an account that no longer shows on their profile.
+const CURRENT_STATUSES = new Set(["active", "locked", "change_requested"]);
+
+const LINKED_ELSEWHERE_MESSAGE =
+  "That VALORANT account is already linked to another Quest account. If it is yours, contact support.";
+const UNCLAIMED_RECORD_MESSAGE =
+  "That VALORANT account belongs to an older Quest player record that is not connected to any account. " +
+  "Contact support so an admin can move it, and its tournament history, to you.";
+const PREVIOUS_ACCOUNT_MESSAGE =
+  "You used that VALORANT account before. Use Change account to move back to it — an admin approves the move.";
+
+// One place decides what "you cannot link this" says, so the link, the import
+// and a change request can never explain the same conflict differently.
+const conflictFor = (link) => {
+  if (link.linkedToYou && link.status && !CURRENT_STATUSES.has(link.status)) {
+    return new HttpError(409, PREVIOUS_ACCOUNT_MESSAGE);
+  }
+  if (link.linkedElsewhere) {
+    return new HttpError(409, link.unclaimedRecord ? UNCLAIMED_RECORD_MESSAGE : LINKED_ELSEWHERE_MESSAGE);
+  }
+  return null;
 };
 
 // Resolve a Riot ID to the upstream's stable identifier plus a current display
@@ -177,6 +212,14 @@ const publicView = (account) => ({
   lastSyncedAt: account.lastSyncedAt,
 });
 
+// A resolution carries the stable identifier so the server can compare and
+// store it. Anything headed for the browser goes through this first.
+const withoutExternalId = (value) => {
+  const view = { ...value };
+  delete view.externalId;
+  return view;
+};
+
 // Every Quest user owns at most one player row, created on first use. A player
 // may also exist unclaimed (legacy rosters, LAN guests), which is why the
 // relation is nullable rather than a column on `users`.
@@ -188,20 +231,26 @@ const ensurePlayerForUser = async (database, { userId, displayName }) => {
   });
 };
 
+// The Discord snowflake the leaderboard knows this user by, or null.
+const linkedDiscordId = async (userId) => {
+  const discord = await prisma.oAuthAccount.findFirst({
+    where: { userId, provider: "discord" },
+    select: { providerUserId: true },
+  });
+  return discord?.providerUserId || null;
+};
+
 // Discord corroboration is the strongest signal available without Riot Sign-On:
 // the upstream leaderboard already pairs a stable Discord ID to a PUUID under a
 // partial-unique index. If the signed-in user's linked Discord account is the
 // one paired to this PUUID upstream, two independent systems agree — which is
 // meaningfully more than the user asserting it. It is still not ownership.
 const corroborateWithDiscord = async ({ userId, externalId }) => {
-  const discord = await prisma.oAuthAccount.findFirst({
-    where: { userId, provider: "discord" },
-    select: { providerUserId: true },
-  });
-  if (!discord?.providerUserId) return false;
+  const discordId = await linkedDiscordId(userId);
+  if (!discordId) return false;
 
   try {
-    const result = await checkDiscord(discord.providerUserId);
+    const result = await checkDiscord(discordId);
     const upstreamPuuid = normalizeExternalId(result?.user?.puuid || result?.puuid || "");
     return Boolean(upstreamPuuid) && upstreamPuuid === externalId;
   } catch (error) {
@@ -234,11 +283,8 @@ const corroborateWithDiscord = async ({ userId, externalId }) => {
 //                 current and is wrong.
 //   unavailable — could not be reached; nothing was changed
 const registerOnLeaderboard = async ({ userId, externalId }) => {
-  const discord = await prisma.oAuthAccount.findFirst({
-    where: { userId, provider: "discord" },
-    select: { providerUserId: true },
-  });
-  if (!discord?.providerUserId) return { state: "unavailable", reason: "NO_DISCORD" };
+  const discordId = await linkedDiscordId(userId);
+  if (!discordId) return { state: "unavailable", reason: "NO_DISCORD" };
 
   try {
     await submitLeaderboardRegistration({ userId, puuid: externalId });
@@ -256,7 +302,7 @@ const registerOnLeaderboard = async ({ userId, externalId }) => {
       // Their Discord holds an older registration. Whether it points at the
       // account they just connected decides whether this is fine or stale.
       try {
-        const existing = await checkDiscord(discord.providerUserId);
+        const existing = await checkDiscord(discordId);
         const registered = normalizeExternalId(existing?.user?.puuid || "");
         if (registered && registered === externalId) return { state: "already" };
         return {
@@ -288,17 +334,15 @@ const registerOnLeaderboard = async ({ userId, externalId }) => {
 // and loses some of them.
 //
 // It deliberately goes through `linkValorantAccount` rather than writing a row
-// directly. The upstream answer is a hint about which account to link, never
-// the identifier itself: the Riot ID is re-resolved server-side, the
-// already-linked-elsewhere conflict is the same 409, and corroboration then
-// lands the account at `discord_corroborated` on its own, because the PUUID it
-// compares against is the one this Discord id is registered with.
+// directly. The Riot ID is re-resolved server-side and must come back as the
+// PUUID the leaderboard registered — a name alone can have moved to somebody
+// else — the already-linked-elsewhere conflict is the same 409, and
+// corroboration then lands the account at `discord_corroborated` on its own,
+// because the PUUID it compares against is the one this Discord id is
+// registered with.
 const importValorantAccountFromLeaderboard = async ({ userId, displayName, audit }) => {
-  const discord = await prisma.oAuthAccount.findFirst({
-    where: { userId, provider: "discord" },
-    select: { providerUserId: true },
-  });
-  if (!discord?.providerUserId) {
+  const discordId = await linkedDiscordId(userId);
+  if (!discordId) {
     throw new HttpError(
       400,
       "Connect your Discord account first. Quest finds your leaderboard registration by it.",
@@ -307,7 +351,7 @@ const importValorantAccountFromLeaderboard = async ({ userId, displayName, audit
 
   let registration;
   try {
-    registration = await checkDiscord(discord.providerUserId);
+    registration = await checkDiscord(discordId);
   } catch (error) {
     logger.warn("Leaderboard lookup unavailable during account import.", {
       code: error?.code || null,
@@ -331,6 +375,16 @@ const importValorantAccountFromLeaderboard = async ({ userId, displayName, audit
     userId,
     displayName,
     audit,
+    // The leaderboard stores a Riot name as it was on the day of registration.
+    // Riot names are reusable, so after a rename that old name can resolve to a
+    // stranger's account — and linking by name alone would connect it at
+    // `user_confirmed` without the player ever seeing it. The identifier the
+    // leaderboard holds is what they actually registered, so the resolved
+    // account has to be that one.
+    expectedExternalId: normalizeExternalId(player?.puuid || ""),
+    mismatchMessage:
+      `Your leaderboard registration is under ${name}#${tag}, but that Riot ID now belongs to a different account. ` +
+      "Enter your current Riot ID instead.",
   });
 };
 
@@ -338,20 +392,30 @@ const importValorantAccountFromLeaderboard = async ({ userId, displayName, audit
 //
 // The client sends only the Riot ID: the PUUID is re-resolved server-side so a
 // crafted request cannot bind an identifier the user never saw confirmed.
-const linkValorantAccount = async ({ riotId, name, tag, userId, displayName, audit }) => {
+const linkValorantAccount = async ({
+  riotId,
+  name,
+  tag,
+  userId,
+  displayName,
+  audit,
+  expectedExternalId = null,
+  mismatchMessage = null,
+}) => {
   const resolved = await resolveValorantAccount({ riotId, name, tag, userId });
 
-  if (resolved.linkedToYou) {
-    return { alreadyLinked: true, account: resolved };
+  if (expectedExternalId && resolved.externalId !== expectedExternalId) {
+    throw new HttpError(409, mismatchMessage || NOT_FOUND_MESSAGE);
   }
-  if (resolved.linkedElsewhere) {
-    // The (game, external_id) unique index is the real boundary; this is the
-    // friendly path to the same answer. Deliberately says nothing about who
-    // holds it.
-    throw new HttpError(
-      409,
-      "That VALORANT account is already linked to another Quest account. If it is yours, contact support.",
-    );
+
+  // The (game, external_id) unique index is the real boundary; this is the
+  // friendly path to the same answer. Deliberately says nothing about who
+  // holds it.
+  const conflict = conflictFor(resolved);
+  if (conflict) throw conflict;
+
+  if (resolved.linkedToYou) {
+    return { alreadyLinked: true, account: withoutExternalId(resolved) };
   }
 
   const corroborated = await corroborateWithDiscord({
@@ -417,13 +481,37 @@ const linkValorantAccount = async ({ riotId, name, tag, userId, displayName, aud
         game: VALORANT,
         externalIdFingerprint: fingerprint(resolved.externalId),
       });
-      throw new HttpError(
-        409,
-        "That VALORANT account is already linked to another Quest account. If it is yours, contact support.",
-      );
+      throw new HttpError(409, LINKED_ELSEWHERE_MESSAGE);
     }
     throw error;
   }
+};
+
+// A reviewed request stays on the profile this long, so a player who asked for
+// a change can see the answer — including an admin's reason for a refusal —
+// without it sitting there forever.
+const DECISION_VISIBLE_MS = 14 * 24 * 60 * 60 * 1000;
+
+const changeRequestView = (request) => ({
+  id: request.id,
+  status: request.status,
+  requestedIdentity: `${request.requestedUsername}#${request.requestedTagline}`,
+  reason: request.reason,
+  adminNote: request.adminNote,
+  requestedAt: request.createdAt,
+  reviewedAt: request.reviewedAt,
+});
+
+// The one change request the profile should mention: an open one, or a decision
+// recent enough that the player may not have seen it. A withdrawn request is the
+// player's own doing and needs no reminder.
+const visibleChangeRequest = (request, now = Date.now()) => {
+  if (!request) return null;
+  if (request.status === "pending") return changeRequestView(request);
+  if (request.status === "withdrawn" || !request.reviewedAt) return null;
+  return now - new Date(request.reviewedAt).getTime() <= DECISION_VISIBLE_MS
+    ? changeRequestView(request)
+    : null;
 };
 
 // The signed-in user's linked accounts, for the profile panel and for roster
@@ -437,13 +525,82 @@ const listGameAccountsForUser = async ({ userId }) => {
         where: { status: { not: "replaced" } },
         orderBy: { linkedAt: "desc" },
       },
+      changeRequests: {
+        where: { game: VALORANT },
+        orderBy: { createdAt: "desc" },
+        take: 1,
+      },
     },
   });
 
   return {
     playerPublicId: player?.publicId ?? null,
     accounts: (player?.gameAccounts ?? []).map(publicView),
+    changeRequest: visibleChangeRequest(player?.changeRequests?.[0] ?? null),
   };
+};
+
+// What the leaderboard holds for this user's Discord, for a player who has not
+// connected an account yet. It lets the profile name the account ("Name#TAG")
+// instead of offering a blind "import" the player has to take on trust.
+//
+// Never returns the stable identifier, and never answers for a Discord the
+// caller does not hold: the lookup key is the caller's own linked snowflake.
+const findLeaderboardRegistration = async ({ userId }) => {
+  const discordId = await linkedDiscordId(userId);
+  if (!discordId) return { discordConnected: false, unavailable: false, registration: null };
+
+  let result;
+  try {
+    result = await checkDiscord(discordId);
+  } catch (error) {
+    logger.warn("Leaderboard lookup unavailable for the profile.", {
+      code: error?.code || null,
+      status: error?.status || null,
+    });
+    return { discordConnected: true, unavailable: true, registration: null };
+  }
+
+  const registered = result?.user || null;
+  const externalId = normalizeExternalId(registered?.puuid || "");
+  if (!result?.exists || !registered?.name || !registered?.tag || !externalId) {
+    return { discordConnected: true, unavailable: false, registration: null };
+  }
+
+  const link = await describeExistingLink({ externalId, userId });
+  return {
+    discordConnected: true,
+    unavailable: false,
+    registration: {
+      riotId: `${registered.name}#${registered.tag}`,
+      linkedToYou: link.linkedToYou,
+      linkedElsewhere: link.linkedElsewhere,
+      unclaimedRecord: link.unclaimedRecord,
+    },
+  };
+};
+
+// Whether a looked-up account is the one this user's Discord is registered with
+// on the leaderboard. Compared by stable identifier, so a Riot rename is still a
+// match and a reused name is not.
+//
+// Advisory only. `null` means there is nothing to compare with — no Discord, no
+// registration, or a leaderboard that did not answer — and must never be shown
+// as a mismatch.
+const compareWithLeaderboard = async ({ userId, externalId }) => {
+  const discordId = await linkedDiscordId(userId);
+  if (!discordId || !externalId) return null;
+  try {
+    const result = await checkDiscord(discordId);
+    const registered = normalizeExternalId(result?.user?.puuid || "");
+    if (!result?.exists || !registered) return null;
+    return {
+      matches: registered === normalizeExternalId(externalId),
+      riotId: result.user.name && result.user.tag ? `${result.user.name}#${result.user.tag}` : null,
+    };
+  } catch {
+    return null;
+  }
 };
 
 const splitRiotId = (value) => {
@@ -461,16 +618,25 @@ module.exports = {
   registerOnLeaderboard,
   importValorantAccountFromLeaderboard,
   listGameAccountsForUser,
+  visibleChangeRequest,
+  findLeaderboardRegistration,
+  compareWithLeaderboard,
+  conflictFor,
   corroborateWithDiscord,
   ensurePlayerForUser,
   fingerprint,
   publicView,
+  withoutExternalId,
   normalizeExternalId,
   describeExistingLink,
   translateUpstreamError,
   splitRiotId,
+  CURRENT_STATUSES,
   RESOLVE_CACHE_TTL_SECONDS,
   UNAVAILABLE_MESSAGE,
   NOT_FOUND_MESSAGE,
+  LINKED_ELSEWHERE_MESSAGE,
+  UNCLAIMED_RECORD_MESSAGE,
+  PREVIOUS_ACCOUNT_MESSAGE,
   VALORANT,
 };

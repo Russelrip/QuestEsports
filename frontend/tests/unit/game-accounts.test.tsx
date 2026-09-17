@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   resolveValorantAccount: vi.fn(),
   linkValorantAccount: vi.fn(),
   requestValorantChange: vi.fn(),
+  getMyValorantLeaderboardRegistration: vi.fn(),
 }));
 
 vi.mock("@/lib/game-accounts", async () => {
@@ -39,6 +40,11 @@ const resolved = (overrides = {}) => ({
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.getMyGameAccounts.mockResolvedValue({ playerPublicId: null, accounts: [] });
+  mocks.getMyValorantLeaderboardRegistration.mockResolvedValue({
+    discordConnected: true,
+    unavailable: false,
+    registration: null,
+  });
 });
 afterEach(() => cleanup());
 
@@ -281,15 +287,20 @@ describe("changing the connected account", () => {
     expect(screen.getByText(/same\s+account and refresh it/i)).toBeTruthy();
   });
 
-  it("requires a reason, because an admin has to read it", async () => {
+  it("lets the server ask for a reason, because only it can tell a rename from a new account", async () => {
+    // A rename is a correction nobody reviews, so it needs no reason. Refusing
+    // an empty reason in the browser made a renamed player justify a rename.
+    mocks.requestValorantChange.mockRejectedValue(
+      new Error("That is a different Riot account, so an admin has to approve it. Tell us why it needs to change."),
+    );
     const user = userEvent.setup();
     render(<GameAccountsPanel />);
     await user.click(await screen.findByRole("button", { name: "Change account" }));
     await user.type(screen.getByLabelText("New Riot ID"), "Other#1234");
     await user.click(screen.getByRole("button", { name: "Request change" }));
 
-    expect(await screen.findByRole("alert")).toBeTruthy();
-    expect(mocks.requestValorantChange).not.toHaveBeenCalled();
+    expect(mocks.requestValorantChange).toHaveBeenCalledWith("Other#1234", "");
+    expect((await screen.findByRole("alert")).textContent).toMatch(/Tell us why/);
   });
 
   it("rejects a malformed Riot ID before calling the server", async () => {
