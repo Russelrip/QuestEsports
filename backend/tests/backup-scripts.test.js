@@ -68,17 +68,18 @@ test("backup freshness requires a recent encrypted archive and checksum on every
   assert.match(freshnessScript, /rclone check/);
 });
 
-test("remote retention counts and safely deletes only complete recovery pairs", () => {
+test("remote retention deletes only complete recovery pairs, and to trash first", () => {
   const retentionScript = fs.readFileSync(
     path.join(__dirname, "../../ops/prune-production-backups.sh"),
     "utf8"
   );
 
-  assert.match(retentionScript, /complete_count/);
-  assert.match(retentionScript, /object_set\[\$\{object_name\}\.sha256\]/);
-  assert.match(retentionScript, /rclone deletefile .*\$archive_name/);
+  assert.match(retentionScript, /Retained an archive without its checksum/);
+  assert.match(retentionScript, /rclone deletefile "\$\{remote%\/\}\/\$name" .*--drive-use-trash=true/);
   assert.match(retentionScript, /archive was removed but checksum cleanup failed/);
   assert.match(retentionScript, /RETENTION_CONFIRMATION/);
+  assert.match(retentionScript, /TRASH_CONFIRMATION/);
+  assert.match(retentionScript, /rehearsal-evidence\*/);
 });
 
 test("production backup dumps both schemas when the valorant schema exists", () => {

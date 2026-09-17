@@ -6,6 +6,7 @@ Use the guide that matches the work being performed. The root [README](../README
 
 - [Production Operations Runbook](./production-runbook.md) — production topology, maintenance mode, VPS operations, deployment verification, and incidents.
 - [Backup and Disaster Recovery](./backup-and-disaster-recovery.md) — encrypted backups, key custody, validation, restore drills, and recovery.
+- [Backup Storage and Retention](./backup-storage-and-retention.md) — what is on Google Drive, the approved tiered retention policy, and the tested recover-from-Drive drill.
 - [Secret and Infrastructure Recovery](./secret-and-infrastructure-recovery.md) — separately encrypted application secrets, infrastructure configuration, custody, and recovery testing.
 - [Deployment and Migration Safety](./DEPLOYMENT_SAFETY.md) — forward-only migration rules, approval gates, backup requirements, and rollback limits.
 - [Pre-deployment Checklist](./pre-deployment-checklist.md) — current release security and reliability gate.

@@ -72,7 +72,7 @@ and default ACLs separately. Do not change this `--no-acl` decision implicitly.
   `REHEARSAL_RTO_SECONDS`/`REHEARSAL_RTO_DECISION`; restore duration and
   resource usage remain measured observations, not operator estimates.
 - Local encrypted copies older than `BACKUP_LOCAL_RETENTION_DAYS` are removed by the script; the current value is seven days.
-- The repository includes a dry-run-first, per-remote retention tool with a minimum-recovery-point guard. Production deletion remains disabled until the owner approves the retention values and runs the exact confirmation-gated command for object-locked destinations.
+- Off-site retention is a tiered, dry-run-first tool covering every backup family; the owner approved the policy on 2026-09-17. See [Backup Storage and Retention](./backup-storage-and-retention.md).
 - The repository includes a systemd `OnFailure` notifier. It pages an operator only after the failure unit is installed and an approved Discord-compatible HTTPS webhook is added to the protected backup environment and tested.
 
 ### Historical pre-first-write rollback boundary (superseded 2026-08-31)
@@ -433,23 +433,11 @@ The freshness timer runs after the normal backup window and fails if there is no
 
 ### Review and apply off-site retention
 
-Set owner-approved `BACKUP_REMOTE_RETENTION_DAYS` and `BACKUP_REMOTE_MINIMUM_RECOVERY_POINTS` values in the protected environment. First run the tool without a confirmation; it must report a dry run and refuse any policy that would leave fewer than the minimum recovery points:
-
-```bash
-sudo -u deploy -H env BACKUP_ENV_FILE=/etc/quest-esports-backup.env \
-  bash ops/prune-production-backups.sh
-```
-
-After comparing the candidate count with Drive and the incident/finance retention requirement, run the intentional deletion once:
-
-```bash
-sudo -u deploy -H env \
-  BACKUP_ENV_FILE=/etc/quest-esports-backup.env \
-  RETENTION_CONFIRMATION=PRUNE_QUEST_PRODUCTION \
-  bash ops/prune-production-backups.sh
-```
-
-Do not automate this deletion until at least one newer archive has passed a full isolated restore drill and the business owner has approved the schedule. The tool lists and evaluates every configured remote independently; do not manually delete remote objects. Object-locked destinations remain confirmation-gated and a failed remote causes a nonzero result.
+The owner-approved tiered policy (2026-09-17), the storage inventory it was
+based on, and the exact dry-run, trash, verify, and empty-trash sequence are in
+[Backup Storage and Retention](./backup-storage-and-retention.md). Do not delete
+remote objects by hand, and do not bypass the tool's minimum-point floor,
+rehearsal-evidence protection, or confirmations.
 
 ### Create the separate secret recovery package
 
@@ -769,7 +757,7 @@ Restore uploads and database before admitting user writes. Then run the full pro
 | `age` cannot decrypt | Correct identity file and archive generation | Stop; never rotate or overwrite the only identity while investigating |
 | Upload restore path unexpected | `realpath` and recovery environment | Abort before the 10-second restore delay ends |
 | systemd result failed | `journalctl -u quest-esports-backup.service` | Correct the prerequisite, rerun manually, then rerun the systemd service |
-| Drive storage grows continuously | Protected retention values and dry-run output | Use `ops/prune-production-backups.sh`; do not bypass its minimum-point guard or confirmation |
+| Drive storage grows continuously | `rclone about`, the retention dry run, and Drive trash size | Follow [Backup Storage and Retention](./backup-storage-and-retention.md); trashed files still count against quota until the empty-trash step |
 | Backup fails without an alert | Failure unit installation, webhook setting, and direct notifier test | Install/reload the template, add the protected webhook, test one alert, then rerun the backup service |
 
 ## Restore-drill record requirements
