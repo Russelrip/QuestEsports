@@ -340,9 +340,14 @@ tracked application examples.
 | `BACKUP_LOCAL_RETENTION_DAYS` | No | Operations owner | D/P | Public/non-secret | `7` | Per backup run |
 | `BACKUP_MAX_AGE_MINUTES` | No — script defaults to `2160` | Operations owner | D/P | Public/non-secret | `<approved maximum age in minutes>`; implementation default is `2160` | Per freshness run |
 | `BACKUP_FAILURE_WEBHOOK_URL` | No | Operations owner | D/P | Secret | `<approved HTTPS alert webhook>` | Per notifier run |
-| `BACKUP_REMOTE_RETENTION_DAYS` | Conditional; required for retention | Operations owner | D/P | Public/non-secret | `<owner-approved retention days>` | Per prune run |
-| `BACKUP_REMOTE_MINIMUM_RECOVERY_POINTS` | Conditional; required for retention | Operations owner | D/P | Public/non-secret | `<minimum recovery-point count>` | Per prune run |
-| `RETENTION_CONFIRMATION` | Conditional; required to delete | Operations owner | D/P | Destructive control | `PRUNE_QUEST_PRODUCTION` only for an approved deletion | Per prune run |
+| `BACKUP_REMOTE_MINIMUM_RECOVERY_POINTS` | Conditional; required for retention | Operations owner | D/P | Public/non-secret | `3` (newest pairs always kept per family) | Per prune run |
+| `BACKUP_RETAIN_DATABASE_ALL_DAYS` / `BACKUP_RETAIN_DATABASE_WEEKLY_DAYS` | No — default `35` / `90` | Operations owner | D/P | Public/non-secret | `35` / `90` | Per prune run |
+| `BACKUP_RETAIN_MEDIA_DAILY` / `BACKUP_RETAIN_MEDIA_WEEKLY` | No — default `7` / `4` | Operations owner | D/P | Public/non-secret | `7` / `4` | Per prune run |
+| `BACKUP_RETAIN_RELEASE_DAYS` / `BACKUP_RETAIN_REHEARSAL_BOUND` | No — default `14` / `3` | Operations owner | D/P | Public/non-secret | `14` / `3` | Per prune run |
+| `BACKUP_REHEARSAL_EVIDENCE_ROOT` | Conditional; required for retention | Recovery owner | P | Path-sensitive | `/secure/recovery` (root-only) | Per prune run |
+| `BACKUP_RETENTION_PINS` | No | Operations owner | D/P | Public/non-secret | `<archive name> until=YYYY-MM-DD`, newline-separated | Per prune run |
+| `RETENTION_CONFIRMATION` | Conditional; required to delete | Operations owner | D/P | Destructive control | `PRUNE_QUEST_PRODUCTION` only for an approved deletion (moves pairs to trash) | Per prune run |
+| `TRASH_CONFIRMATION` | Conditional; required to release quota | Operations owner | D/P | Destructive control | `EMPTY_QUEST_BACKUP_TRASH` only after the trashed set is verified | Per prune run |
 | `BACKUP_AGE_IDENTITY_FILE` | Yes for restore | Recovery owner | D/P | Secret/path-sensitive | `<offline age identity path>` | Per restore run |
 | `BACKUP_CLIENT_TLS_DIR` | Yes for production backup | Operations owner | D/P | Secret/path-sensitive | `/etc/quest-esports-backup` (`root:deploy` `0750`) | Per backup run |
 | `POSTGRES_CA_FILE` | Yes for backup/recovery | Operations or recovery owner | D/P | Path-sensitive trust material | Backup: `/etc/quest-esports-backup/backup-client-ca.crt` (`root:deploy` `0640`) containing the issuer of `quest-postgres.crt`; recovery: server CA supplied by the recovery host | Per command |

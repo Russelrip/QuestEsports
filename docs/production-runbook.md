@@ -1185,7 +1185,7 @@ systemctl list-timers quest-esports-backup.timer quest-esports-backup-freshness.
 journalctl -u quest-esports-backup.service --since today --no-pager
 ```
 
-The backup is not considered successful until rclone content verification succeeds for both the encrypted archive and checksum on the off-site remote. Review retention first in dry-run mode with `ops/prune-production-backups.sh`; actual deletion additionally requires `RETENTION_CONFIRMATION=PRUNE_QUEST_PRODUCTION` and refuses to cross the configured minimum recovery-point floor. Follow [Secret and Infrastructure Recovery](./secret-and-infrastructure-recovery.md) for the separate environment/rclone/infrastructure package that the normal archive intentionally excludes.
+The backup is not considered successful until rclone content verification succeeds for both the encrypted archive and checksum on the off-site remote. Review retention first in dry-run mode with `ops/prune-production-backups.sh`; deletion to trash additionally requires `RETENTION_CONFIRMATION=PRUNE_QUEST_PRODUCTION`, releasing Drive quota is a separate `TRASH_CONFIRMATION=EMPTY_QUEST_BACKUP_TRASH` run, and the newest pairs of each family are always kept. See [Backup Storage and Retention](./backup-storage-and-retention.md). Follow [Secret and Infrastructure Recovery](./secret-and-infrastructure-recovery.md) for the separate environment/rclone/infrastructure package that the normal archive intentionally excludes.
 
 The repository contains a historical record dated 2026-07-29 describing a
 manual encrypted full backup, a restricted systemd service run, and the daily

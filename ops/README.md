@@ -9,7 +9,7 @@ These scripts support encrypted backup and recovery for Quest Esports production
 | `restore-production-backup.sh` | Preflights/stages both file trees, activates them under an exit rollback guard, restores PostgreSQL in one transaction, and retains replaced trees after success; destructive and confirmation-gated |
 | `rehearsal/postgres17-restore-rehearsal.sh` | Fail-closed disposable-only PostgreSQL 17 restore rehearsal wrapper; privately runs the existing restore primitive and writes machine-readable evidence |
 | `rehearsal/verify-rehearsal-evidence.sh` | Rejects stale, incomplete, production-looking, or non-runtime rehearsal evidence |
-| `prune-production-backups.sh` | Shared-lock, per-remote, dry-run-by-default off-site retention with explicit confirmation and a minimum-recovery-point guard |
+| `prune-production-backups.sh` | Shared-lock, per-remote, dry-run-by-default tiered off-site retention for every backup family, with rehearsal-evidence protection, pins, a minimum-recovery-point floor, and separate trash and empty-trash confirmations |
 | `notify-backup-failure.sh` | Sends a minimal Discord-compatible webhook alert without including secrets or backup URLs |
 | `check-backup-freshness.sh` | Shared-lock freshness check that requires a locally checksum-valid and remotely matching pair on every required remote |
 | `create-secret-recovery-package.sh` | Creates a confirmation-gated, `age`-encrypted package of allowlisted application/infrastructure secrets for transfer to a separate recovery vault |
@@ -196,20 +196,29 @@ This is read-only apart from acquiring the shared release lock and has no dry-ru
 
 ### Review and prune expired remote backups
 
-First run the **dry-run** without `RETENTION_CONFIRMATION`; it requires `BACKUP_ENV_FILE` (default `/etc/quest-esports-backup.env`), `BACKUP_REMOTE_RETENTION_DAYS`, and `BACKUP_REMOTE_MINIMUM_RECOVERY_POINTS`. The shared release lock is held while each remote is listed and evaluated.
+The policy, current inventory, and tested recovery drill are in [Backup Storage and Retention](../docs/backup-storage-and-retention.md). Production runs it weekly through `quest-esports-backup-retention.timer`; the commands below are for policy changes and supervised runs. Run as root: the tool reads root-only rehearsal evidence so it never prunes an archive a signed rehearsal names. First run the **dry-run** without a confirmation; it requires `BACKUP_ENV_FILE` (default `/etc/quest-esports-backup.env`), `BACKUP_REMOTE_MINIMUM_RECOVERY_POINTS`, and `BACKUP_REHEARSAL_EVIDENCE_ROOT`, and prints a keep/delete decision with reasons for every recovery pair. The shared release lock is held while each remote is listed and evaluated.
 
 ```bash
-sudo -u deploy -H env \
+sudo env \
   BACKUP_ENV_FILE=/etc/quest-esports-backup.env \
   bash ops/prune-production-backups.sh
 ```
 
-The dry-run lists recovery pairs that would be deleted and refuses a policy that would leave fewer than the configured minimum recovery points. After review and approval, the **destructive** deletion requires the exact confirmation token `PRUNE_QUEST_PRODUCTION`:
+After review and approval, the **destructive** step requires the exact confirmation token `PRUNE_QUEST_PRODUCTION`. It moves expired pairs to the remote's trash, which on Google Drive still counts against quota:
 
 ```bash
-sudo -u deploy -H env \
+sudo env \
   BACKUP_ENV_FILE=/etc/quest-esports-backup.env \
   RETENTION_CONFIRMATION=PRUNE_QUEST_PRODUCTION \
+  bash ops/prune-production-backups.sh
+```
+
+After re-verifying what remains, release the quota as a separate run. It permanently removes only trashed backup objects that are no longer live:
+
+```bash
+sudo env \
+  BACKUP_ENV_FILE=/etc/quest-esports-backup.env \
+  TRASH_CONFIRMATION=EMPTY_QUEST_BACKUP_TRASH \
   bash ops/prune-production-backups.sh
 ```
 

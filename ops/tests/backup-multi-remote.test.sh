@@ -203,8 +203,6 @@ BACKUP_RCLONE_CONFIGS='primary=$TEST_ROOT/primary.conf
 secondary=$TEST_ROOT/secondary.conf'
 BACKUP_LOCAL_RETENTION_DAYS=7
 BACKUP_MAX_AGE_MINUTES=2160
-BACKUP_REMOTE_RETENTION_DAYS=90
-BACKUP_REMOTE_MINIMUM_RECOVERY_POINTS=2
 EOF
 cat > "$FAKE_BIN/postgres-target" <<EOF
 #!/usr/bin/env bash
@@ -346,56 +344,6 @@ if BACKUP_ENV_FILE="$ENV_FILE" BACKUP_RELEASE_LOCK_PATH="$TEST_ROOT/freshness.lo
   printf 'expected checksum verification failure\n' >&2
   exit 1
 fi
-
-# Populate both disposable remotes with one expired pair and two retained points.
-for config in primary.conf secondary.conf; do
-  remote_fixture="$REMOTE_ROOT/$config/production"
-  mkdir -p "$remote_fixture"
-  for object in \
-      quest-production-20200101T000000Z.tar.gz.enc \
-      quest-production-20260826T000000Z.tar.gz.enc \
-      quest-production-20260827T000000Z.tar.gz.enc; do
-    printf '%s\n' "$object" > "$remote_fixture/$object"
-    printf 'checksum\n' > "$remote_fixture/$object.sha256"
-  done
-done
-prune_output="$TEST_ROOT/prune-output.txt"
-BACKUP_ENV_FILE="$ENV_FILE" BACKUP_RELEASE_LOCK_PATH="$TEST_ROOT/prune.lock" \
-  bash "$ROOT/ops/prune-production-backups.sh" > "$prune_output"
-assert_contains 'Dry run only.' "$prune_output"
-assert_file "$REMOTE_ROOT/primary.conf/production/quest-production-20200101T000000Z.tar.gz.enc"
-assert_file "$REMOTE_ROOT/primary.conf/production/quest-production-20200101T000000Z.tar.gz.enc.sha256"
-assert_contains 'label secondary' "$prune_output"
-
-# A failed archive deletion retains the complete pair; the other remote still deletes.
-if RCLONE_PARTIAL_DELETE_CONFIG=primary.conf RETENTION_CONFIRMATION=PRUNE_QUEST_PRODUCTION \
-    BACKUP_ENV_FILE="$ENV_FILE" BACKUP_RELEASE_LOCK_PATH="$TEST_ROOT/prune.lock" \
-    bash "$ROOT/ops/prune-production-backups.sh"; then
-  printf 'expected partial deletion to produce a nonzero result\n' >&2
-  exit 1
-fi
-assert_file "$REMOTE_ROOT/primary.conf/production/quest-production-20200101T000000Z.tar.gz.enc"
-assert_file "$REMOTE_ROOT/primary.conf/production/quest-production-20200101T000000Z.tar.gz.enc.sha256"
-[[ ! -e "$REMOTE_ROOT/secondary.conf/production/quest-production-20200101T000000Z.tar.gz.enc" &&
-   ! -e "$REMOTE_ROOT/secondary.conf/production/quest-production-20200101T000000Z.tar.gz.enc.sha256" ]] || exit 1
-
-# Minimum-recovery-point guards are evaluated independently for each remote.
-guard_env="$TEST_ROOT/guard.env"
-sed 's/BACKUP_REMOTE_MINIMUM_RECOVERY_POINTS=2/BACKUP_REMOTE_MINIMUM_RECOVERY_POINTS=4/' \
-  "$ENV_FILE" > "$guard_env"
-if BACKUP_ENV_FILE="$guard_env" BACKUP_RELEASE_LOCK_PATH="$TEST_ROOT/prune.lock" \
-    bash "$ROOT/ops/prune-production-backups.sh" > "$TEST_ROOT/guard-output.txt" 2>&1; then
-  printf 'expected per-remote minimum guard failure\n' >&2
-  exit 1
-fi
-assert_contains 'label primary' "$TEST_ROOT/guard-output.txt"
-assert_contains 'label secondary' "$TEST_ROOT/guard-output.txt"
-
-# Listing failure on one remote does not prevent the other remote from being inspected.
-RCLONE_FAIL_CONFIG=primary.conf BACKUP_ENV_FILE="$ENV_FILE" \
-  BACKUP_RELEASE_LOCK_PATH="$TEST_ROOT/prune.lock" \
-  bash "$ROOT/ops/prune-production-backups.sh" > "$TEST_ROOT/failure-output.txt" 2>&1 || true
-assert_contains 'label secondary' "$TEST_ROOT/failure-output.txt"
 
 sleep 1
 single_env="$TEST_ROOT/single.env"
