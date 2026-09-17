@@ -15,7 +15,8 @@ import ChangePasswordForm from "@/components/auth/ChangePasswordForm";
 import ResendVerificationButton from "@/components/auth/ResendVerificationButton";
 import SessionList from "@/components/auth/SessionList";
 import AccountLinkingPanel from "@/components/auth/AccountLinkingPanel";
-import GameAccountsPanel from "@/components/auth/GameAccountsPanel";
+import GameAccountsPanel, { GAME_ACCOUNTS_ANCHOR } from "@/components/auth/GameAccountsPanel";
+import ValorantConnectionBadge from "@/components/auth/ValorantConnectionBadge";
 import TeamManagementPanel, { TeamSummaryGrid } from "@/components/auth/TeamManagementPanel";
 import { InvitationsPanel } from "@/components/auth/InvitationsPanel";
 import { Button, buttonClassName } from "@/components/ui/button";
@@ -33,6 +34,7 @@ import { AccountDashboard, DashboardRegistration, fetchAccountDashboard } from "
 import { type VetoRoom, vetoRequest } from "@/lib/veto";
 import { type MatchRoomSummary, roomRequest } from "@/lib/match-rooms";
 import { adminHomeFor } from "@/lib/staff-permissions";
+import { getMyGameAccounts, summarizeValorantConnection, type GameAccountList } from "@/lib/game-accounts";
 
 const profileSchema = z.object({
   firstName: z.string().min(1, "First name is required."),
@@ -107,6 +109,11 @@ export default function ProfileView() {
   const [avatarSaving, setAvatarSaving] = useState(false);
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
   const [showCreatedTeamNotice, setShowCreatedTeamNotice] = useState(false);
+  // Loaded here as well as in the panel because the header shows it on every
+  // tab; the panel reports each reload back so the two never disagree.
+  const [gameAccounts, setGameAccounts] = useState<GameAccountList | null>(null);
+  const [gameAccountsSettled, setGameAccountsSettled] = useState(false);
+  const [scrollToGameAccounts, setScrollToGameAccounts] = useState(false);
   const { data: teamsData, setData: setTeamsData, loading: teamsLoading, error: teamsError } = useTeams(Boolean(user));
   const showToast = useToastStore((state) => state.showToast);
   const teams = teamsData ?? [];
@@ -134,6 +141,10 @@ export default function ProfileView() {
     const params = new URLSearchParams(window.location.search);
     if (params.get("tab") === "account") {
       setActiveTab("account");
+      // `/profile?tab=account#valorant-account` is the link other pages use to
+      // send a player straight to connecting VALORANT. The browser cannot
+      // honour the fragment itself: the panel is not rendered yet.
+      if (window.location.hash === `#${GAME_ACCOUNTS_ANCHOR}`) setScrollToGameAccounts(true);
     } else if (params.get("tab") === "invitations") {
       // Every invitation notice points here, and so does the onboarding page a
       // captain's copied link starts at.
@@ -178,7 +189,23 @@ export default function ProfileView() {
     fetchAccountDashboard().then(setDashboard).catch((error) => setDashboardError(error instanceof Error ? error.message : "Could not load dashboard.")).finally(() => setDashboardLoading(false));
     vetoRequest<VetoRoom[]>("/api/v1/veto-rooms/mine").then(setVetoRooms).catch(() => setVetoRooms([]));
     roomRequest<MatchRoomSummary[]>("/api/v1/match-rooms/mine").then(setMatchRooms).catch(() => setMatchRooms([]));
+    // A failure hides the header row rather than claiming "not connected".
+    getMyGameAccounts()
+      .then(setGameAccounts)
+      .catch(() => setGameAccounts(null))
+      .finally(() => setGameAccountsSettled(true));
   }, [user]);
+
+  useEffect(() => {
+    // Waits for the header row to settle, because it appears above the panel
+    // and would push it back out of view after the scroll; and for the panel
+    // itself, which is not rendered until the signed-in view is.
+    if (!scrollToGameAccounts || activeTab !== "account" || !gameAccountsSettled) return;
+    const panel = document.getElementById(GAME_ACCOUNTS_ANCHOR);
+    if (!panel) return;
+    panel.scrollIntoView({ behavior: "smooth", block: "start" });
+    setScrollToGameAccounts(false);
+  }, [activeTab, scrollToGameAccounts, gameAccountsSettled, user]);
 
   if (isLoading) {
     return (
@@ -333,6 +360,41 @@ export default function ProfileView() {
                 <Button className="min-w-0 px-2 sm:px-5" variant="ghost" onClick={async () => { if (await logout()) router.push("/"); }}>Logout</Button>
               </div>
             </div>
+
+            {gameAccounts ? (() => {
+              const valorant = summarizeValorantConnection(gameAccounts);
+              const action = valorant.state === "not_connected"
+                ? "Connect VALORANT"
+                : valorant.state === "pending"
+                  ? "View request"
+                  : valorant.state === "attention"
+                    ? "Review account"
+                    : "Manage";
+              // The entry point to connecting VALORANT, on every tab. It used to
+              // live only at the bottom of the Account tab, below the profile and
+              // email forms, where a player looking for it had to know it existed.
+              return (
+                <div className="relative mt-6 flex flex-col gap-3 border border-white/8 bg-white/[.02] p-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex min-w-0 flex-wrap items-center gap-3">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-400">VALORANT</p>
+                    <ValorantConnectionBadge state={valorant.state} label={valorant.label} />
+                    <p className="min-w-0 break-words text-sm text-slate-300 [overflow-wrap:anywhere]">{valorant.detail}</p>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={valorant.state === "connected" ? "ghost" : "secondary"}
+                    className="shrink-0"
+                    onClick={() => {
+                      setActiveTab("account");
+                      setScrollToGameAccounts(true);
+                    }}
+                  >
+                    {action}
+                  </Button>
+                </div>
+              );
+            })() : null}
 
             {user.pendingEmail ? (
               <div className="relative mt-6 border border-amber-300/20 bg-amber-400/8 p-4 text-sm text-slate-200">
@@ -536,7 +598,7 @@ export default function ProfileView() {
                   </form>
                 </div>
                 <AccountLinkingPanel />
-                <GameAccountsPanel />
+                <GameAccountsPanel onAccountsChange={setGameAccounts} />
               </div>
             ) : activeTab === "security" ? (
               <div className="grid min-w-0 gap-6">

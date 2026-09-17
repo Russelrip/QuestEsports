@@ -590,6 +590,40 @@ Current email-producing workflows are documented in [Email System](./email-syste
 - Back up PostgreSQL, `UPLOAD_ROOT`, and `PRIVATE_UPLOAD_ROOT` together; admin exports are recreated from database and upload metadata when needed.
 - Bank-transfer downloads and recruitment exports contain sensitive personal/payment evidence; do not keep them in shared download folders.
 
+## VALORANT Account Connections and Changes
+
+Players connect VALORANT from **My Profile**. A VALORANT row at the top of the
+profile, on every tab, shows the state (Not connected, Connected, Change
+pending, Needs attention) and a button that opens the panel on the Account tab.
+Other pages can link straight to it with `/profile?tab=account#valorant-account`.
+
+- **Leaderboard players** see the Riot ID their Discord is registered with and
+  connect it in one click. The server checks that this Riot ID still resolves
+  to the registered account (same PUUID). After a rename it may resolve to
+  someone else's account, and then the import is refused and the player enters
+  their current Riot ID.
+- **Looking up a Riot ID** warns the player if the account is not the one their
+  Discord is registered with on the leaderboard, before they connect it.
+- **A rename** (same PUUID, new name) refreshes the account with no request and
+  no reason. **A different account** opens a change request that needs a reason.
+- **Pending requests** show the requested Riot ID, date and reason on the
+  profile. The player can **withdraw** a request until someone reviews it; that
+  returns their account to service and is audited as
+  `game_account.change_withdrawn`. Admin → Game account changes has a
+  **Withdrawn** filter.
+- **A declined request** stays on the player's profile for 14 days, with the
+  admin note, marked Needs attention.
+- **Approving a move back** to an account the player used before reactivates
+  that old row rather than creating a second one, so the tournament history
+  attached to it stays with the player. If another player linked that account
+  while the request waited, approval is refused. Reject the request instead.
+
+Deleting a user keeps their player record and linked Riot account, with no
+Quest user behind it. Nobody can connect that Riot account until an admin moves
+the record. The player sees "belongs to an older Quest player record" and is
+sent to support. Resolving a Riot ID never proves ownership, so this is never
+handed over automatically.
+
 ## Removing and Restoring Leaderboard Players
 
 Admin → Valorant → **Leaderboard Players** lists every registration. **Remove**

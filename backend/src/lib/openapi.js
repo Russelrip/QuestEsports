@@ -1535,10 +1535,24 @@ const additionalPaths = {
       authenticated: true,
     }),
   },
+  "/api/v1/users/me/game-accounts/valorant/leaderboard-registration": {
+    get: createOperation(
+      "Game accounts",
+      "Name the VALORANT account the signed-in user's connected Discord is registered with on the leaderboard",
+      { authenticated: true },
+    ),
+  },
   "/api/v1/game-accounts/valorant/change-request": {
     post: createOperation(
       "Game accounts",
       "Refresh a renamed account, or open an admin-reviewed account replacement",
+      { authenticated: true },
+    ),
+  },
+  "/api/v1/game-accounts/valorant/change-request/withdraw": {
+    post: createOperation(
+      "Game accounts",
+      "Withdraw the signed-in user's pending account change before it is reviewed",
       { authenticated: true },
     ),
   },
