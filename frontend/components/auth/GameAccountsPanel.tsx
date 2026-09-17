@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import SupportHelpLink from "@/components/support/SupportHelpLink";
 import ValorantConnectionBadge from "@/components/auth/ValorantConnectionBadge";
+import ValorantRegistration from "@/components/valorant/ValorantRegistration";
 import { Button } from "@/components/ui/button";
 import { LoadingState } from "@/components/ui/loading-state";
 import { formatSriLankaDate } from "@/lib/date-time";
@@ -11,32 +12,21 @@ import {
   getMyGameAccounts,
   getMyValorantLeaderboardRegistration,
   importValorantFromLeaderboard,
-  leaderboardRegistrationMessage,
-  linkValorantAccount,
   requestValorantChange,
-  resolveValorantAccount,
   statusLabel,
   summarizeValorantConnection,
   verificationLabel,
   withdrawValorantChange,
   type GameAccountList,
   type LeaderboardRegistrationLookup,
-  type ResolvedGameAccount,
 } from "@/lib/game-accounts";
 
-// Long enough that a player typing "Russel#1234" produces one lookup rather
-// than eleven, short enough that the result feels immediate.
-const LOOKUP_DEBOUNCE_MS = 500;
 // Riot game names may contain spaces — "QT Russel#Senu" is an ordinary Riot ID
 // — so the name excludes only `#` and control characters. The tag never
 // contains whitespace, which is what keeps the separator unambiguous.
 // Must stay in step with backend valorant.validation.js.
 const RIOT_NAME_PATTERN = /^[^#\r\n\t]{1,32}$/;
 const RIOT_TAG_PATTERN = /^[^#\s]{1,16}$/;
-
-// The statuses in which a row is the player's current account. Must stay in
-// step with CURRENT_STATUSES in backend game-account.service.js.
-const CURRENT_STATUSES = new Set(["active", "locked", "change_requested"]);
 
 /** The element id the profile header scrolls to. */
 export const GAME_ACCOUNTS_ANCHOR = "valorant-account";
@@ -65,19 +55,16 @@ export default function GameAccountsPanel({ className = "", onAccountsChange }: 
   const [loading, setLoading] = useState(true);
   const [loadingError, setLoadingError] = useState("");
 
-  const [riotId, setRiotId] = useState("");
-  const [resolved, setResolved] = useState<ResolvedGameAccount | null>(null);
-  const [looking, setLooking] = useState(false);
-  const [lookupError, setLookupError] = useState("");
-  const [linking, setLinking] = useState(false);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
 
   // What the leaderboard already holds for this player's Discord. Fetched only
-  // for somebody with nothing connected, and shown as the account it is — a
-  // Riot ID they can recognise — rather than a blind "import" button.
+  // for somebody with nothing connected. A player who registered before
+  // registration connected the account here is already on the leaderboard, so
+  // the registration steps would stop them at "already registered"; they are
+  // offered that account, by name, instead.
   const [leaderboard, setLeaderboard] = useState<LeaderboardRegistrationLookup | null>(null);
-  const [leaderboardDismissed, setLeaderboardDismissed] = useState(false);
+  const [leaderboardSettled, setLeaderboardSettled] = useState(false);
   const [importing, setImporting] = useState(false);
 
   // Changing the account behind a competitive identity is deliberate, so it
@@ -88,9 +75,6 @@ export default function GameAccountsPanel({ className = "", onAccountsChange }: 
   const [submittingChange, setSubmittingChange] = useState(false);
   const [withdrawing, setWithdrawing] = useState(false);
 
-  // Every lookup carries a sequence number so a slow earlier response can never
-  // overwrite a newer one when the player keeps typing.
-  const lookupSequence = useRef(0);
   // Held in a ref so a parent passing a fresh callback each render does not
   // re-trigger the initial load.
   const onAccountsChangeRef = useRef(onAccountsChange);
@@ -125,96 +109,28 @@ export default function GameAccountsPanel({ className = "", onAccountsChange }: 
   useEffect(() => {
     if (loading || hasAccount) return;
     let cancelled = false;
+    setLeaderboardSettled(false);
     getMyValorantLeaderboardRegistration()
       .then((result) => {
         if (!cancelled) setLeaderboard(result);
       })
       .catch(() => {
-        // Only ever a shortcut. Without it the Riot ID field is still there.
+        // Only ever a shortcut. Without it the registration steps are still there.
         if (!cancelled) setLeaderboard(null);
+      })
+      .finally(() => {
+        if (!cancelled) setLeaderboardSettled(true);
       });
     return () => {
       cancelled = true;
     };
   }, [loading, hasAccount]);
 
-  useEffect(() => {
-    const trimmed = riotId.trim();
-    setError("");
-
-    if (!trimmed) {
-      setResolved(null);
-      setLookupError("");
-      setLooking(false);
-      return;
-    }
-
-    // Reject locally what cannot possibly resolve, so a malformed entry never
-    // spends the shared upstream budget.
-    if (!isValidRiotId(trimmed)) {
-      setResolved(null);
-      setLookupError("Enter your Riot ID as Name#Tag.");
-      setLooking(false);
-      return;
-    }
-
-    setLookupError("");
-    setLooking(true);
-    const sequence = ++lookupSequence.current;
-    const timer = window.setTimeout(async () => {
-      try {
-        const result = await resolveValorantAccount(trimmed);
-        if (sequence !== lookupSequence.current) return;
-        setResolved(result);
-      } catch (reason) {
-        if (sequence !== lookupSequence.current) return;
-        setResolved(null);
-        setLookupError(reason instanceof Error ? reason.message : "Could not look up that Riot ID.");
-      } finally {
-        if (sequence === lookupSequence.current) setLooking(false);
-      }
-    }, LOOKUP_DEBOUNCE_MS);
-
-    return () => window.clearTimeout(timer);
-  }, [riotId]);
-
-  const confirm = async () => {
-    if (!resolved) return;
-    setLinking(true);
-    setError("");
-    setNotice("");
-    try {
-      // Link exactly the account on the card. The player may have typed the
-      // name in another case; what they confirmed is what Riot returned.
-      const displayed =
-        resolved.username && resolved.tagline ? `${resolved.username}#${resolved.tagline}` : riotId.trim();
-      const account = await linkValorantAccount(displayed);
-      // Connecting also puts them on the leaderboard, so the confirmation says
-      // what actually happened there — including the one case they have to act
-      // on, an entry still pointing at an account they no longer use.
-      const leaderboardMessage = leaderboardRegistrationMessage(account.leaderboard);
-      setNotice(
-        leaderboardMessage
-          ? `Your VALORANT account is connected. ${leaderboardMessage}`
-          : "Your VALORANT account is connected."
-      );
-      setRiotId("");
-      setResolved(null);
-      await refresh();
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Could not link that VALORANT account.");
-    } finally {
-      setLinking(false);
-    }
-  };
-
-  // For a player already on the VALORANT leaderboard.
+  // For a player already on the VALORANT leaderboard but not connected here.
   //
-  // That registration asked for the same proof through a longer door — a
-  // connected Discord and a PUUID copied from their own Riot account page. The
-  // server still re-resolves the Riot ID and refuses if it now belongs to a
-  // different account, so this is a shortcut through the same door rather than
-  // a second one.
+  // They registered before registering also connected the account, so Quest
+  // adopts what they registered. The server re-resolves the Riot ID and refuses
+  // if it now belongs to a different account.
   const importFromLeaderboard = async () => {
     setImporting(true);
     setError("");
@@ -290,8 +206,7 @@ export default function GameAccountsPanel({ className = "", onAccountsChange }: 
     ? buildValorantTrackerProfileUrl(valorant.username, valorant.tagline)
     : null;
 
-  const offer = !loading && !valorant && !leaderboardDismissed ? leaderboard?.registration ?? null : null;
-  const offerAvailable = Boolean(offer && !offer.linkedToYou && !offer.linkedElsewhere);
+  const offer = !loading && !valorant ? leaderboard?.registration ?? null : null;
 
   return (
     <section
@@ -305,8 +220,8 @@ export default function GameAccountsPanel({ className = "", onAccountsChange }: 
           <h3 id="game-accounts-heading" className="mt-2 text-2xl text-white">VALORANT account</h3>
         </div>
         <p className="max-w-sm text-sm leading-6 text-slate-400">
-          Connect the account you compete on. Captains will not need to type it when registering a
-          team, and it puts you on the VALORANT leaderboard — there is no separate registration.
+          Register the account you compete on for the VALORANT leaderboard to connect it. Captains
+          will not need to type it when registering a team.
         </p>
       </div>
 
@@ -452,25 +367,20 @@ export default function GameAccountsPanel({ className = "", onAccountsChange }: 
           )}
         </article>
       ) : (
-        <>
-          {offer ? (
+        leaderboardSettled ? (
+          offer ? (
             <div className="mt-6 border border-cyan-300/20 bg-cyan-400/[0.06] p-5">
-              <p className="text-[10px] uppercase tracking-[0.22em] text-cyan-200/70">Found on the VALORANT leaderboard</p>
-              <p className="mt-2 break-words [overflow-wrap:anywhere] text-lg text-white">{offer.riotId}</p>
-              {offerAvailable ? (
+              <p className="text-[10px] uppercase tracking-[0.22em] text-cyan-200/70">Already on the VALORANT leaderboard</p>
+              <p className="mt-2 break-words text-lg text-white [overflow-wrap:anywhere]">{offer.riotId}</p>
+              {!offer.linkedElsewhere ? (
                 <>
                   <p className="mt-2 max-w-xl text-sm leading-6 text-slate-300">
-                    You registered this account on the leaderboard with the Discord you connected here.
-                    If it is still the account you play on, connect it — there is nothing to retype.
+                    You registered this account with the Discord connected here. Connect it to your
+                    profile — there is nothing to register again.
                   </p>
-                  <div className="mt-4 flex flex-wrap gap-3">
-                    <Button type="button" variant="secondary" disabled={importing} onClick={() => void importFromLeaderboard()}>
-                      {importing ? "Connecting…" : `Connect ${offer.riotId}`}
-                    </Button>
-                    <Button type="button" variant="ghost" disabled={importing} onClick={() => setLeaderboardDismissed(true)}>
-                      Use a different account
-                    </Button>
-                  </div>
+                  <Button type="button" variant="secondary" className="mt-4" disabled={importing} onClick={() => void importFromLeaderboard()}>
+                    {importing ? "Connecting…" : `Connect ${offer.riotId}`}
+                  </Button>
                 </>
               ) : (
                 <p className="mt-2 text-sm leading-6 text-rose-100" role="alert">
@@ -481,114 +391,27 @@ export default function GameAccountsPanel({ className = "", onAccountsChange }: 
                 </p>
               )}
             </div>
-          ) : null}
-
-          <div className="mt-6 border border-white/8 bg-white/[.02] p-5">
-            <h4 className="font-semibold text-white">{offerAvailable ? "Or enter a different Riot ID" : "Connect with your Riot ID"}</h4>
-            <p className="mt-1 text-sm leading-6 text-slate-400">
-              Enter your Riot ID and confirm the account we find. You can see it in the VALORANT client under your name.
-            </p>
-            {leaderboard && !leaderboard.discordConnected ? (
-              <p className="mt-2 text-sm leading-6 text-slate-500">
-                Connect Discord under Linked accounts too if you want to appear on the VALORANT leaderboard.
-              </p>
-            ) : null}
-
-            <label className="mt-5 block text-xs uppercase tracking-[0.15em] text-slate-500" htmlFor="riot-id">Riot ID</label>
-            <input
-              id="riot-id"
-              className={inputClassName}
-              placeholder="Name#Tag"
-              value={riotId}
-              autoComplete="off"
-              onChange={(event) => setRiotId(event.target.value)}
-            />
-
-            {looking ? <p className="mt-3 text-sm text-slate-400" role="status">Checking…</p> : null}
-            {lookupError ? <p className="mt-3 text-sm text-rose-200" role="alert">{lookupError}</p> : null}
-
-            {resolved && !looking ? (
-              <ResolvedAccountCard
-                resolved={resolved}
-                linking={linking}
-                onConfirm={() => void confirm()}
-                onReject={() => { setRiotId(""); setResolved(null); }}
+          ) : (
+            <div className="mt-6">
+              <ValorantRegistration
+                onRegistered={(result) => {
+                  // The leaderboard committed either way. If Quest could not
+                  // connect the account too, the refresh lands on the offer
+                  // above, which connects the registration it can now see.
+                  setNotice(
+                    result?.account
+                      ? "You're on the VALORANT leaderboard, and your account is connected."
+                      : "You're on the VALORANT leaderboard. Connect the account below to finish."
+                  );
+                  void refresh();
+                }}
               />
-            ) : null}
-          </div>
-        </>
+            </div>
+          )
+        ) : (
+          <div className="mt-6"><LoadingState title="Checking the VALORANT leaderboard" description="Looking for a registration under your Discord." /></div>
+        )
       )}
     </section>
-  );
-}
-
-function ResolvedAccountCard({
-  resolved,
-  linking,
-  onConfirm,
-  onReject,
-}: {
-  resolved: ResolvedGameAccount;
-  linking: boolean;
-  onConfirm: () => void;
-  onReject: () => void;
-}) {
-  const rank = resolved.preview?.currenttierpatched ?? resolved.preview?.current_tier ?? null;
-  const peak = resolved.preview?.peak_rank?.tier ?? null;
-  const lastPlayed = resolved.preview?.last_played_match ?? null;
-  const heldAsCurrent = resolved.linkedToYou && (!resolved.status || CURRENT_STATUSES.has(resolved.status));
-  // Only a real comparison that failed is a warning. Nothing to compare with —
-  // no Discord, no registration, a leaderboard that did not answer — is silence.
-  const leaderboardMismatch = resolved.leaderboard && !resolved.leaderboard.matches ? resolved.leaderboard : null;
-
-  return (
-    <div className="mt-4 border border-white/10 bg-white/[.03] p-4">
-      <p className="text-[10px] uppercase tracking-[0.22em] text-cyan-200/70">VALORANT account found</p>
-      <p className="mt-2 break-words [overflow-wrap:anywhere] text-lg text-white">{resolved.username}#{resolved.tagline}</p>
-      {/* Enough to recognise an account at a glance. A Riot ID one character off
-          belongs to somebody else, and these are how a player notices. */}
-      <dl className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-sm">
-        {resolved.region ? <div className="flex gap-1.5"><dt className="text-slate-500">Region</dt><dd className="uppercase text-slate-200">{resolved.region}</dd></div> : null}
-        {rank ? <div className="flex gap-1.5"><dt className="text-slate-500">Rank</dt><dd className="text-slate-200">{rank}</dd></div> : null}
-        {peak ? <div className="flex gap-1.5"><dt className="text-slate-500">Peak</dt><dd className="text-slate-200">{peak}</dd></div> : null}
-        {lastPlayed ? <div className="flex gap-1.5"><dt className="text-slate-500">Last match</dt><dd className="text-slate-200">{formatSriLankaDate(lastPlayed)}</dd></div> : null}
-      </dl>
-
-      {heldAsCurrent ? (
-        <p className="mt-4 text-sm text-emerald-100">This account is already connected to your profile.</p>
-      ) : resolved.linkedToYou ? (
-        <p className="mt-4 text-sm leading-6 text-slate-300">
-          You used this account before. Use Change account to move back to it — an admin approves the move.
-        </p>
-      ) : resolved.linkedElsewhere ? (
-        <p className="mt-4 text-sm leading-6 text-rose-100" role="alert">
-          {resolved.unclaimedRecord
-            ? "This VALORANT account belongs to an older Quest player record that is not connected to any account. Contact support so an admin can move it, and its history, to you."
-            : "This VALORANT account is already linked to another Quest account. If it is yours, contact support."}{" "}
-          <SupportHelpLink subject="Linked game account issue" />
-        </p>
-      ) : (
-        <>
-          {leaderboardMismatch ? (
-            <p className="mt-4 border border-amber-300/20 bg-amber-400/8 p-3 text-sm leading-6 text-amber-100" role="alert">
-              This is not the account your Discord is registered with on the leaderboard
-              {leaderboardMismatch.riotId ? ` (${leaderboardMismatch.riotId})` : ""}. Check it is yours before
-              connecting — your leaderboard entry will not move to it.
-            </p>
-          ) : null}
-          <p className="mt-4 text-sm leading-6 text-slate-400">
-            Is this your account? Connecting it records that you confirmed it — it does not prove ownership to Riot.
-          </p>
-          <div className="mt-4 flex flex-wrap gap-3">
-            <Button type="button" variant="secondary" disabled={linking} onClick={onConfirm}>
-              {linking ? "Connecting…" : "Connect account"}
-            </Button>
-            <Button type="button" variant="ghost" disabled={linking} onClick={onReject}>
-              Not my account
-            </Button>
-          </div>
-        </>
-      )}
-    </div>
   );
 }

@@ -513,6 +513,12 @@ export type ValorantRegistrationSubmitResult = {
     current_rank: string | null;
     elo: number | null;
   } | null;
+  /**
+   * The account registration connected on Quest. Null when the profile already
+   * held it, or when the leaderboard accepted the registration but Quest could
+   * not connect it — the profile then offers to connect it.
+   */
+  account?: { id: string; username: string | null; tagline: string | null } | null;
 };
 
 export type ValorantCheckPuuidResult = {

@@ -165,7 +165,7 @@ export function summarizeValorantConnection(
     return {
       state: "not_connected",
       label: "Not connected",
-      detail: "Connect your Riot ID to join team rosters and the VALORANT leaderboard.",
+      detail: "Register for the VALORANT leaderboard to connect your account and join team rosters.",
       riotId: null,
     };
   }

@@ -1,24 +1,7 @@
-import { Suspense } from "react";
-import PageLayout from "@/components/PageLayout";
-import ValorantRegistration from "@/components/valorant/ValorantRegistration";
-import { buildPageMetadata, defaultPageDescriptions } from "@/lib/site";
+import { redirect } from "next/navigation";
 
-export const metadata = buildPageMetadata({
-  title: "Valorant Leaderboard Registration",
-  description:
-    "Connect your Discord account and add your Valorant profile to Quest E-sports Sri Lanka's player leaderboard.",
-  path: "/valorant-leaderboard/register",
-});
-
+// Registering for the leaderboard is how a player connects VALORANT, so it
+// lives on the profile now. This address stays for links already shared.
 export default function ValorantLeaderboardRegisterPage() {
-  return (
-    <PageLayout
-      title="Valorant Leaderboard Registration"
-      description={defaultPageDescriptions.valorantLeaderboard}
-    >
-      <Suspense fallback={null}>
-        <ValorantRegistration />
-      </Suspense>
-    </PageLayout>
-  );
+  redirect("/profile?tab=account#valorant-account");
 }

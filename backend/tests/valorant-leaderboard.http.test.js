@@ -28,6 +28,9 @@ const leaderboardServicePath = path.join(__dirname, "../src/modules/valorant-lea
 const leaderboardClientPath = path.join(__dirname, "../src/modules/valorant-leaderboard/client.js");
 const prismaPath = path.join(__dirname, "../src/lib/prisma.js");
 const discordLinkPath = path.join(__dirname, "../src/modules/auth/discord-link.service.js");
+const gameAccountServicePath = path.join(__dirname, "../src/modules/game-accounts/game-account.service.js");
+const auditPath = path.join(__dirname, "../src/lib/audit.js");
+const loggerPath = path.join(__dirname, "../src/lib/logger.js");
 
 const pass = (_req, _res, next) => next();
 const controllerMock = new Proxy({}, { get: () => pass });
@@ -129,8 +132,36 @@ const buildMountedApp = () => {
       },
     },
   });
+  // Submitting also connects the account on Quest, so the real game-account
+  // service sits between the route and the leaderboard, over storage that
+  // holds nothing yet.
+  const linkedAccounts = [];
+  const gameAccountTx = {
+    player: {
+      findUnique: async () => null,
+      create: async ({ data }) => ({ ...data }),
+    },
+    gameAccount: {
+      create: async ({ data }) => {
+        linkedAccounts.push(data);
+        return { ...data, linkedAt: new Date() };
+      },
+    },
+  };
+  const { module: gameAccountService, restore: restoreGameAccountService } = loadModuleWithMocks(gameAccountServicePath, {
+    [leaderboardServicePath]: service,
+    [prismaPath]: {
+      prisma: {
+        gameAccount: { findFirst: async () => null, findUnique: async () => null },
+        $transaction: async (fn) => fn(gameAccountTx),
+      },
+    },
+    [auditPath]: { recordAuditInTransaction: async () => null, requestAuditContext: () => ({}) },
+    [loggerPath]: { logger: { info() {}, warn() {}, error() {} } },
+  });
   const { module: controller, restore: restoreController } = loadModuleWithMocks(leaderboardControllerPath, {
     [leaderboardServicePath]: service,
+    [gameAccountServicePath]: gameAccountService,
   });
   const { module: router, restore: restoreRouter } = loadModuleWithMocks(v1Path, {
     [envPath]: { env: { CACHE_TTL_SECONDS: 300, CHALLONGE_BRACKET_CACHE_SECONDS: 30 } },
@@ -188,11 +219,13 @@ const buildMountedApp = () => {
   return {
     server,
     upstreamCalls,
+    linkedAccounts,
     unlinkDiscord: () => { discordLinked = false; },
     restore: () => {
       server.close();
       restoreRouter();
       restoreController();
+      restoreGameAccountService();
       restoreService();
     },
   };
@@ -240,6 +273,9 @@ test("mounted registration routes enforce session, linked Discord, and derived i
           },
         },
       ]);
+      // Registering connected the same account on Quest.
+      assert.equal(linkedMounted.linkedAccounts.length, 1);
+      assert.equal(linkedMounted.linkedAccounts[0].externalId, "p-1");
 
       linkedMounted.unlinkDiscord();
       for (const endpoint of endpoints) {

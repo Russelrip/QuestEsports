@@ -69,6 +69,21 @@ describe("Valorant registration states", () => {
     expect(screen.getByRole("heading", { name: "Registration Successful!" })).toHaveFocus();
   });
 
+  it("hands the result to the profile instead of navigating away", async () => {
+    mocks.auth.user = linkedUser;
+    const result = { success: true, message: "Registered", player: null, account: { id: "acc-1", username: "Sahan", tagline: "QST" } };
+    mocks.submit.mockResolvedValue(result);
+    const onRegistered = vi.fn();
+    const user = userEvent.setup();
+    render(<ValorantRegistration onRegistered={onRegistered} />);
+    await user.type(await screen.findByLabelText("PUUID"), "p-1");
+    await user.click(screen.getByRole("button", { name: "Verify Player" }));
+    await user.click(await screen.findByRole("button", { name: "Add to Leaderboard" }));
+
+    await waitFor(() => expect(onRegistered).toHaveBeenCalledWith(result));
+    expect(mocks.router.push).not.toHaveBeenCalled();
+  });
+
   it("blocks preview and submit when Discord is not linked", () => {
     mocks.auth.user = { discordTag: "tag-only" };
     render(<ValorantRegistration />);

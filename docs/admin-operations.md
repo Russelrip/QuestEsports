@@ -597,13 +597,22 @@ profile, on every tab, shows the state (Not connected, Connected, Change
 pending, Needs attention) and a button that opens the panel on the Account tab.
 Other pages can link straight to it with `/profile?tab=account#valorant-account`.
 
-- **Leaderboard players** see the Riot ID their Discord is registered with and
-  connect it in one click. The server checks that this Riot ID still resolves
+- **Registering is connecting.** A player with nothing connected sees the
+  leaderboard registration steps on the profile: Discord, then the PUUID from
+  their Riot account page, then confirm. Submitting puts them on the leaderboard
+  **and** connects the account on Quest at "Confirmed, matches your Discord", so
+  team registration sees it. `/valorant-leaderboard/register` now redirects to
+  the profile.
+- Before touching the leaderboard, registration refuses a PUUID another Quest
+  account holds, and a profile already connected to a different account (that
+  player uses Change account). If the leaderboard accepts but the Quest side
+  fails, the player stays registered and the profile offers to connect it.
+- **Players who registered earlier** are on the leaderboard with no Quest
+  account. The profile shows the Riot ID their Discord is registered with and
+  connects it in one click, instead of the registration steps (which would stop
+  at "already registered"). The server checks that this Riot ID still resolves
   to the registered account (same PUUID). After a rename it may resolve to
-  someone else's account, and then the import is refused and the player enters
-  their current Riot ID.
-- **Looking up a Riot ID** warns the player if the account is not the one their
-  Discord is registered with on the leaderboard, before they connect it.
+  someone else's account, and then the connection is refused.
 - **A rename** (same PUUID, new name) refreshes the account with no request and
   no reason. **A different account** opens a change request that needs a reason.
 - **Pending requests** show the requested Riot ID, date and reason on the

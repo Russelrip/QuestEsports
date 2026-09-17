@@ -7,6 +7,7 @@ const { normalizeRiotId } = require("../valorant/valorant.validation");
 const { recordAuditInTransaction } = require("../../lib/audit");
 const {
   checkDiscord,
+  requireRegistrationDiscord,
   submitRegistration: submitLeaderboardRegistration,
 } = require("../valorant-leaderboard/service");
 const {
@@ -388,6 +389,133 @@ const importValorantAccountFromLeaderboard = async ({ userId, displayName, audit
   });
 };
 
+// Write the Quest side of a connection: the player row if this is their first
+// account, the account itself, and its audit row, in one transaction. Callers
+// decide what was established; this only records it.
+const createLinkedAccount = async ({ userId, displayName, identity, verificationStatus, audit }) =>
+  prisma.$transaction(async (tx) => {
+    const player = await ensurePlayerForUser(tx, { userId, displayName });
+    const account = await tx.gameAccount.create({
+      data: {
+        id: crypto.randomUUID(),
+        playerId: player.id,
+        game: VALORANT,
+        externalId: identity.externalId,
+        username: identity.username,
+        tagline: identity.tagline,
+        region: identity.region ?? null,
+        verificationStatus,
+        status: "active",
+        verifiedAt: new Date(),
+        lastSyncedAt: new Date(),
+      },
+    });
+
+    await recordAuditInTransaction(tx, {
+      ...audit,
+      action: "game_account.linked",
+      targetType: "GameAccount",
+      targetId: account.id,
+      beforeData: null,
+      afterData: {
+        game: VALORANT,
+        externalIdFingerprint: fingerprint(identity.externalId),
+        displayIdentity: `${identity.username}#${identity.tagline}`,
+        verificationStatus,
+        playerId: player.id,
+      },
+    });
+
+    return publicView(account);
+  });
+
+// Register on the VALORANT leaderboard and connect the same account on Quest.
+//
+// This is how a player connects VALORANT: the leaderboard registration asks for
+// a connected Discord and a PUUID copied from their own Riot account page. It
+// used to stop at the leaderboard, so the player was ranked but Quest still saw
+// no account — and team registration, which reads Quest's account, told their
+// captain they had none. Now one registration does both.
+//
+// The Quest conflicts are checked BEFORE the leaderboard is touched. Afterwards
+// is too late: the leaderboard would already point at an account Quest refuses
+// to connect, and the two would disagree from the first minute.
+const registerValorantAccount = async ({ userId, puuid, displayName, audit }) => {
+  // The leaderboard's own guard, first: somebody without a linked Discord is
+  // refused the same way at every registration step, before Quest looks at
+  // anything of theirs.
+  await requireRegistrationDiscord(userId);
+
+  const externalId = normalizeExternalId(puuid);
+  if (!externalId) {
+    throw new HttpError(400, "Enter your PUUID.");
+  }
+
+  const current = await prisma.gameAccount.findFirst({
+    where: {
+      game: VALORANT,
+      status: { in: [...CURRENT_STATUSES] },
+      player: { userId },
+    },
+    select: { externalId: true, username: true, tagline: true },
+  });
+
+  if (current && current.externalId !== externalId) {
+    const connected =
+      current.username && current.tagline ? `${current.username}#${current.tagline}` : "a different account";
+    throw new HttpError(
+      409,
+      `Your profile is already connected to ${connected}. Use Change account on your profile to move to a different account.`,
+    );
+  }
+
+  if (!current) {
+    const conflict = conflictFor(await describeExistingLink({ externalId, userId }));
+    if (conflict) throw conflict;
+  }
+
+  // Upstream errors (already registered, banned, not found) pass through
+  // unchanged: the registration form already knows how to explain each one.
+  const registration = await submitLeaderboardRegistration({ userId, puuid: String(puuid).trim() });
+
+  if (current) {
+    return { ...registration, account: null };
+  }
+
+  const registered = registration?.player || null;
+  const identity = {
+    externalId: normalizeExternalId(registered?.puuid || externalId),
+    username: registered?.name ?? null,
+    tagline: registered?.tag ?? null,
+    region: null,
+  };
+
+  try {
+    // `discord_corroborated`, the same rung an import from the leaderboard
+    // lands on: the leaderboard now pairs this Discord with this PUUID, which is
+    // exactly the agreement that state records. It is still not proof of
+    // ownership — a PUUID is not a secret.
+    const account = await createLinkedAccount({
+      userId,
+      displayName,
+      identity,
+      verificationStatus: "discord_corroborated",
+      audit,
+    });
+    return { ...registration, account };
+  } catch (error) {
+    // The registration committed upstream and cannot be taken back from here.
+    // Report the gap rather than fail a request that half-succeeded: the
+    // player is on the leaderboard, and their profile offers to connect the
+    // registration it can see.
+    logger.warn("Leaderboard registration succeeded but the Quest account was not connected.", {
+      code: error?.code || null,
+      externalIdFingerprint: fingerprint(identity.externalId),
+    });
+    return { ...registration, account: null };
+  }
+};
+
 // Link a resolved VALORANT account to the signed-in user.
 //
 // The client sends only the Riot ID: the PUUID is re-resolved server-side so a
@@ -425,41 +553,14 @@ const linkValorantAccount = async ({
   const verificationStatus = corroborated ? "discord_corroborated" : "user_confirmed";
 
   try {
-    const linked = await prisma.$transaction(async (tx) => {
-      const player = await ensurePlayerForUser(tx, { userId, displayName });
-      const account = await tx.gameAccount.create({
-        data: {
-          id: crypto.randomUUID(),
-          playerId: player.id,
-          game: VALORANT,
-          externalId: resolved.externalId,
-          username: resolved.username,
-          tagline: resolved.tagline,
-          region: resolved.region,
-          verificationStatus,
-          status: "active",
-          verifiedAt: new Date(),
-          lastSyncedAt: new Date(),
-        },
-      });
-
-      await recordAuditInTransaction(tx, {
-        ...audit,
-        action: "game_account.linked",
-        targetType: "GameAccount",
-        targetId: account.id,
-        beforeData: null,
-        afterData: {
-          game: VALORANT,
-          externalIdFingerprint: fingerprint(resolved.externalId),
-          displayIdentity: `${resolved.username}#${resolved.tagline}`,
-          verificationStatus,
-          playerId: player.id,
-        },
-      });
-
-      return { alreadyLinked: false, account: publicView(account) };
+    const account = await createLinkedAccount({
+      userId,
+      displayName,
+      identity: resolved,
+      verificationStatus,
+      audit,
     });
+    const linked = { alreadyLinked: false, account };
 
     // The leaderboard follows the connection rather than being asked for
     // separately. Deliberately outside the transaction: it is a call to another
@@ -615,6 +716,8 @@ const splitRiotId = (value) => {
 module.exports = {
   resolveValorantAccount,
   linkValorantAccount,
+  registerValorantAccount,
+  createLinkedAccount,
   registerOnLeaderboard,
   importValorantAccountFromLeaderboard,
   listGameAccountsForUser,
