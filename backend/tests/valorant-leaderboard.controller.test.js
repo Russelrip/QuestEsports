@@ -6,6 +6,7 @@ const { loadModuleWithMocks } = require("./helpers/load-module-with-mocks");
 
 const controllerPath = path.join(__dirname, "../src/modules/valorant-leaderboard/controller.js");
 const servicePath = path.join(__dirname, "../src/modules/valorant-leaderboard/service.js");
+const gameAccountServicePath = path.join(__dirname, "../src/modules/game-accounts/game-account.service.js");
 
 const makeRes = () => {
   const calls = { status: 200, json: undefined };
@@ -17,7 +18,11 @@ const makeRes = () => {
   return { res, calls };
 };
 
-const loadController = (serviceMock) => loadModuleWithMocks(controllerPath, { [servicePath]: serviceMock });
+const loadController = (serviceMock, gameAccountServiceMock = {}) =>
+  loadModuleWithMocks(controllerPath, {
+    [servicePath]: serviceMock,
+    [gameAccountServicePath]: gameAccountServiceMock,
+  });
 
 test("getLeaderboard wraps the mapped page in the Quest envelope", async () => {
   const serviceMock = {
@@ -148,15 +153,23 @@ test("submitRegistration ignores forged Discord identity fields", async () => {
     listLeaderboard: async () => ({}),
     searchLeaderboardPlayers: async () => [],
     ...noopServices,
-    submitRegistration: async (input) => {
+  };
+  // Registering also connects the account on Quest, so the controller goes
+  // through the game-account service, which resolves Discord itself.
+  const gameAccountServiceMock = {
+    registerValorantAccount: async (input) => {
       seenInput = input;
-      return { success: true, message: "Registered", player: { puuid: "p-1" } };
+      return { success: true, message: "Registered", player: { puuid: "p-1" }, account: null };
     },
   };
-  const { module: controller } = loadController(serviceMock);
+  const { module: controller } = loadController(serviceMock, gameAccountServiceMock);
   const { res, calls } = makeRes();
-  await controller.submitRegistration({ user: { id: "user-1" }, body }, res);
-  assert.deepEqual(seenInput, { userId: "user-1", puuid: "p-1" });
+  await controller.submitRegistration({ user: { id: "user-1", username: "russel" }, body, headers: {} }, res);
+  assert.equal(seenInput.userId, "user-1");
+  assert.equal(seenInput.puuid, "p-1");
+  assert.equal(seenInput.displayName, "russel");
+  assert.equal(JSON.stringify(seenInput).includes("sahan"), false);
+  assert.equal(JSON.stringify(seenInput).includes("\"123\""), false);
   assert.equal(calls.json.data.success, true);
   assert.equal(calls.json.data.player.puuid, "p-1");
 });

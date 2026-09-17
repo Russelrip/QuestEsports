@@ -11,30 +11,17 @@ import { isValidRiotId } from "../../components/auth/GameAccountsPanel";
 
 const mocks = vi.hoisted(() => ({
   getMyGameAccounts: vi.fn(),
-  resolveValorantAccount: vi.fn(),
-  linkValorantAccount: vi.fn(),
   requestValorantChange: vi.fn(),
   getMyValorantLeaderboardRegistration: vi.fn(),
 }));
+
+vi.mock("@/components/valorant/ValorantRegistration", () => ({ default: () => null }));
 
 vi.mock("@/lib/game-accounts", async () => {
   const actual = await vi.importActual<typeof import("../../lib/game-accounts")>(
     "../../lib/game-accounts",
   );
   return { ...actual, ...mocks };
-});
-
-const resolved = (overrides = {}) => ({
-  game: "valorant" as const,
-  username: "Russel",
-  tagline: "1234",
-  region: "ap",
-  verification: "resolved" as const,
-  preview: null,
-  available: true,
-  linkedToYou: false,
-  linkedElsewhere: false,
-  ...overrides,
 });
 
 beforeEach(() => {
@@ -81,120 +68,7 @@ describe("verification wording", () => {
   });
 });
 
-describe("linking flow", () => {
-  it("does not call the API for a malformed Riot ID", async () => {
-    const user = userEvent.setup();
-    render(<GameAccountsPanel />);
-    await screen.findByLabelText("Riot ID");
-
-    await user.type(screen.getByLabelText("Riot ID"), "Russel");
-
-    expect(await screen.findByText("Enter your Riot ID as Name#Tag.")).toBeTruthy();
-    // Malformed input must never spend the shared upstream budget.
-    expect(mocks.resolveValorantAccount).not.toHaveBeenCalled();
-  });
-
-  it("shows the found account and asks the user to confirm it", async () => {
-    mocks.resolveValorantAccount.mockResolvedValue(resolved());
-    const user = userEvent.setup();
-    render(<GameAccountsPanel />);
-    await screen.findByLabelText("Riot ID");
-
-    await user.type(screen.getByLabelText("Riot ID"), "Russel#1234");
-
-    expect(await screen.findByText("Russel#1234")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Connect account" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Not my account" })).toBeTruthy();
-  });
-
-  it("tells the user plainly that confirming is not proof of ownership", async () => {
-    mocks.resolveValorantAccount.mockResolvedValue(resolved());
-    const user = userEvent.setup();
-    render(<GameAccountsPanel />);
-    await screen.findByLabelText("Riot ID");
-
-    await user.type(screen.getByLabelText("Riot ID"), "Russel#1234");
-    await screen.findByText("Russel#1234");
-
-    expect(screen.getByText(/does not prove ownership to Riot/i)).toBeTruthy();
-  });
-
-  it("refuses an account already linked elsewhere without naming the holder", async () => {
-    mocks.resolveValorantAccount.mockResolvedValue(
-      resolved({ available: false, linkedElsewhere: true }),
-    );
-    const user = userEvent.setup();
-    render(<GameAccountsPanel />);
-    await screen.findByLabelText("Riot ID");
-
-    await user.type(screen.getByLabelText("Riot ID"), "Russel#1234");
-
-    expect(await screen.findByText(/already linked to another Quest account/i)).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Connect account" })).toBeNull();
-  });
-
-  it("surfaces an unavailable provider as a retry, not as a missing account", async () => {
-    mocks.resolveValorantAccount.mockRejectedValue(
-      new Error("We couldn't verify this account right now. Please try again shortly."),
-    );
-    const user = userEvent.setup();
-    render(<GameAccountsPanel />);
-    await screen.findByLabelText("Riot ID");
-
-    await user.type(screen.getByLabelText("Riot ID"), "Russel#1234");
-
-    const message = await screen.findByRole("alert");
-    expect(message.textContent).toMatch(/try again shortly/i);
-    expect(message.textContent).not.toMatch(/not found|does not exist/i);
-  });
-
-  it("links the account and shows its state", async () => {
-    mocks.resolveValorantAccount.mockResolvedValue(resolved());
-    mocks.linkValorantAccount.mockResolvedValue({
-      id: "account-1",
-      game: "valorant",
-      username: "Russel",
-      tagline: "1234",
-      region: "ap",
-      verificationStatus: "user_confirmed",
-      status: "active",
-      linkedAt: null,
-      verifiedAt: null,
-      lastSyncedAt: null,
-    });
-    const user = userEvent.setup();
-    render(<GameAccountsPanel />);
-    await screen.findByLabelText("Riot ID");
-
-    await user.type(screen.getByLabelText("Riot ID"), "Russel#1234");
-    await screen.findByText("Russel#1234");
-
-    mocks.getMyGameAccounts.mockResolvedValue({
-      playerPublicId: "QPID-000001",
-      accounts: [
-        {
-          id: "account-1",
-          game: "valorant",
-          username: "Russel",
-          tagline: "1234",
-          region: "ap",
-          verificationStatus: "user_confirmed",
-          status: "active",
-          linkedAt: null,
-          verifiedAt: null,
-          lastSyncedAt: null,
-        },
-      ],
-    });
-
-    await user.click(screen.getByRole("button", { name: "Connect account" }));
-
-    await waitFor(() => {
-      expect(screen.getByText("Confirmed by you")).toBeTruthy();
-    });
-    expect(mocks.linkValorantAccount).toHaveBeenCalledWith("Russel#1234");
-  });
-
+describe("connected account", () => {
   it("shows a locked account as locked and explains why", async () => {
     mocks.getMyGameAccounts.mockResolvedValue({
       playerPublicId: "QPID-000001",

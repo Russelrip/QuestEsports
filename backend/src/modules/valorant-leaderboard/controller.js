@@ -17,8 +17,8 @@ const {
   searchLeaderboardPlayers,
   checkPuuid: serviceCheckPuuid,
   previewRegistration: servicePreviewRegistration,
-  submitRegistration: serviceSubmitRegistration,
 } = require("./service");
+const { registerValorantAccount } = require("../game-accounts/game-account.service");
 
 const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
 
@@ -64,10 +64,14 @@ const previewRegistration = asyncHandler(async (req, res) => {
   respond(res, data);
 });
 
+// Registering is how a player connects VALORANT, so the same request connects
+// the account on Quest as well as putting it on the leaderboard.
 const submitRegistration = asyncHandler(async (req, res) => {
-  const data = await serviceSubmitRegistration({
+  const data = await registerValorantAccount({
     userId: req.user.id,
     puuid: String(req.body?.puuid || ""),
+    displayName: req.user.username || req.user.firstName || "Player",
+    audit: requestAuditContext(req),
   });
   respond(res, data);
 });

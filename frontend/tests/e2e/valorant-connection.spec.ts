@@ -18,7 +18,9 @@ const user = {
 
 type GameAccountsFixture = { accounts: object[]; changeRequest: object | null };
 
-async function mockProfileApi(page: Page, gameAccounts: GameAccountsFixture) {
+const onLeaderboard = { riotId: "QT Russel#Senu", linkedToYou: false, linkedElsewhere: false, unclaimedRecord: false };
+
+async function mockProfileApi(page: Page, gameAccounts: GameAccountsFixture, leaderboardRegistration: object | null = onLeaderboard) {
   await page.route("**/api/**", async (route) => {
     const pathname = new URL(route.request().url()).pathname;
     let payload: object;
@@ -32,7 +34,7 @@ async function mockProfileApi(page: Page, gameAccounts: GameAccountsFixture) {
         data: {
           discordConnected: true,
           unavailable: false,
-          registration: { riotId: "QT Russel#Senu", linkedToYou: false, linkedElsewhere: false, unclaimedRecord: false },
+          registration: leaderboardRegistration,
         },
       };
     } else return route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ success: false }) });
@@ -68,6 +70,29 @@ test("a player with nothing connected is sent straight to the leaderboard accoun
   await expectNoHorizontalOverflow(page);
   await page.waitForTimeout(600);
   await capture(page, "not-connected-panel");
+});
+
+test("a player who has never registered gets the registration steps on the profile", async ({ page }) => {
+  await mockProfileApi(page, { accounts: [], changeRequest: null }, null);
+  await page.setViewportSize({ width: 320, height: 568 });
+  await openPage(page, "/profile?tab=account#valorant-account");
+
+  // The fixture user has no Discord connected, so the steps start there.
+  await expect(page.getByRole("heading", { name: "Connect Your Discord Account" })).toBeVisible();
+  await expect(page.getByText("PUUID", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Riot ID")).toHaveCount(0);
+  await expectNoHorizontalOverflow(page);
+  // The profile card clips what overflows it, so the page check alone would
+  // miss a panel wider than its card.
+  await expect.poll(() => page.locator("#valorant-account").evaluate((panel) => panel.scrollWidth <= panel.clientWidth)).toBe(true);
+  await page.getByRole("heading", { name: "Connect Your Discord Account" }).scrollIntoViewIfNeeded();
+  await capture(page, "registration-steps");
+});
+
+test("the old registration address sends players to the profile", async ({ page }) => {
+  await mockProfileApi(page, { accounts: [], changeRequest: null }, null);
+  await openPage(page, "/valorant-leaderboard/register");
+  await expect(page).toHaveURL(/\/profile\?tab=account/);
 });
 
 test("a pending change is readable from the header and withdrawable in the panel", async ({ page }) => {

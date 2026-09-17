@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import GameAccountsPanel from "../../components/auth/GameAccountsPanel";
@@ -7,18 +7,29 @@ const mocks = vi.hoisted(() => ({
   list: { playerPublicId: "QPID-1", accounts: [] as unknown[], changeRequest: null as unknown },
   getMyValorantLeaderboardRegistration: vi.fn(),
   importValorantFromLeaderboard: vi.fn(),
-  linkValorantAccount: vi.fn(),
-  resolveValorantAccount: vi.fn(),
   requestValorantChange: vi.fn(),
   withdrawValorantChange: vi.fn(),
+  registrationResult: { success: true, message: "Registered", player: null, account: { id: "acc-1", username: "QT Russel", tagline: "Senu" } } as unknown,
+}));
+
+// The registration steps have their own tests. Here they are a stand-in that
+// can finish, so the panel's side of the hand-off is what is exercised.
+vi.mock("@/components/valorant/ValorantRegistration", () => ({
+  default: ({ onRegistered }: { onRegistered?: (result: unknown) => void }) => (
+    <div>
+      <p>Registration steps</p>
+      <button type="button" onClick={() => onRegistered?.(mocks.registrationResult)}>Finish registration</button>
+    </div>
+  ),
 }));
 
 vi.mock("@/lib/game-accounts", async () => {
   const actual = await vi.importActual<typeof import("../../lib/game-accounts")>(
     "../../lib/game-accounts",
   );
-  const { list, ...rest } = mocks;
+  const { list, registrationResult, ...rest } = mocks;
   void list;
+  void registrationResult;
   return {
     ...actual,
     ...rest,
@@ -40,20 +51,6 @@ const valorantAccount = (overrides = {}) => ({
   ...overrides,
 });
 
-const resolved = (overrides = {}) => ({
-  game: "valorant" as const,
-  username: "Russel",
-  tagline: "1234",
-  region: "ap",
-  verification: "resolved" as const,
-  preview: null,
-  available: true,
-  linkedToYou: false,
-  linkedElsewhere: false,
-  leaderboard: null,
-  ...overrides,
-});
-
 const registration = (overrides = {}) => ({
   discordConnected: true,
   unavailable: false,
@@ -69,6 +66,12 @@ const registration = (overrides = {}) => ({
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.list = { playerPublicId: "QPID-1", accounts: [], changeRequest: null };
+  mocks.registrationResult = {
+    success: true,
+    message: "Registered",
+    player: null,
+    account: { id: "acc-1", username: "QT Russel", tagline: "Senu" },
+  };
   mocks.getMyValorantLeaderboardRegistration.mockResolvedValue({
     discordConnected: true,
     unavailable: false,
@@ -78,40 +81,65 @@ beforeEach(() => {
 
 afterEach(() => cleanup());
 
-describe("connecting from the leaderboard", () => {
-  // The import used to be a blind "Import from leaderboard" button. A player
-  // could not tell which account it would connect until it had.
+describe("connecting an account", () => {
+  // Registering for the leaderboard is how a player connects VALORANT, and it
+  // happens here on the profile.
 
-  it("names the leaderboard account before offering to connect it", async () => {
+  it("shows the registration steps to a player with nothing connected", async () => {
+    render(<GameAccountsPanel />);
+
+    expect(await screen.findByText("Registration steps")).toBeInTheDocument();
+    // The Riot ID form it replaced is gone.
+    expect(screen.queryByLabelText("Riot ID")).not.toBeInTheDocument();
+  });
+
+  it("still shows the registration steps when the leaderboard lookup fails", async () => {
+    mocks.getMyValorantLeaderboardRegistration.mockRejectedValue(new Error("down"));
+    render(<GameAccountsPanel />);
+
+    expect(await screen.findByText("Registration steps")).toBeInTheDocument();
+  });
+
+  it("does not flash the registration steps before the leaderboard has answered", async () => {
+    mocks.getMyValorantLeaderboardRegistration.mockReturnValue(new Promise(() => undefined));
+    render(<GameAccountsPanel />);
+
+    expect(await screen.findByText("Checking the VALORANT leaderboard")).toBeInTheDocument();
+    expect(screen.queryByText("Registration steps")).not.toBeInTheDocument();
+  });
+
+  it("shows the connected account once registration finishes", async () => {
+    const user = userEvent.setup();
+    render(<GameAccountsPanel />);
+
+    mocks.list = { ...mocks.list, accounts: [valorantAccount()] };
+    await user.click(await screen.findByRole("button", { name: "Finish registration" }));
+
+    expect(await screen.findByText(/your account is connected/i)).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Change account" })).toBeInTheDocument();
+  });
+
+  it("says what is left when registration could not connect the account too", async () => {
+    mocks.registrationResult = { success: true, message: "Registered", player: null, account: null };
+    const user = userEvent.setup();
+    render(<GameAccountsPanel />);
+
+    await user.click(await screen.findByRole("button", { name: "Finish registration" }));
+
+    expect(await screen.findByText(/Connect the account below to finish/i)).toBeInTheDocument();
+  });
+
+  it("offers an existing leaderboard registration by name instead of registering again", async () => {
+    // Registering again would stop them at "already registered".
     mocks.getMyValorantLeaderboardRegistration.mockResolvedValue(registration());
     mocks.importValorantFromLeaderboard.mockResolvedValue(valorantAccount());
     const user = userEvent.setup();
     render(<GameAccountsPanel />);
 
-    const connect = await screen.findByRole("button", { name: "Connect Russel#1234" });
-    await user.click(connect);
+    await user.click(await screen.findByRole("button", { name: "Connect Russel#1234" }));
 
     expect(mocks.importValorantFromLeaderboard).toHaveBeenCalledTimes(1);
-  });
-
-  it("offers nothing when the leaderboard has no registration", async () => {
-    render(<GameAccountsPanel />);
-    await screen.findByLabelText("Riot ID");
-    await waitFor(() => expect(mocks.getMyValorantLeaderboardRegistration).toHaveBeenCalled());
-
-    expect(screen.queryByText(/Found on the VALORANT leaderboard/i)).not.toBeInTheDocument();
-    expect(screen.getByText("Connect with your Riot ID")).toBeInTheDocument();
-  });
-
-  it("lets the player pick a different account instead", async () => {
-    mocks.getMyValorantLeaderboardRegistration.mockResolvedValue(registration());
-    const user = userEvent.setup();
-    render(<GameAccountsPanel />);
-
-    await user.click(await screen.findByRole("button", { name: "Use a different account" }));
-
-    expect(screen.queryByRole("button", { name: /Connect Russel#1234/ })).not.toBeInTheDocument();
-    expect(screen.getByLabelText("Riot ID")).toBeInTheDocument();
+    expect(screen.queryByText("Registration steps")).not.toBeInTheDocument();
   });
 
   it("explains a registration held by an unowned player record instead of offering it", async () => {
@@ -122,6 +150,7 @@ describe("connecting from the leaderboard", () => {
 
     expect(await screen.findByText(/older Quest player record/i)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Connect Russel#1234/ })).not.toBeInTheDocument();
+    expect(screen.queryByText("Registration steps")).not.toBeInTheDocument();
   });
 
   it("does not look the leaderboard up once an account is connected", async () => {
@@ -130,16 +159,7 @@ describe("connecting from the leaderboard", () => {
 
     await screen.findByRole("button", { name: "Change account" });
     expect(mocks.getMyValorantLeaderboardRegistration).not.toHaveBeenCalled();
-  });
-
-  it("does not flash an offer before the accounts have loaded", () => {
-    mocks.getMyValorantLeaderboardRegistration.mockResolvedValue(registration());
-    mocks.list = { ...mocks.list, accounts: [valorantAccount()] };
-    render(<GameAccountsPanel />);
-
-    // Appearing and then vanishing under the cursor is worse than never
-    // appearing: it invites a click on something about to become wrong.
-    expect(screen.queryByRole("button", { name: /Connect Russel#1234/ })).not.toBeInTheDocument();
+    expect(screen.queryByText("Registration steps")).not.toBeInTheDocument();
   });
 });
 
@@ -207,51 +227,5 @@ describe("connection state", () => {
 
     expect(await screen.findByText("Needs attention")).toBeInTheDocument();
     expect(screen.getByText(/That account is on another roster/)).toBeInTheDocument();
-  });
-});
-
-describe("confirming a looked-up account", () => {
-  const lookUp = async (overrides = {}, typed = "Russel#1234") => {
-    mocks.resolveValorantAccount.mockResolvedValue(resolved(overrides));
-    const user = userEvent.setup();
-    render(<GameAccountsPanel />);
-    await user.type(await screen.findByLabelText("Riot ID"), typed);
-    await screen.findByText("VALORANT account found");
-    return user;
-  };
-
-  it("warns when the account is not the one registered on the leaderboard", async () => {
-    await lookUp({ leaderboard: { matches: false, riotId: "MyMain#0001" } });
-
-    expect(screen.getByText(/not the account your Discord is registered with/i)).toBeInTheDocument();
-    expect(screen.getByText(/MyMain#0001/)).toBeInTheDocument();
-  });
-
-  it("stays quiet when there is nothing to compare with", async () => {
-    await lookUp({ leaderboard: null });
-    expect(screen.queryByText(/not the account your Discord is registered with/i)).not.toBeInTheDocument();
-  });
-
-  it("explains an account on an unowned player record without offering to connect it", async () => {
-    await lookUp({ available: false, linkedElsewhere: true, unclaimedRecord: true });
-
-    expect(screen.getByText(/older Quest player record/i)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Connect account" })).not.toBeInTheDocument();
-  });
-
-  it("does not call a previously used account 'already connected'", async () => {
-    await lookUp({ available: false, linkedToYou: true, status: "replaced" });
-
-    expect(screen.getByText(/You used this account before/i)).toBeInTheDocument();
-    expect(screen.queryByText(/already connected to your profile/i)).not.toBeInTheDocument();
-  });
-
-  it("connects the account shown on the card, not the text as typed", async () => {
-    mocks.linkValorantAccount.mockResolvedValue(valorantAccount({ username: "Russel", tagline: "1234" }));
-    const user = await lookUp({}, "russel#1234");
-
-    await user.click(screen.getByRole("button", { name: "Connect account" }));
-
-    expect(mocks.linkValorantAccount).toHaveBeenCalledWith("Russel#1234");
   });
 });

@@ -29,6 +29,7 @@ const loadService = ({
   existingPlayer = null,
   createFails = null,
   leaderboardServiceOverride = null,
+  currentAccount = null,
 } = {}) => {
   const state = { created: [], players: [], audits: [] };
 
@@ -60,7 +61,10 @@ const loadService = ({
     [leaderboardServicePath]: leaderboardServiceOverride || { checkDiscord },
     [prismaPath]: {
       prisma: {
-        gameAccount: { findUnique: async () => existingAccount },
+        gameAccount: {
+          findUnique: async () => existingAccount,
+          findFirst: async () => currentAccount,
+        },
         oAuthAccount: { findFirst: async () => discordAccount },
         player: { findUnique: async () => existingPlayer },
         $transaction: async (fn) => fn(tx),
@@ -822,6 +826,183 @@ test("the profile shows a pending request, and a decision only while it is recen
     );
     assert.equal(service.visibleChangeRequest({ ...base, status: "withdrawn" }, now), null);
     assert.equal(service.visibleChangeRequest(null, now), null);
+  } finally {
+    restore();
+  }
+});
+
+// Registering on the leaderboard is how a player connects VALORANT, so the same
+// step connects the account on Quest. Before, a registered player was ranked
+// but had no Quest account, and team registration said so.
+
+const registrationLeaderboard = (overrides = {}) => {
+  const calls = { guard: 0, submitted: [] };
+  const service = {
+    checkDiscord: async () => ({ exists: false }),
+    requireRegistrationDiscord: async () => {
+      calls.guard += 1;
+      return { discordId: "discord-123", discordUsername: "russel" };
+    },
+    submitRegistration: async (input) => {
+      calls.submitted.push(input);
+      return {
+        success: true,
+        message: "Registered",
+        player: { puuid: "puuid-abc", name: "Russel", tag: "1234", current_rank: "Gold 2", elo: 1200 },
+      };
+    },
+    ...overrides,
+  };
+  return { service, calls };
+};
+
+test("registering connects the same account on Quest", async () => {
+  const leaderboard = registrationLeaderboard();
+  const { module: service, restore, state } = loadService({ leaderboardServiceOverride: leaderboard.service });
+  try {
+    const result = await service.registerValorantAccount({
+      userId: "user-1",
+      puuid: "  puuid-abc  ",
+      displayName: "Russel",
+      audit: AUDIT,
+    });
+
+    assert.deepEqual(leaderboard.calls.submitted, [{ userId: "user-1", puuid: "puuid-abc" }]);
+    assert.equal(result.success, true);
+    assert.equal(result.account.username, "Russel");
+    const [created] = state.created;
+    assert.equal(created.externalId, "puuid-abc");
+    assert.equal(created.tagline, "1234");
+    // The leaderboard now pairs this Discord with this PUUID: the same agreement
+    // an import records, and no more than that.
+    assert.equal(created.verificationStatus, "discord_corroborated");
+    assert.equal(state.audits[0].action, "game_account.linked");
+  } finally {
+    restore();
+  }
+});
+
+test("a player without a linked Discord is refused before anything else happens", async () => {
+  const refused = Object.assign(new Error("Link a Discord account first."), {
+    statusCode: 403,
+    code: "DISCORD_LINK_REQUIRED",
+  });
+  const leaderboard = registrationLeaderboard({
+    requireRegistrationDiscord: async () => {
+      throw refused;
+    },
+  });
+  const { module: service, restore, state } = loadService({
+    leaderboardServiceOverride: leaderboard.service,
+    currentAccount: { externalId: "puuid-other", username: "Other", tagline: "0001" },
+  });
+  try {
+    await assert.rejects(
+      () => service.registerValorantAccount({ userId: "user-1", puuid: "puuid-abc", audit: AUDIT }),
+      (error) => error === refused,
+    );
+    assert.equal(leaderboard.calls.submitted.length, 0);
+    assert.equal(state.created.length, 0);
+  } finally {
+    restore();
+  }
+});
+
+test("a profile already connected to another account is refused before the leaderboard changes", async () => {
+  const leaderboard = registrationLeaderboard();
+  const { module: service, restore, state } = loadService({
+    leaderboardServiceOverride: leaderboard.service,
+    currentAccount: { externalId: "puuid-main", username: "MyMain", tagline: "0001" },
+  });
+  try {
+    await assert.rejects(
+      () => service.registerValorantAccount({ userId: "user-1", puuid: "puuid-abc", audit: AUDIT }),
+      (error) => {
+        assert.equal(error.statusCode, 409);
+        assert.match(error.message, /MyMain#0001/);
+        assert.match(error.message, /Change account/);
+        return true;
+      },
+    );
+    // Otherwise the leaderboard and the profile would disagree from the start.
+    assert.equal(leaderboard.calls.submitted.length, 0);
+    assert.equal(state.created.length, 0);
+  } finally {
+    restore();
+  }
+});
+
+test("an account another Quest user holds is refused before the leaderboard changes", async () => {
+  const leaderboard = registrationLeaderboard();
+  const { module: service, restore, state } = loadService({
+    leaderboardServiceOverride: leaderboard.service,
+    existingAccount: {
+      id: "account-9",
+      status: "active",
+      verificationStatus: "user_confirmed",
+      player: { userId: "another-user" },
+    },
+  });
+  try {
+    await assert.rejects(
+      () => service.registerValorantAccount({ userId: "user-1", puuid: "puuid-abc", audit: AUDIT }),
+      (error) => error.statusCode === 409 && error.message === service.LINKED_ELSEWHERE_MESSAGE,
+    );
+    assert.equal(leaderboard.calls.submitted.length, 0);
+    assert.equal(state.created.length, 0);
+  } finally {
+    restore();
+  }
+});
+
+test("registering the account a profile already holds adds nothing on Quest", async () => {
+  const leaderboard = registrationLeaderboard();
+  const { module: service, restore, state } = loadService({
+    leaderboardServiceOverride: leaderboard.service,
+    currentAccount: { externalId: "puuid-abc", username: "Russel", tagline: "1234" },
+  });
+  try {
+    const result = await service.registerValorantAccount({ userId: "user-1", puuid: "puuid-abc", audit: AUDIT });
+    assert.equal(leaderboard.calls.submitted.length, 1);
+    assert.equal(result.account, null);
+    assert.equal(state.created.length, 0);
+  } finally {
+    restore();
+  }
+});
+
+test("a leaderboard refusal reaches the player unchanged and connects nothing", async () => {
+  const banned = Object.assign(new Error("This account is banned."), { status: 403 });
+  const leaderboard = registrationLeaderboard({
+    submitRegistration: async () => {
+      throw banned;
+    },
+  });
+  const { module: service, restore, state } = loadService({ leaderboardServiceOverride: leaderboard.service });
+  try {
+    await assert.rejects(
+      () => service.registerValorantAccount({ userId: "user-1", puuid: "puuid-abc", audit: AUDIT }),
+      (error) => error === banned,
+    );
+    assert.equal(state.created.length, 0);
+  } finally {
+    restore();
+  }
+});
+
+test("a registration that succeeded is not failed by the Quest write that follows", async () => {
+  const leaderboard = registrationLeaderboard();
+  const duplicate = Object.assign(new Error("unique constraint"), { code: "P2002" });
+  const { module: service, restore } = loadService({
+    leaderboardServiceOverride: leaderboard.service,
+    createFails: duplicate,
+  });
+  try {
+    // The player is on the leaderboard and that cannot be undone from here, so
+    // the request reports it rather than claiming the whole thing failed.
+    const result = await service.registerValorantAccount({ userId: "user-1", puuid: "puuid-abc", audit: AUDIT });
+    assert.equal(result.success, true);
+    assert.equal(result.account, null);
   } finally {
     restore();
   }

@@ -3,12 +3,9 @@
 import { SRI_LANKA_TIME_ZONE } from "@/lib/date-time";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import type { ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
 import { buttonClassName } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { Container } from "@/components/ui/container";
 import { Input } from "@/components/ui/input";
 import { LoadingState } from "@/components/ui/loading-state";
 import { cn } from "@/lib/utils";
@@ -16,6 +13,7 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { getProviderLinkUrl } from "@/lib/account-linking";
 import type {
   ValorantRegistrationPreview,
+  ValorantRegistrationSubmitResult,
 } from "@/lib/valorant";
 import {
   checkPuuidRegistered,
@@ -101,8 +99,17 @@ const messageForRegistrationError = (error: unknown, fallback: string): string =
   return error.message || fallback;
 };
 
-export default function ValorantRegistration() {
-  const router = useRouter();
+/**
+ * How a player connects VALORANT: Discord, then the PUUID from their own Riot
+ * account page, then confirm. It lives on the profile, and registering both
+ * puts the player on the leaderboard and connects the account on Quest.
+ */
+export default function ValorantRegistration({
+  onRegistered,
+}: {
+  /** Called once registration succeeds, so the profile can show the connected account. */
+  onRegistered?: (result: ValorantRegistrationSubmitResult) => void;
+} = {}) {
   const { user, isLoading: authLoading } = useAuth();
 
   const [step, setStep] = useState(0);
@@ -116,19 +123,11 @@ export default function ValorantRegistration() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
-  const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const successHeadingRef = useRef<HTMLHeadingElement>(null);
   const discordIdRef = useRef<string | null>(discordId);
   const previewDiscordIdRef = useRef<string | null>(null);
   const requestRef = useRef(0);
   discordIdRef.current = discordId;
-
-  // Clear the pending redirect timer if the component unmounts.
-  useEffect(() => {
-    return () => {
-      if (redirectTimerRef.current) clearTimeout(redirectTimerRef.current);
-    };
-  }, []);
 
   useEffect(() => {
     if (!discordId) {
@@ -193,11 +192,11 @@ export default function ValorantRegistration() {
   };
 
   if (authLoading) {
-    return <div role="status" aria-live="polite"><Container className="py-10 sm:py-14"><LoadingState title="Loading registration" description="Checking your Quest account and connected Discord." /></Container></div>;
+    return <div role="status" aria-live="polite"><LoadingState title="Loading registration" description="Checking your Quest account and connected Discord." /></div>;
   }
 
   if (!user) {
-    return <Container className="py-10 sm:py-14"><Card className="mx-auto max-w-xl p-8 text-center"><h2 className="text-xl font-semibold text-white">Sign in to register</h2><p className="mt-2 text-sm text-slate-400">A Quest account is required before you can add a player to the leaderboard.</p><Link href="/login?redirect=%2Fvalorant-leaderboard%2Fregister" className={buttonClassName({ variant: "primary", size: "lg" })}>Sign in to continue</Link></Card></Container>;
+    return <div className="border border-white/8 bg-white/[.02] p-8 text-center"><h2 className="text-xl font-semibold text-white">Sign in to register</h2><p className="mt-2 text-sm text-slate-400">A Quest account is required before you can add a player to the leaderboard.</p><Link href="/login?redirect=%2Fprofile%3Ftab%3Daccount" className={buttonClassName({ variant: "primary", size: "lg", className: "mt-5" })}>Sign in to continue</Link></div>;
   }
 
   const handleFinalSubmit = async () => {
@@ -207,14 +206,12 @@ export default function ValorantRegistration() {
     setLoading(true);
     setError(null);
     try {
-      await submitValorantRegistration({
+      const result = await submitValorantRegistration({
         puuid: preview.puuid,
       });
       if (requestId !== requestRef.current || discordIdRef.current !== linkedDiscordId) return;
       setSuccess(true);
-      redirectTimerRef.current = setTimeout(() => {
-        router.push("/valorant-leaderboard");
-      }, 3000);
+      onRegistered?.(result);
     } catch (submitError) {
       if (requestId !== requestRef.current || discordIdRef.current !== linkedDiscordId) return;
       setError(messageForRegistrationError(submitError, "Registration failed. Please try again."));
@@ -225,9 +222,9 @@ export default function ValorantRegistration() {
 
   if (success) {
     return (
-      <Container className="py-10 sm:py-14">
-        <div className="mx-auto w-full max-w-xl">
-          <Card className="p-10 text-center" role="status" aria-live="polite">
+      <div>
+        <div>
+          <div className="border border-emerald-300/20 bg-emerald-400/[.05] p-8 text-center" role="status" aria-live="polite">
             <svg
               viewBox="0 0 24 24"
               className="mx-auto mb-5 size-14 text-emerald-400"
@@ -240,29 +237,26 @@ export default function ValorantRegistration() {
             </svg>
             <h2 ref={successHeadingRef} tabIndex={-1} className="text-2xl font-semibold text-white">Registration Successful!</h2>
             <p className="mx-auto mt-3 max-w-md text-sm text-slate-400">
-              Welcome to the Quest E-sports Valorant leaderboard — you&apos;ve been added.
+              You&apos;re on the Quest E-sports VALORANT leaderboard, and this account is now connected to your profile.
             </p>
-            <p className="mt-4 text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">
-              Redirecting to leaderboard...
-            </p>
-          </Card>
+          </div>
         </div>
-      </Container>
+      </div>
     );
   }
 
   return (
-    <Container className="py-10 sm:py-14">
-      <div className="mx-auto w-full max-w-2xl space-y-6">
+    <div className="min-w-0">
+      <div className="min-w-0 space-y-6">
         {/* Step indicator */}
-        <div className="flex items-center justify-center">
+        <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-2 sm:gap-x-0">
           {STEPS.map((label, index) => {
             const active = index === step;
             const done = index < step;
             return (
               <div key={label} className="flex items-center">
                 {index > 0 && (
-                  <span className={cn("mx-3 h-px w-8", done || active ? "bg-purple-300/40" : "bg-white/10")} />
+                  <span className={cn("hidden h-px sm:mx-3 sm:block sm:w-8", done || active ? "bg-purple-300/40" : "bg-white/10")} />
                 )}
                 <div className={cn("flex items-center gap-2", active ? "text-white" : done ? "text-purple-200" : "text-slate-500")}>
                   <span
@@ -277,14 +271,14 @@ export default function ValorantRegistration() {
                   >
                     {done ? "✓" : index + 1}
                   </span>
-                  <span className="text-[11px] font-medium uppercase tracking-[0.14em]">{label}</span>
+                  <span className="text-[10px] font-medium uppercase tracking-[0.1em] sm:text-[11px] sm:tracking-[0.14em]">{label}</span>
                 </div>
               </div>
             );
           })}
         </div>
 
-        <Card className="p-6 sm:p-10">
+        <div className="border border-white/8 bg-white/[.02] p-5 sm:p-8">
           <div className="space-y-6">
             {error && (
               <div role="alert" aria-live="assertive" className="rounded-2xl border border-red-400/25 bg-red-500/10 px-4 py-3 text-sm leading-relaxed text-red-200">
@@ -318,18 +312,15 @@ export default function ValorantRegistration() {
             {step === 1 && discordUser && (
               <div className="space-y-6">
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <div>
-                      <span className="text-lg font-semibold text-white">Welcome, {discordUser.discord_username}</span>
-                      <p className="mt-1 font-mono text-xs text-slate-500">Discord ID: {user.discordId || "Not available"}</p>
+                  <div className="flex min-w-0 flex-wrap items-center gap-3">
+                    <div className="min-w-0">
+                      <span className="break-words text-lg font-semibold text-white [overflow-wrap:anywhere]">Welcome, {discordUser.discord_username}</span>
+                      <p className="mt-1 break-all font-mono text-xs text-slate-500">Discord ID: {user.discordId || "Not available"}</p>
                     </div>
                     <Badge className="border-emerald-300/25 bg-emerald-400/10 text-emerald-200">
                       Discord Connected
                     </Badge>
                   </div>
-                  <Link href="/profile?tab=account" className={buttonClassName({ variant: "ghost", size: "sm" })}>
-                    Manage connection
-                  </Link>
                 </div>
 
                 <div>
@@ -481,8 +472,8 @@ export default function ValorantRegistration() {
               </div>
             )}
           </div>
-        </Card>
+        </div>
       </div>
-    </Container>
+    </div>
   );
 }

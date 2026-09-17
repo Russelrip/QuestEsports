@@ -149,7 +149,7 @@ const Pagination = ({
 const RegisterCta = () => (
   <div className="flex justify-center pt-2">
     <Link
-      href="/valorant-leaderboard/register"
+      href="/profile?tab=account#valorant-account"
       className={buttonClassName({ variant: "primary", size: "md" })}
     >
       Register your account

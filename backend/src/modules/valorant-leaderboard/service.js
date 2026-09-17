@@ -198,6 +198,10 @@ const previewRegistration = async ({ userId, puuid }) => {
   return fetchPreviewRegistration(puuid);
 };
 
+// The same guard every registration step uses, for callers that have work of
+// their own to do before submitting.
+const requireRegistrationDiscord = (userId) => resolveLinkedDiscordIdentity(userId);
+
 const submitRegistration = async ({ userId, puuid }) => {
   const { discordId, discordUsername } = await resolveLinkedDiscordIdentity(userId);
   return fetchSubmitRegistration({
@@ -503,5 +507,6 @@ module.exports = {
   checkPuuid,
   checkDiscord,
   previewRegistration,
+  requireRegistrationDiscord,
   submitRegistration,
 };
