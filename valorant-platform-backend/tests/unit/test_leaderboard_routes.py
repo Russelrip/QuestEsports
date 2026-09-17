@@ -20,6 +20,9 @@ from app.api.errors import AppError
 from app.config import Settings
 from app.main import create_app
 from app.schemas.leaderboard import (
+    LeaderboardBan,
+    LeaderboardBanPage,
+    LeaderboardBanResult,
     LeaderboardEntry,
     LeaderboardPage,
     LeaderboardRegistration,
@@ -53,6 +56,9 @@ class _FakeLeaderboardService:
         removed: LeaderboardRemovedRegistration | None = None,
         removals: LeaderboardRemovalPage | None = None,
         restored: LeaderboardRestoredRegistration | AppError | None = None,
+        ban_result: LeaderboardBanResult | None = None,
+        bans: LeaderboardBanPage | None = None,
+        lifted: LeaderboardBan | AppError | None = None,
     ) -> None:
         self._page = page
         self._top = top
@@ -62,6 +68,9 @@ class _FakeLeaderboardService:
         self._removed = removed
         self._removals = removals
         self._restored = restored
+        self._ban_result = ban_result
+        self._bans = bans
+        self._lifted = lifted
         self.calls: list[tuple] = []
 
     async def leaderboard(self, page: int, per_page: int) -> LeaderboardPage:
@@ -101,6 +110,28 @@ class _FakeLeaderboardService:
             raise self._restored
         assert self._restored is not None, "restore() not stubbed"
         return self._restored
+
+    async def ban_registration(self, puuid: str, reason: str | None, actor_id: str | None = None) -> LeaderboardBanResult:
+        self.calls.append(("ban_registration", puuid, reason, actor_id))
+        assert self._ban_result is not None, "ban_registration() not stubbed"
+        return self._ban_result
+
+    async def ban_removal(self, removal_id: str, reason: str | None, actor_id: str | None = None) -> LeaderboardBanResult:
+        self.calls.append(("ban_removal", removal_id, reason, actor_id))
+        assert self._ban_result is not None, "ban_removal() not stubbed"
+        return self._ban_result
+
+    async def bans(self, status: str, query: str, page: int, per_page: int) -> LeaderboardBanPage:
+        self.calls.append(("bans", status, query, page, per_page))
+        assert self._bans is not None, "bans() not stubbed"
+        return self._bans
+
+    async def lift_ban(self, ban_id: str, actor_id: str | None = None) -> LeaderboardBan:
+        self.calls.append(("lift_ban", ban_id, actor_id))
+        if isinstance(self._lifted, AppError):
+            raise self._lifted
+        assert self._lifted is not None, "lift_ban() not stubbed"
+        return self._lifted
 
 
 ENTRY_DICT = {
@@ -323,7 +354,81 @@ def test_admin_player_routes_require_service_token(monkeypatch: pytest.MonkeyPat
     assert client.delete("/api/v1/leaderboard/players/p1").status_code == 401
     assert client.get("/api/v1/leaderboard/removals").status_code == 401
     assert client.post(f"/api/v1/leaderboard/removals/{REMOVED.removal_id}/restore").status_code == 401
+    assert client.post("/api/v1/leaderboard/players/p1/ban", json={"reason": "x"}).status_code == 401
+    assert client.post(f"/api/v1/leaderboard/removals/{REMOVED.removal_id}/ban", json={}).status_code == 401
+    assert client.get("/api/v1/leaderboard/bans").status_code == 401
+    assert client.post("/api/v1/leaderboard/bans/b1/lift").status_code == 401
     assert fake.calls == []
+
+
+# ------------------------------------------------------------------ bans (0019)
+
+BAN = LeaderboardBan(
+    ban_id="5f0c1a52-3d4e-4f60-8a7b-9c0d1e2f3a4b",
+    puuid="p1",
+    discord_banned=True,
+    name="Player One",
+    tag="ONE",
+    discord_username="playerone",
+    reason="alt accounts",
+    banned_at="2026-09-17T07:33:25+00:00",
+    banned_by="actor-1",
+    active=True,
+)
+
+
+def test_ban_routes_pass_the_reason_and_the_acting_admin(monkeypatch: pytest.MonkeyPatch) -> None:
+    result = LeaderboardBanResult(ban=BAN, removed=[REMOVED])
+    fake = _FakeLeaderboardService(ban_result=result)
+    client = TestClient(_app(monkeypatch, fake))
+    headers = {"X-Quest-Actor-Id": "actor-1"}
+
+    by_player = client.post("/api/v1/leaderboard/players/p1/ban", json={"reason": "alt accounts"}, headers=headers)
+    by_removal = client.post(f"/api/v1/leaderboard/removals/{REMOVED.removal_id}/ban", json={}, headers=headers)
+
+    assert (by_player.status_code, by_removal.status_code) == (200, 200)
+    assert by_player.json() == result.model_dump()
+    assert fake.calls == [
+        ("ban_registration", "p1", "alt accounts", "actor-1"),
+        ("ban_removal", REMOVED.removal_id, "", "actor-1"),
+    ]
+
+
+def test_ban_route_rejects_an_overlong_reason(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = _FakeLeaderboardService(ban_result=LeaderboardBanResult(ban=BAN, removed=[]))
+    client = TestClient(_app(monkeypatch, fake))
+    resp = client.post("/api/v1/leaderboard/players/p1/ban", json={"reason": "x" * 501})
+    assert resp.status_code == 422
+    assert fake.calls == []
+
+
+def test_bans_route_defaults_to_active_and_validates_status(monkeypatch: pytest.MonkeyPatch) -> None:
+    page = LeaderboardBanPage(entries=[BAN], total=1, page=1, per_page=20, total_pages=1)
+    fake = _FakeLeaderboardService(bans=page)
+    client = TestClient(_app(monkeypatch, fake))
+
+    default = client.get("/api/v1/leaderboard/bans")
+    lifted = client.get("/api/v1/leaderboard/bans?status=lifted&q=mush&page=2&per_page=5")
+    bogus = client.get("/api/v1/leaderboard/bans?status=everything")
+
+    assert default.json() == page.model_dump()
+    assert lifted.status_code == 200
+    assert bogus.status_code == 422
+    assert fake.calls == [("bans", "active", "", 1, 20), ("bans", "lifted", "mush", 2, 5)]
+
+
+def test_lift_route_returns_the_ban_and_surfaces_a_refusal(monkeypatch: pytest.MonkeyPatch) -> None:
+    lifted = BAN.model_copy(update={"active": False, "lifted_at": "2026-09-18T00:00:00+00:00", "lifted_by": "actor-2"})
+    fake = _FakeLeaderboardService(lifted=lifted)
+    resp = TestClient(_app(monkeypatch, fake)).post(f"/api/v1/leaderboard/bans/{BAN.ban_id}/lift", headers={"X-Quest-Actor-Id": "actor-2"})
+    assert resp.status_code == 200
+    assert resp.json()["active"] is False
+    assert fake.calls == [("lift_ban", BAN.ban_id, "actor-2")]
+
+    refusal = AppError("LEADERBOARD_BAN_ALREADY_LIFTED", 409, "already lifted")
+    again = TestClient(_app(monkeypatch, _FakeLeaderboardService(lifted=refusal))).post(f"/api/v1/leaderboard/bans/{BAN.ban_id}/lift")
+    assert again.status_code == 409
+    assert again.json()["error"]["code"] == "LEADERBOARD_BAN_ALREADY_LIFTED"
 
 
 # ------------------------------------------------------------ server check (0018)

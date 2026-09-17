@@ -3,6 +3,7 @@
 import { useApiQuery } from "@/hooks/api/useApiQuery";
 import {
   fetchValorantBindings,
+  fetchValorantLeaderboardBans,
   fetchValorantLeaderboardRegistrations,
   fetchValorantLeaderboardRemovals,
   fetchValorantMatches,
@@ -16,7 +17,7 @@ import {
   fetchValorantServerChecks,
   fetchValorantTeamSeries,
 } from "@/lib/valorant-api";
-import type { ValorantServerCheckSort } from "@/lib/valorant";
+import type { ValorantLeaderboardBanStatus, ValorantServerCheckSort } from "@/lib/valorant";
 
 export function useValorantBindings() {
   return useApiQuery(["valorant-bindings"], fetchValorantBindings);
@@ -31,6 +32,12 @@ export function useValorantLeaderboardRegistrations(query: string, page: number)
 export function useValorantLeaderboardRemovals(query: string, page: number) {
   return useApiQuery(["valorant-leaderboard-removals", query, page], () =>
     fetchValorantLeaderboardRemovals({ query, page })
+  );
+}
+
+export function useValorantLeaderboardBans(status: ValorantLeaderboardBanStatus, page: number) {
+  return useApiQuery(["valorant-leaderboard-bans", status, page], () =>
+    fetchValorantLeaderboardBans({ status, page })
   );
 }
 

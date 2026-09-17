@@ -8,6 +8,8 @@ out-of-range-page 404 is raised here as ``AppError``
 ``null`` per spec §5.1 (``LeaderboardEntry | null``). The ``/players`` pair
 is the admin surface: every registration regardless of the board filter, and
 removal of one. The ``/removals`` pair lists removals and restores one. The
+``/bans`` routes list bans and lift one; a player is banned from their
+registration or from a removal of it. The
 ``/server-checks`` routes list players the server check flags, and clear or
 reopen a flag.
 """
@@ -22,6 +24,10 @@ from app.api.dependencies import get_leaderboard_service, get_server_check_servi
 from app.api.errors import AppError
 from app.api.service_token import ServicePrincipal
 from app.schemas.leaderboard import (
+    LeaderboardBan,
+    LeaderboardBanPage,
+    LeaderboardBanRequest,
+    LeaderboardBanResult,
     LeaderboardEntry,
     LeaderboardPage,
     LeaderboardRegistrationPage,
@@ -131,6 +137,66 @@ async def restore_removal(
 ) -> LeaderboardRestoredRegistration:
     """Put a removed registration back exactly as it was (409 if it cannot be)."""
     return await svc.restore(removal_id, principal.actor_id)
+
+
+@router.post(
+    "/leaderboard/players/{puuid}/ban",
+    response_model=LeaderboardBanResult,
+    dependencies=[Depends(require_service_token)],
+)
+async def ban_registration(
+    svc: _ServiceDep,
+    principal: _PrincipalDep,
+    puuid: str,
+    body: LeaderboardBanRequest,
+) -> LeaderboardBanResult:
+    """Ban a registered player's Riot and Discord accounts and remove them (restorable once lifted)."""
+    return await svc.ban_registration(puuid, body.reason, principal.actor_id)
+
+
+@router.post(
+    "/leaderboard/removals/{removal_id}/ban",
+    response_model=LeaderboardBanResult,
+    dependencies=[Depends(require_service_token)],
+)
+async def ban_removal(
+    svc: _ServiceDep,
+    principal: _PrincipalDep,
+    removal_id: str,
+    body: LeaderboardBanRequest,
+) -> LeaderboardBanResult:
+    """Ban an already-removed player, removing anything registered under either account since."""
+    return await svc.ban_removal(removal_id, body.reason, principal.actor_id)
+
+
+@router.get(
+    "/leaderboard/bans",
+    response_model=LeaderboardBanPage,
+    dependencies=[Depends(require_service_token)],
+)
+async def list_bans(
+    svc: _ServiceDep,
+    status: Literal["active", "lifted", "all"] = Query("active"),
+    q: str = Query("", max_length=100),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(20, ge=1, le=100),
+) -> LeaderboardBanPage:
+    """Bans newest first: the active ones by default."""
+    return await svc.bans(status, q, page, per_page)
+
+
+@router.post(
+    "/leaderboard/bans/{ban_id}/lift",
+    response_model=LeaderboardBan,
+    dependencies=[Depends(require_service_token)],
+)
+async def lift_ban(
+    svc: _ServiceDep,
+    principal: _PrincipalDep,
+    ban_id: str,
+) -> LeaderboardBan:
+    """Let a banned player register again (409 if already lifted)."""
+    return await svc.lift_ban(ban_id, principal.actor_id)
 
 
 @router.get(

@@ -21,8 +21,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.errors import AppError
 from app.db.models import LeaderboardPlayer, LeaderboardPlayerRemoval
+from app.db.models.leaderboard_ban import LeaderboardBan as LeaderboardBanRow
+from app.db.repositories.leaderboard_ban_repository import BanStatus, LeaderboardBanRepository
 from app.db.repositories.leaderboard_player_repository import LeaderboardPlayerRepository, is_listed
 from app.schemas.leaderboard import (
+    LeaderboardBan,
+    LeaderboardBanPage,
+    LeaderboardBanResult,
     LeaderboardEntry,
     LeaderboardPage,
     LeaderboardRegistration,
@@ -52,10 +57,31 @@ def _discord_taken() -> AppError:
     )
 
 
+def _removal_not_found() -> AppError:
+    return AppError("LEADERBOARD_REMOVAL_NOT_FOUND", 404, "leaderboard removal not found")
+
+
+def _already_banned() -> AppError:
+    return AppError("LEADERBOARD_PLAYER_ALREADY_BANNED", 409, "this player is already banned")
+
+
+def _parse_id(value: str) -> uuid.UUID | None:
+    try:
+        return uuid.UUID(value)
+    except ValueError:
+        return None
+
+
 class LeaderboardService:
-    def __init__(self, session: AsyncSession, repo: LeaderboardPlayerRepository) -> None:
+    def __init__(
+        self,
+        session: AsyncSession,
+        repo: LeaderboardPlayerRepository,
+        bans: LeaderboardBanRepository | None = None,
+    ) -> None:
         self._session = session
         self._repo = repo
+        self._bans = bans or LeaderboardBanRepository(session)
 
     async def leaderboard(self, page: int, per_page: int) -> LeaderboardPage:
         """One paginated page of leaderboard entries, newest-filtered and
@@ -128,8 +154,8 @@ class LeaderboardService:
         rows, total = await self._repo.list_removals(query, page, per_page)
         return LeaderboardRemovalPage(
             entries=[
-                self._to_removal(removal, registered_again=registered_again, superseded=superseded)
-                for removal, registered_again, superseded in rows
+                self._to_removal(removal, registered_again=registered_again, superseded=superseded, banned=banned)
+                for removal, registered_again, superseded, banned in rows
             ],
             total=total,
             page=page,
@@ -141,17 +167,21 @@ class LeaderboardService:
         """Put a removed registration back exactly as it was.
 
         Refused (409) when it was already restored, when the PUUID was removed
-        again later (restore that removal instead), or when the PUUID or its
-        Discord identity is registered again: restoring must never overwrite or
-        duplicate a current registration.
+        again later (restore that removal instead), when the PUUID or its
+        Discord identity is registered again (restoring must never overwrite or
+        duplicate a current registration), or while the player is banned.
         """
-        try:
-            parsed_id = uuid.UUID(removal_id)
-        except ValueError:
-            raise AppError("LEADERBOARD_REMOVAL_NOT_FOUND", 404, "leaderboard removal not found") from None
+        parsed_id = _parse_id(removal_id)
+        if parsed_id is None:
+            raise _removal_not_found()
+        # Restoring adds a registration, so it waits out a ban in progress the
+        # way registration does. Taken before the row lock, in the same order as
+        # a ban from a removal, so the two cannot deadlock.
+        await self._bans.lock_for_registration()
         removal = await self._repo.get_removal_for_update(parsed_id)
         if removal is None:
-            raise AppError("LEADERBOARD_REMOVAL_NOT_FOUND", 404, "leaderboard removal not found")
+            await self._session.rollback()
+            raise _removal_not_found()
         try:
             await self._refuse_unrestorable(removal)
             player = await self._repo.restore(removal, restored_by=actor_id)
@@ -170,12 +200,128 @@ class LeaderboardService:
             removed_by=removal.removed_by,
         )
 
+    async def bans(self, status: BanStatus, query: str, page: int, per_page: int) -> LeaderboardBanPage:
+        """Bans newest first, for the admin view."""
+        rows, total = await self._bans.list_bans(status, query, page, per_page)
+        return LeaderboardBanPage(
+            entries=[self._to_ban(ban) for ban in rows],
+            total=total,
+            page=page,
+            per_page=per_page,
+            total_pages=math.ceil(total / per_page) if total > 0 else 1,
+        )
+
+    async def ban_registration(
+        self, puuid: str, reason: str | None, actor_id: str | None = None
+    ) -> LeaderboardBanResult:
+        """Ban a registered player and take them off the leaderboard in one step."""
+        await self._bans.lock_for_ban()
+        player = await self._repo.get_by_puuid(puuid)
+        if player is None:
+            await self._session.rollback()
+            raise AppError("LEADERBOARD_PLAYER_NOT_FOUND", 404, "leaderboard player not found")
+        return await self._ban(player, reason, actor_id)
+
+    async def ban_removal(
+        self, removal_id: str, reason: str | None, actor_id: str | None = None
+    ) -> LeaderboardBanResult:
+        """Ban a player who was already removed, by the identities the removal kept.
+
+        Anything registered under either identity since then is removed too:
+        that is the player coming back, which is what the ban is for.
+        """
+        parsed_id = _parse_id(removal_id)
+        if parsed_id is None:
+            raise _removal_not_found()
+        await self._bans.lock_for_ban()
+        removal = await self._repo.get_removal_for_update(parsed_id)
+        if removal is None:
+            await self._session.rollback()
+            raise _removal_not_found()
+        return await self._ban(removal, reason, actor_id)
+
+    async def lift_ban(self, ban_id: str, actor_id: str | None = None) -> LeaderboardBan:
+        """Let a banned player register again. The ban is kept, marked lifted."""
+        parsed_id = _parse_id(ban_id)
+        ban = await self._bans.get_for_update(parsed_id) if parsed_id else None
+        if ban is None:
+            await self._session.rollback()
+            raise AppError("LEADERBOARD_BAN_NOT_FOUND", 404, "leaderboard ban not found")
+        if ban.lifted_at is not None:
+            await self._session.rollback()
+            raise AppError("LEADERBOARD_BAN_ALREADY_LIFTED", 409, "this ban has already been lifted")
+        await self._bans.lift(ban, lifted_by=actor_id)
+        await self._session.commit()
+        return self._to_ban(ban)
+
     # ------------------------------------------------------------ internals
+
+    async def _ban(
+        self,
+        source: LeaderboardPlayer | LeaderboardPlayerRemoval,
+        reason: str | None,
+        actor_id: str | None,
+    ) -> LeaderboardBanResult:
+        """Ban ``source``'s PUUID and Discord id and remove whatever either holds.
+
+        The caller holds the ban lock, so no registration can land between the
+        removals and the commit. An identity another active ban already covers
+        is left out of this one (one active ban per identity); when both are
+        covered there is nothing to add and the ban is refused.
+        """
+        puuid = source.puuid or None
+        # '' is the "no Discord owner" value, not an identity.
+        discord_id = source.discord_id or None
+        try:
+            active = await self._bans.active_for(puuid=puuid, discord_id=discord_id)
+            new_puuid = puuid if puuid not in {ban.puuid for ban in active} else None
+            new_discord_id = discord_id if discord_id not in {ban.discord_id for ban in active} else None
+            if new_puuid is None and new_discord_id is None:
+                raise _already_banned()
+            ban = await self._bans.create(
+                puuid=new_puuid,
+                discord_id=new_discord_id,
+                name=source.name,
+                tag=source.tag,
+                discord_username=source.discord_username,
+                reason=(reason or "").strip() or None,
+                banned_by=actor_id,
+            )
+            held = [await self._repo.get_by_puuid(puuid) if puuid else None]
+            if discord_id:
+                held.append(await self._repo.get_by_discord_id(discord_id))
+            removals = []
+            for held_puuid in dict.fromkeys(player.puuid for player in held if player is not None):
+                removal = await self._repo.remove(held_puuid, removed_by=actor_id)
+                if removal is not None:
+                    removals.append(removal)
+            await self._session.commit()
+        except IntegrityError:
+            # Another ban of the same identity committed first.
+            await self._session.rollback()
+            raise _already_banned() from None
+        except AppError:
+            await self._session.rollback()
+            raise
+        now = datetime.now(UTC)
+        return LeaderboardBanResult(
+            ban=self._to_ban(ban),
+            removed=[
+                LeaderboardRemovedRegistration(
+                    **self._to_registration(removal, now).model_dump(), removal_id=str(removal.id)
+                )
+                for removal in removals
+            ],
+        )
 
     async def _refuse_unrestorable(self, removal: LeaderboardPlayerRemoval) -> None:
         if removal.restored_at is not None:
             raise AppError(
                 "LEADERBOARD_REMOVAL_ALREADY_RESTORED", 409, "this removal has already been restored"
+            )
+        if await self._bans.active_for(puuid=removal.puuid, discord_id=removal.discord_id or None):
+            raise AppError(
+                "LEADERBOARD_PLAYER_BANNED", 409, "this player is banned; lift the ban before restoring them"
             )
         if await self._repo.has_newer_removal(removal):
             raise AppError(
@@ -213,8 +359,25 @@ class LeaderboardService:
         )
 
     @staticmethod
+    def _to_ban(ban: LeaderboardBanRow) -> LeaderboardBan:
+        return LeaderboardBan(
+            ban_id=str(ban.id),
+            puuid=ban.puuid,
+            discord_banned=ban.discord_id is not None,
+            name=ban.name,
+            tag=ban.tag,
+            discord_username=ban.discord_username,
+            reason=ban.reason,
+            banned_at=ban.banned_at.isoformat(),
+            banned_by=ban.banned_by,
+            lifted_at=ban.lifted_at.isoformat() if ban.lifted_at else None,
+            lifted_by=ban.lifted_by,
+            active=ban.lifted_at is None,
+        )
+
+    @staticmethod
     def _to_removal(
-        removal: LeaderboardPlayerRemoval, *, registered_again: bool, superseded: bool
+        removal: LeaderboardPlayerRemoval, *, registered_again: bool, superseded: bool, banned: bool = False
     ) -> LeaderboardRemoval:
         return LeaderboardRemoval(
             removal_id=str(removal.id),
@@ -231,7 +394,8 @@ class LeaderboardService:
             restored_by=removal.restored_by,
             registered_again=registered_again,
             superseded=superseded,
-            restorable=removal.restored_at is None and not registered_again and not superseded,
+            banned=banned,
+            restorable=removal.restored_at is None and not registered_again and not superseded and not banned,
         )
 
     @staticmethod

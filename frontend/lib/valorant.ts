@@ -299,6 +299,8 @@ export type ValorantLeaderboardRemovedPlayer = {
   registeredAgain: boolean;
   // The same player was removed again later; only that removal can be restored.
   superseded: boolean;
+  // An active ban names this player's Riot or Discord account.
+  banned: boolean;
   restorable: boolean;
 };
 
@@ -320,8 +322,56 @@ export type ValorantLeaderboardRestore = {
 export const leaderboardRemovalBlocker = (entry: ValorantLeaderboardRemovedPlayer): string | null => {
   if (entry.restoredAt) return "Already restored";
   if (entry.superseded) return "Removed again later — restore the newer removal";
+  if (entry.banned) return "Banned — lift the ban to restore";
   if (entry.registeredAgain) return "Registered again";
   return entry.restorable ? null : "Cannot be restored";
+};
+
+// --- Leaderboard bans --------------------------------------------------------
+
+/**
+ * A ban keeps a Riot account (PUUID) and/or a Discord account from registering.
+ * The Riot ID and Discord handle are how the player looked when banned; a rename
+ * does not get around the ban.
+ */
+export type ValorantLeaderboardBan = {
+  banId: string;
+  // Null when another ban already covered the Riot account.
+  puuid: string | null;
+  discordBanned: boolean;
+  name: string;
+  tag: string;
+  discordUsername: string;
+  reason: string | null;
+  bannedAt: string;
+  bannedBy: ValorantLeaderboardActor | null;
+  liftedAt: string | null;
+  liftedBy: ValorantLeaderboardActor | null;
+  active: boolean;
+};
+
+export type ValorantLeaderboardBanStatus = "active" | "lifted" | "all";
+
+export type ValorantLeaderboardBanPage = {
+  entries: ValorantLeaderboardBan[];
+  total: number;
+  page: number;
+  perPage: number;
+  totalPages: number;
+};
+
+export type ValorantLeaderboardBanResult = {
+  ban: ValorantLeaderboardBan;
+  // Every registration the ban took off the leaderboard: the player, and any
+  // alt registered under the same Riot or Discord account.
+  removed: (ValorantLeaderboardRegistration & { removalId: string })[];
+  rankingsCleared: number | null;
+};
+
+/** Which accounts a ban covers, in words. */
+export const leaderboardBanCovers = (ban: Pick<ValorantLeaderboardBan, "puuid" | "discordBanned">): string => {
+  if (ban.puuid && ban.discordBanned) return "Riot and Discord accounts";
+  return ban.puuid ? "Riot account" : "Discord account";
 };
 
 // --- Leaderboard server check ------------------------------------------------

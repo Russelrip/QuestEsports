@@ -12,6 +12,10 @@ maintained in `Russelrip/valorant-platform-backend`.
   `app/domain/leaderboard/server_check.py` flags from them at read time.
 - `supabase/migrations/` owns only the PostgreSQL `valorant` schema and its
   `_migration_ledger`; it must not reference Quest's `public` schema.
+- Leaderboard bans (0019) name a PUUID and/or Discord id. Registration
+  (`app/services/registration_service.py`) and restore refuse either while a ban
+  is active; banning removes what either holds. A shared/exclusive advisory lock
+  (`LEADERBOARD_BAN_LOCK_KEY`) keeps a ban and a registration from interleaving.
 - `scripts/` contains migration, runtime-access, and release-image validators.
 - `tests/` contains non-live API, database, worker, security, and rating tests.
 - `Dockerfile` builds the single runtime image from this directory.

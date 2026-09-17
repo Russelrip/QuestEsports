@@ -1444,6 +1444,18 @@ const additionalPaths = {
   "/api/v1/admin/valorant/leaderboard/removals/{removalId}/restore": {
     post: createOperation("valorant", "Restore a removed VALORANT leaderboard player exactly as they were (reason required, audited; 409 when registered again; admin or valorant_leaderboard staff permission)", { authenticated: true }),
   },
+  "/api/v1/admin/valorant/leaderboard/players/{puuid}/ban": {
+    post: createOperation("valorant", "Ban a registered VALORANT leaderboard player's Riot and Discord accounts from registering, removing every registration either holds (reason required, audited; admin or valorant_leaderboard staff permission)", { authenticated: true }),
+  },
+  "/api/v1/admin/valorant/leaderboard/removals/{removalId}/ban": {
+    post: createOperation("valorant", "Ban a removed VALORANT leaderboard player's Riot and Discord accounts from registering, removing anything registered under either since (reason required, audited; 409 when already banned; admin or valorant_leaderboard staff permission)", { authenticated: true }),
+  },
+  "/api/v1/admin/valorant/leaderboard/bans": {
+    get: createOperation("valorant", "List VALORANT leaderboard bans, newest first: active, lifted or all (admin or valorant_leaderboard staff permission)", { authenticated: true }),
+  },
+  "/api/v1/admin/valorant/leaderboard/bans/{banId}/lift": {
+    post: createOperation("valorant", "Lift a VALORANT leaderboard ban so the player can register again; the ban is kept as history (reason required, audited; 409 when already lifted; admin or valorant_leaderboard staff permission)", { authenticated: true }),
+  },
   "/api/v1/admin/valorant/leaderboard/server-checks": {
     get: createOperation("valorant", "List leaderboard players the server check flags for review (mostly playing away from the Singapore/Mumbai servers, or a Riot account off the AP shard), or those already cleared (admin or valorant_leaderboard staff permission)", { authenticated: true }),
   },

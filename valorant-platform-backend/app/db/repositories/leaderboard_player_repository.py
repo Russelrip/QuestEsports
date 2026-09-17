@@ -15,7 +15,7 @@ from sqlalchemy import case, delete, exists, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import LeaderboardPlayer, LeaderboardPlayerRemoval
+from app.db.models import LeaderboardBan, LeaderboardPlayer, LeaderboardPlayerRemoval
 from app.db.models.leaderboard_player_removal import REGISTRATION_COLUMNS
 
 _LEADERBOARD_FILTERS = (
@@ -177,13 +177,14 @@ class LeaderboardPlayerRepository:
 
     async def list_removals(
         self, query: str, page: int, per_page: int
-    ) -> tuple[list[tuple[LeaderboardPlayerRemoval, bool, bool]], int]:
-        """Removals newest first, each with ``(registered_again, superseded)``.
+    ) -> tuple[list[tuple[LeaderboardPlayerRemoval, bool, bool, bool]], int]:
+        """Removals newest first, each with ``(registered_again, superseded, banned)``.
 
         ``registered_again``: the PUUID has a registration now, so restoring
         would collide. ``superseded``: the PUUID was removed again later, and
-        only the latest removal is the one to restore. A query matches Riot
-        name, ``name#tag`` or Discord username as a case-insensitive substring.
+        only the latest removal is the one to restore. ``banned``: an active ban
+        names the PUUID or the Discord id. A query matches Riot name,
+        ``name#tag`` or Discord username as a case-insensitive substring.
         """
         needle = query.strip().lstrip("@").lower()
         registered_again = exists().where(LeaderboardPlayer.puuid == LeaderboardPlayerRemoval.puuid)
@@ -191,6 +192,13 @@ class LeaderboardPlayerRepository:
         superseded = exists().where(
             newer.c.puuid == LeaderboardPlayerRemoval.puuid,
             newer.c.removed_at > LeaderboardPlayerRemoval.removed_at,
+        )
+        banned = exists().where(
+            LeaderboardBan.lifted_at.is_(None),
+            or_(
+                LeaderboardBan.puuid == LeaderboardPlayerRemoval.puuid,
+                LeaderboardBan.discord_id == func.nullif(LeaderboardPlayerRemoval.discord_id, ""),
+            ),
         )
         filters = []
         if len(needle) >= MIN_QUERY_LENGTH:
@@ -200,7 +208,8 @@ class LeaderboardPlayerRepository:
                 func.lower(LeaderboardPlayerRemoval.discord_username).like(pattern),
             ))
         rows = (await self._session.execute(
-            select(LeaderboardPlayerRemoval, registered_again.label("registered_again"), superseded.label("superseded"))
+            select(LeaderboardPlayerRemoval, registered_again.label("registered_again"), superseded.label("superseded"),
+                   banned.label("banned"))
             .where(*filters)
             .order_by(LeaderboardPlayerRemoval.removed_at.desc(), LeaderboardPlayerRemoval.id)
             .offset((page - 1) * per_page)
@@ -209,7 +218,7 @@ class LeaderboardPlayerRepository:
         total = (await self._session.execute(
             select(func.count()).select_from(LeaderboardPlayerRemoval).where(*filters)
         )).scalar_one()
-        return [(row[0], bool(row[1]), bool(row[2])) for row in rows], total
+        return [(row[0], bool(row[1]), bool(row[2]), bool(row[3])) for row in rows], total
 
     async def get_removal_for_update(self, removal_id: uuid.UUID) -> LeaderboardPlayerRemoval | None:
         """One removal, row-locked so two restores of it cannot both proceed."""

@@ -16,9 +16,11 @@ import {
   type ValorantLeaderboardActor,
   type ValorantLeaderboardRemovedPlayer,
 } from "@/lib/valorant";
-import { restoreValorantLeaderboardRemoval } from "@/lib/valorant-api";
+import { banValorantLeaderboardRemoval, restoreValorantLeaderboardRemoval } from "@/lib/valorant-api";
 
 const REASON_MAX_LENGTH = 500;
+
+type PendingAction = { removalId: string; kind: "restore" | "ban" };
 
 const actorName = (actor: ValorantLeaderboardActor | null) =>
   actor ? (actor.username ? `@${actor.username}` : "a deleted account") : "unknown";
@@ -26,14 +28,16 @@ const actorName = (actor: ValorantLeaderboardActor | null) =>
 export default function ValorantLeaderboardRemovalsPanel({
   refreshToken,
   onRestored,
+  onBanned,
 }: {
   // Bumped by the players table after a removal, so the new removal shows here.
   refreshToken: number;
   onRestored: () => void;
+  onBanned: () => void;
 }) {
   const showToast = useToastStore((state) => state.showToast);
   const [page, setPage] = useState(1);
-  const [restoringId, setRestoringId] = useState<string | null>(null);
+  const [pending, setPending] = useState<PendingAction | null>(null);
   const [reason, setReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const removalsQuery = useValorantLeaderboardRemovals("", page);
@@ -52,8 +56,8 @@ export default function ValorantLeaderboardRemovalsPanel({
     void refetch();
   }, [refreshToken, refetch]);
 
-  const closeRestore = () => {
-    setRestoringId(null);
+  const closeAction = () => {
+    setPending(null);
     setReason("");
   };
 
@@ -64,7 +68,7 @@ export default function ValorantLeaderboardRemovalsPanel({
     try {
       await restoreValorantLeaderboardRemoval(entry.removalId, trimmed);
       showToast({ title: `${entry.name}#${entry.tag} restored to the leaderboard`, tone: "success" });
-      closeRestore();
+      closeAction();
       onRestored();
     } catch (restoreError) {
       const message = restoreError instanceof Error ? restoreError.message : "Could not restore this player.";
@@ -76,14 +80,39 @@ export default function ValorantLeaderboardRemovalsPanel({
     }
   };
 
+  const handleBan = async (entry: ValorantLeaderboardRemovedPlayer) => {
+    const trimmed = reason.trim();
+    if (!trimmed) return;
+    setSubmitting(true);
+    try {
+      const result = await banValorantLeaderboardRemoval(entry.removalId, trimmed);
+      const label = `${entry.name}#${entry.tag}`;
+      const count = result.removed.length;
+      showToast({
+        title: count > 0
+          ? `${label} banned; ${count} ${count === 1 ? "registration" : "registrations"} made since then removed`
+          : `${label} banned from registering again`,
+        tone: "success",
+      });
+      closeAction();
+      onBanned();
+    } catch (banError) {
+      const message = banError instanceof Error ? banError.message : "Could not ban this player.";
+      showToast({ title: message, tone: "error" });
+    } finally {
+      setSubmitting(false);
+      void refetch();
+    }
+  };
+
   return (
     <div className="grid min-w-0 gap-4">
       <div>
         <h3 className="text-lg font-semibold text-white">Removed players</h3>
         <p className="text-sm text-slate-400">
           Players removed from the leaderboard, newest first. Restoring puts a player back exactly as they were; the rank
-          updater and Discord bot pick them up again on their next pass. Removals made before restoring was added were not
-          kept and do not appear here.
+          updater and Discord bot pick them up again on their next pass. Banning stops a removed player registering again.
+          Removals made before restoring was added were not kept and do not appear here.
         </p>
       </div>
 
@@ -112,11 +141,17 @@ export default function ValorantLeaderboardRemovalsPanel({
                 </thead>
                 <tbody>
                   {entries.map((entry) => {
-                    const confirming = restoringId === entry.removalId;
+                    const action = pending?.removalId === entry.removalId ? pending.kind : null;
                     const blocker = leaderboardRemovalBlocker(entry);
                     return (
                       <Fragment key={entry.removalId}>
-                        <tr className={cn("border-b border-white/5", confirming && "bg-emerald-500/5")}>
+                        <tr
+                          className={cn(
+                            "border-b border-white/5",
+                            action === "restore" && "bg-emerald-500/5",
+                            action === "ban" && "bg-red-500/5"
+                          )}
+                        >
                           <td className="px-4 py-4">
                             <p className="font-semibold text-white">{entry.name}#{entry.tag}</p>
                             <p className="mt-0.5 text-xs text-slate-400">
@@ -132,7 +167,9 @@ export default function ValorantLeaderboardRemovalsPanel({
                             <p className="mt-0.5 text-xs text-slate-500">by {actorName(entry.removedBy)}</p>
                           </td>
                           <td className="px-4 py-4">
-                            {entry.restoredAt ? (
+                            {entry.banned ? (
+                              <p className="text-red-200">Banned</p>
+                            ) : entry.restoredAt ? (
                               <>
                                 <p className="text-emerald-200">Restored</p>
                                 <p className="mt-0.5 text-xs text-slate-500">
@@ -145,24 +182,42 @@ export default function ValorantLeaderboardRemovalsPanel({
                               <p className="text-slate-300">Can be restored</p>
                             )}
                           </td>
-                          <td className="px-4 py-4 text-right">
-                            {confirming || blocker ? null : (
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                disabled={submitting}
-                                onClick={() => {
-                                  setRestoringId(entry.removalId);
-                                  setReason("");
-                                }}
-                              >
-                                Restore
-                              </Button>
+                          <td className="px-4 py-4 text-right whitespace-nowrap">
+                            {action ? null : (
+                              <div className="flex justify-end gap-1">
+                                {blocker ? null : (
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    disabled={submitting}
+                                    onClick={() => {
+                                      setPending({ removalId: entry.removalId, kind: "restore" });
+                                      setReason("");
+                                    }}
+                                  >
+                                    Restore
+                                  </Button>
+                                )}
+                                {entry.banned ? null : (
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    disabled={submitting}
+                                    onClick={() => {
+                                      setPending({ removalId: entry.removalId, kind: "ban" });
+                                      setReason("");
+                                    }}
+                                  >
+                                    Ban
+                                  </Button>
+                                )}
+                              </div>
                             )}
                           </td>
                         </tr>
-                        {confirming ? (
+                        {action === "restore" ? (
                           <tr className="border-b border-white/5 bg-emerald-500/5">
                             <td colSpan={5} className="px-4 pb-5">
                               <form
@@ -195,11 +250,60 @@ export default function ValorantLeaderboardRemovalsPanel({
                                   />
                                 </label>
                                 <div className="flex flex-wrap justify-end gap-2">
-                                  <Button type="button" variant="ghost" size="sm" disabled={submitting} onClick={closeRestore}>
+                                  <Button type="button" variant="ghost" size="sm" disabled={submitting} onClick={closeAction}>
                                     Cancel
                                   </Button>
                                   <Button type="submit" size="sm" disabled={submitting || !reason.trim()}>
                                     {submitting ? "Restoring…" : "Restore player"}
+                                  </Button>
+                                </div>
+                              </form>
+                            </td>
+                          </tr>
+                        ) : action === "ban" ? (
+                          <tr className="border-b border-white/5 bg-red-500/5">
+                            <td colSpan={5} className="px-4 pb-5">
+                              <form
+                                className="grid gap-3"
+                                onSubmit={(event) => {
+                                  event.preventDefault();
+                                  void handleBan(entry);
+                                }}
+                              >
+                                <div className="text-sm text-slate-300">
+                                  <p className="font-semibold text-white">
+                                    Ban {entry.name}#{entry.tag} from registering again?
+                                  </p>
+                                  <ul className="mt-2 list-disc space-y-1 pl-5 text-slate-400">
+                                    <li>
+                                      Their Riot account{entry.discordUsername ? " and Discord account" : ""} can no longer
+                                      register, even after changing their Riot ID.
+                                    </li>
+                                    <li>
+                                      Anything registered on either account since this removal, including a new Riot account
+                                      with the same Discord, is removed now.
+                                    </li>
+                                    <li>They cannot be restored while banned. Lift the ban under Banned players to undo it.</li>
+                                  </ul>
+                                </div>
+                                <label className="grid gap-1.5 text-sm text-slate-300">
+                                  Reason (kept in the audit log and shown with the ban)
+                                  <Textarea
+                                    value={reason}
+                                    onChange={(event) => setReason(event.target.value)}
+                                    maxLength={REASON_MAX_LENGTH}
+                                    required
+                                    autoFocus
+                                    className="min-h-20"
+                                    placeholder="e.g. Removed repeatedly and keeps registering again."
+                                  />
+                                </label>
+                                <div className="flex flex-wrap justify-end gap-2">
+                                  <Button type="button" variant="ghost" size="sm" disabled={submitting} onClick={closeAction}>
+                                    Cancel
+                                  </Button>
+                                  <Button type="submit" variant="danger" size="sm" disabled={submitting || !reason.trim()}>
+                                    {submitting ? "Banning…" : "Ban player"}
                                   </Button>
                                 </div>
                               </form>
@@ -221,7 +325,7 @@ export default function ValorantLeaderboardRemovalsPanel({
                 size="sm"
                 disabled={page <= 1 || removalsQuery.loading}
                 onClick={() => {
-                  closeRestore();
+                  closeAction();
                   setPage(page - 1);
                 }}
               >
@@ -236,7 +340,7 @@ export default function ValorantLeaderboardRemovalsPanel({
                 size="sm"
                 disabled={page >= totalPages || removalsQuery.loading}
                 onClick={() => {
-                  closeRestore();
+                  closeAction();
                   setPage(page + 1);
                 }}
               >
