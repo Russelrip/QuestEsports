@@ -5,10 +5,10 @@
 //
 // Deliberately a server-side script and not a dashboard control: whoever can
 // make a super admin can hand out every kind of access, so it takes shell access
-// to the host, not a stolen admin session. In production, run it inside the
-// backend container, which already carries DATABASE_URL:
-//
-//   docker exec quest-prod-backend-1 node scripts/set-super-admin.js --email ...
+// to the host, not a stolen admin session. The production backend image does
+// not ship scripts/, so in production copy this file into the running backend
+// container with its requires pointed at /app and run it there; the command is
+// in docs/admin-operations.md under "Making someone a super admin".
 //
 // The account must already be an admin. The change is written to the audit log
 // with source `system`. Revoking the last super admin is refused, because no one
