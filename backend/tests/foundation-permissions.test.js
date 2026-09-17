@@ -77,7 +77,6 @@ test("scoped permission identifiers and role mappings are explicit and stable", 
     assert.deepEqual(middleware.ROLE_SCOPES.tournament_admin, [
       "tournament.read",
       "tournament.administration",
-      "staff.roster.management",
       "match.operations",
       "veto.operations",
       "veto.catalog.config",
@@ -133,6 +132,23 @@ test("tournament admins receive every intended scoped permission", async () => {
         null,
       );
     }
+  } finally { restore(); }
+});
+
+test("tournament admins cannot manage the staff roster of their own tournament", async () => {
+  const prisma = {
+    tournament: { findUnique: async ({ where }) => ({ id: where.id }) },
+    tournamentStaffAssignment: {
+      findFirst: async ({ where }) => where.tournamentId === "tournament-a" && where.role.in.includes("tournament_admin")
+        ? { id: "assignment-a" }
+        : null,
+    },
+  };
+  const { module: middleware, restore } = loadModuleWithMocks(middlewarePath, { [prismaPath]: { prisma } });
+  try {
+    const handler = middleware.requirePermission(middleware.PERMISSION_SCOPES.STAFF_ROSTER_MANAGEMENT, { parameter: "id" });
+    assert.equal((await run(handler, { user: { id: "staff-1", role: "user" }, params: { id: "tournament-a" } })).statusCode, 403);
+    assert.equal(await run(handler, { user: { id: "admin", role: "admin" }, params: { id: "tournament-a" } }), null);
   } finally { restore(); }
 });
 
