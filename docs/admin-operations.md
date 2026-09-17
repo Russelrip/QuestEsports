@@ -128,14 +128,18 @@ fails on any `/api` admin route that names no guard.
 ### Making someone a super admin
 
 There is no dashboard control for this, on purpose: it takes shell access to
-the server. The account must already be an admin. In production:
+the server. The account must already be an admin.
+
+The production backend image ships `src` but not `scripts/`, so copy the script
+into the running backend container with its requires pointed at `/app`, then run
+it. That way it uses the backend's own database connection and runtime role.
+From a checkout of this repository on your machine:
 
 ```bash
-ssh quest-vps-shell
-docker exec quest-prod-backend-1 node scripts/set-super-admin.js --email owner@example.com
+sed -e 's#require("\.\./src/#require("/app/src/#g' -e 's#require("dotenv")#require("/app/node_modules/dotenv")#' backend/scripts/set-super-admin.js | ssh quest-vps 'docker exec -i quest-prod-backend-1 sh -c "cat > /tmp/set-super-admin.js" && docker exec -e DOTENV_CONFIG_QUIET=true -w /app quest-prod-backend-1 node /tmp/set-super-admin.js --email owner@example.com; docker exec quest-prod-backend-1 rm -f /tmp/set-super-admin.js'
 ```
 
-Add `--revoke` to remove it. The script refuses to revoke the last super admin
+Add `--revoke` after the email to remove it. The script refuses to revoke the last super admin
 and writes `admin.user.super_admin.granted` or `.revoked` to the audit log with
 source `system`. A super admin cannot be demoted or deleted from the dashboard
 until the flag is revoked.
