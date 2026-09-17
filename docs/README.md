@@ -31,6 +31,7 @@ Use the guide that matches the work being performed. The root [README](../README
 ## Product and Administration
 
 - [Admin Operations](./admin-operations.md) — administrative workflows and safeguards.
+- [Roles and Permissions](./roles-and-permissions.md) — who can create tournaments, upload posters, manage matches, approve teams, and open admin tools (SITE-97, proposed).
 - [Commerce and Tournament Operations](./commerce-and-tournament-operations.md) — registration, payment, shop, and ticket operations.
 - [Google Search Console and Sitemap Operations](./search-console-and-sitemap.md) — crawler, sitemap, canonical, and Search Console procedures.
 
