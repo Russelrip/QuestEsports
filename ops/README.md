@@ -9,6 +9,8 @@ These scripts support encrypted backup and recovery for Quest Esports production
 | `restore-production-backup.sh` | Preflights/stages both file trees, activates them under an exit rollback guard, restores PostgreSQL in one transaction, and retains replaced trees after success; destructive and confirmation-gated |
 | `rehearsal/postgres17-restore-rehearsal.sh` | Fail-closed disposable-only PostgreSQL 17 restore rehearsal wrapper; privately runs the existing restore primitive and writes machine-readable evidence |
 | `rehearsal/verify-rehearsal-evidence.sh` | Rejects stale, incomplete, production-looking, or non-runtime rehearsal evidence |
+| `check-backup-remote-quota.sh` | Fails (and pages through the backup failure notifier) when any backup remote has less than `BACKUP_REMOTE_MIN_FREE_GIB` (default 2) free; run daily by `quest-esports-backup-quota.timer` |
+| `interim/` | The interim database, media, and freshness jobs that actually produce Quest's daily backups, as installed on the production host. See [interim/README.md](interim/README.md) |
 | `prune-production-backups.sh` | Shared-lock, per-remote, dry-run-by-default tiered off-site retention for every backup family, with rehearsal-evidence protection, pins, a minimum-recovery-point floor, and separate trash and empty-trash confirmations |
 | `notify-backup-failure.sh` | Sends a minimal Discord-compatible webhook alert without including secrets or backup URLs |
 | `check-backup-freshness.sh` | Shared-lock freshness check that requires a locally checksum-valid and remotely matching pair on every required remote |

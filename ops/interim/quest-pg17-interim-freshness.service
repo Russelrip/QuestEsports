@@ -1,0 +1,18 @@
+[Unit]
+Description=Verify interim Quest PostgreSQL backup freshness and off-site copy
+After=network-online.target
+Wants=network-online.target
+OnFailure=quest-esports-backup-failure@%n.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/quest-esports-backup.env
+ExecStart=/usr/local/sbin/quest-pg17-interim-freshness.sh
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadOnlyPaths=/srv/quest-esports/backups
+# rclone rewrites its config when it refreshes the OAuth token; read-only here
+# logged "Failed to save config" on every run.
+ReadWritePaths=/srv/quest-esports/rclone

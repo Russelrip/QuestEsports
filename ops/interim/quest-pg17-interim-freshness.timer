@@ -1,0 +1,11 @@
+[Unit]
+Description=Check interim Quest PostgreSQL backup every six hours
+
+[Timer]
+OnCalendar=*-*-* 00,06,12,18:20:00 UTC
+RandomizedDelaySec=300
+Persistent=true
+Unit=quest-pg17-interim-freshness.service
+
+[Install]
+WantedBy=timers.target

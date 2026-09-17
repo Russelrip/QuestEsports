@@ -82,6 +82,33 @@ test("remote retention deletes only complete recovery pairs, and to trash first"
   assert.match(retentionScript, /rehearsal-evidence\*/);
 });
 
+test("the daily quota alarm pages through the backup failure notifier", () => {
+  const service = fs.readFileSync(
+    path.join(__dirname, "../../ops/systemd/quest-esports-backup-quota.service"),
+    "utf8"
+  );
+  const timer = fs.readFileSync(
+    path.join(__dirname, "../../ops/systemd/quest-esports-backup-quota.timer"),
+    "utf8"
+  );
+
+  assert.match(service, /^ExecStart=\/usr\/bin\/bash \/var\/www\/QuestEsports\/ops\/check-backup-remote-quota\.sh$/m);
+  assert.match(service, /^OnFailure=quest-esports-backup-failure@%n\.service$/m);
+  assert.match(service, /^ReadWritePaths=\/srv\/quest-esports\/rclone$/m);
+  assert.match(timer, /^OnCalendar=\*-\*-\* 05:15:00 UTC$/m);
+  assert.match(timer, /^Persistent=true$/m);
+});
+
+test("the interim freshness unit can persist rclone's refreshed token", () => {
+  const service = fs.readFileSync(
+    path.join(__dirname, "../../ops/interim/quest-pg17-interim-freshness.service"),
+    "utf8"
+  );
+
+  assert.match(service, /^ReadOnlyPaths=\/srv\/quest-esports\/backups$/m);
+  assert.match(service, /^ReadWritePaths=\/srv\/quest-esports\/rclone$/m);
+});
+
 test("weekly retention empties last week's trash before trashing newly expired pairs", () => {
   const service = fs.readFileSync(
     path.join(__dirname, "../../ops/systemd/quest-esports-backup-retention.service"),
@@ -207,6 +234,7 @@ test("all remote probes use exact unique per-label configurations", () => {
     "backup-production-multi-remote.sh",
     "check-backup-freshness.sh",
     "prune-production-backups.sh",
+    "check-backup-remote-quota.sh",
   ]) {
     const script = fs.readFileSync(path.join(__dirname, "../../ops", scriptName), "utf8");
     assert.match(script, /config_by_resolved_path/);

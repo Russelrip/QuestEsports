@@ -340,6 +340,7 @@ tracked application examples.
 | `BACKUP_LOCAL_RETENTION_DAYS` | No | Operations owner | D/P | Public/non-secret | `7` | Per backup run |
 | `BACKUP_MAX_AGE_MINUTES` | No — script defaults to `2160` | Operations owner | D/P | Public/non-secret | `<approved maximum age in minutes>`; implementation default is `2160` | Per freshness run |
 | `BACKUP_FAILURE_WEBHOOK_URL` | No | Operations owner | D/P | Secret | `<approved HTTPS alert webhook>` | Per notifier run |
+| `BACKUP_REMOTE_MIN_FREE_GIB` | No — default `2` | Operations owner | D/P | Public/non-secret | `2` | Per quota check |
 | `BACKUP_REMOTE_MINIMUM_RECOVERY_POINTS` | Conditional; required for retention | Operations owner | D/P | Public/non-secret | `3` (newest pairs always kept per family) | Per prune run |
 | `BACKUP_RETAIN_DATABASE_ALL_DAYS` / `BACKUP_RETAIN_DATABASE_WEEKLY_DAYS` | No — default `35` / `90` | Operations owner | D/P | Public/non-secret | `35` / `90` | Per prune run |
 | `BACKUP_RETAIN_MEDIA_DAILY` / `BACKUP_RETAIN_MEDIA_WEEKLY` | No — default `7` / `4` | Operations owner | D/P | Public/non-secret | `7` / `4` | Per prune run |

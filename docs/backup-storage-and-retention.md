@@ -255,25 +255,51 @@ least monthly.
    an incident decision and maintenance mode, because it replaces the database
    and both upload trees.
 
+## Quota alarm
+
+`quest-esports-backup-quota.timer` runs `ops/check-backup-remote-quota.sh` daily
+at 05:15 UTC, after the nightly uploads. It asks each remote how much space the
+account has left and fails when any remote is below `BACKUP_REMOTE_MIN_FREE_GIB`
+(2 GiB). The failure alerts through `quest-esports-backup-failure@`. It also
+fails if a remote cannot be read, or does not report free space at all, rather
+than passing silently.
+
+The threshold is read from `/etc/quest-esports-backup.env`, which overrides the
+environment of the command that calls the script. To try a different threshold
+by hand, point `BACKUP_ENV_FILE` at a file that sources the real one and then
+sets the value.
+
+Installed and first run on 2026-09-17: 11.99 GiB free of 15.00 GiB. The first
+test run used a parser that could not read rclone's pretty-printed JSON. It
+failed, and **the notifier sent one false "backup unit failed" alert for
+`quest-esports-backup-quota.service`**. The parser was fixed, and the test
+fixture now emits rclone's real output shape.
+
+## Cleanup on 2026-09-17
+
+- The unused `quest-backups:` remote (revoked token, referenced nowhere) was
+  removed from the rclone config. A root-only copy of the previous config is at
+  `/root/rclone-quest-esports.conf.bak-20260917`.
+- `quest-pg17-interim-freshness.service` can now write the rclone config
+  directory, so rclone can save its refreshed token. That clears the
+  `Failed to save config` noise it logged on every run. The previous unit is at
+  `/root/quest-pg17-interim-freshness.service.bak-20260917`.
+- The three interim jobs and their units are now in the repository under
+  [`ops/interim/`](../ops/interim/README.md).
+- The superseded local adoption pair `quest-adoption-…-20260903T111422Z` was
+  removed from `/srv/quest-esports/backups`; its Drive copy had already been
+  pruned under the policy.
+
 ## Open items
 
-- **No quota alarm.** Freshness checks confirm the newest pair is off-site but
-  not how much space is left. A check that fails below about 2 GiB free would
-  have flagged this weeks in advance.
 - **Unseen Drive usage.** About 0.2 GiB of Drive usage is invisible to the
-  `drive.file` token. The rclone config also holds a second remote,
-  `quest-backups:`, whose token is revoked (`invalid_grant`); nothing on the host
-  references it. Check the Drive web UI for files that remote created, then
-  remove the dead remote entry.
-- **Freshness log noise.** `quest-pg17-interim-freshness.service` logs
-  `Failed to save config … read-only file system` on every run, because
-  `ReadOnlyPaths` blocks rclone from saving its refreshed token. It is harmless
-  while the backup jobs save the token daily, but it buries real errors.
+  `drive.file` token, which can only see files it created. Check the Drive web UI
+  for files created by other means, such as the removed `quest-backups:` remote
+  or manual uploads. Only someone signed in to the account can see them.
 - **Key custody.** The only known copy of the age identity is on one workstation
   (`~/.config/quest-esports/recovery/`). The recovery doc calls for at least two
   controlled offline copies.
-- **Host-only scripts.** The three interim scripts under `/usr/local/sbin` (the
-  database, media, and freshness jobs) are not in this repository.
-- **Local cutover leftovers.** The Sep 3 `quest-adoption-*` pairs and the Aug 27
-  `quest-legacy-media-*` pair in `/srv/quest-esports/backups` (about 290 MB)
-  match no local prune rule. Remove them by hand once their Drive pins expire.
+- **Pinned local copies.** The `quest-adoption-…-20260903T112030Z` pair and the
+  `quest-legacy-media-20260827T191544Z` pair (155 MB) stay in
+  `/srv/quest-esports/backups` as second copies of the Drive pins. No local prune
+  rule matches them, so remove them by hand after 2026-12-02.
