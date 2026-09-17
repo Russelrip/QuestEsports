@@ -40,6 +40,10 @@ from app.schemas.auth import (
     DiscordLoginResponse,
 )
 from app.schemas.leaderboard import (
+    LeaderboardBan,
+    LeaderboardBanPage,
+    LeaderboardBanRequest,
+    LeaderboardBanResult,
     LeaderboardEntry,
     LeaderboardPage,
     LeaderboardRegistrationPage,
@@ -95,6 +99,10 @@ DOCUMENTED_SURFACE: dict[str, dict[str, tuple[type | None, type | None]]] = {
     "/api/v1/leaderboard/players/{puuid}": {"delete": (None, LeaderboardRemovedRegistration)},
     "/api/v1/leaderboard/removals": {"get": (None, LeaderboardRemovalPage)},
     "/api/v1/leaderboard/removals/{removal_id}/restore": {"post": (None, LeaderboardRestoredRegistration)},
+    "/api/v1/leaderboard/players/{puuid}/ban": {"post": (LeaderboardBanRequest, LeaderboardBanResult)},
+    "/api/v1/leaderboard/removals/{removal_id}/ban": {"post": (LeaderboardBanRequest, LeaderboardBanResult)},
+    "/api/v1/leaderboard/bans": {"get": (None, LeaderboardBanPage)},
+    "/api/v1/leaderboard/bans/{ban_id}/lift": {"post": (None, LeaderboardBan)},
     "/api/v1/leaderboard/server-checks": {"get": (None, LeaderboardServerCheckPage)},
     "/api/v1/leaderboard/server-checks/{puuid}/clear": {
         "post": (None, LeaderboardServerCheckEntry),

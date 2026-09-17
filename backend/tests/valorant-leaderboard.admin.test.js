@@ -242,7 +242,7 @@ test("listAdminRemovals maps upstream rows and names the admins who acted", asyn
               discord_username: "janithbokula.", current_tier: "Diamond 2", elo: 1621,
               last_played_match: "2026-09-12T20:56:09+00:00", removed_at: "2026-09-14T07:33:25+00:00",
               removed_by: ADMIN_ID, restored_at: null, restored_by: null,
-              registered_again: false, superseded: false, restorable: true,
+              registered_again: false, superseded: false, banned: true, restorable: false,
             },
             {
               removal_id: "r2", puuid: "p2", name: "Gone", tag: "0001", discord_username: "gone",
@@ -275,8 +275,9 @@ test("listAdminRemovals maps upstream rows and names the admins who acted", asyn
     discordUsername: "janithbokula.", currentTier: "Diamond 2", elo: 1621,
     lastPlayed: "2026-09-12T20:56:09+00:00", removedAt: "2026-09-14T07:33:25+00:00",
     removedBy: { id: ADMIN_ID, username: "Russel" }, restoredAt: null, restoredBy: null,
-    registeredAgain: false, superseded: false, restorable: true,
+    registeredAgain: false, superseded: false, banned: true, restorable: false,
   });
+  assert.equal(result.entries[1].banned, false);
   assert.deepEqual(result.entries[1].removedBy, { id: null, username: null });
   assert.equal(result.entries[1].restorable, false);
   assert.equal(result.totalPages, 1);
@@ -371,6 +372,224 @@ test("restoreRemoval records nothing when upstream refuses the restore", async (
 
   assert.equal(error.statusCode, 409);
   assert.equal(audits.length, 0);
+});
+
+// --- Bans ---------------------------------------------------------------------
+
+const BAN_ID = "5f0c1a52-3d4e-4f60-8a7b-9c0d1e2f3a4b";
+
+const upstreamBan = {
+  ban_id: BAN_ID, puuid: upstreamRow.puuid, discord_banned: true, name: "mush", tag: "1443",
+  discord_username: "imalwaysobored", reason: "Keeps coming back", banned_at: "2026-09-17T10:00:00+00:00",
+  banned_by: ADMIN_ID, lifted_at: null, lifted_by: null, active: true,
+};
+
+const mappedBan = {
+  banId: BAN_ID, puuid: upstreamRow.puuid, discordBanned: true, name: "mush", tag: "1443",
+  discordUsername: "imalwaysobored", reason: "Keeps coming back", bannedAt: "2026-09-17T10:00:00+00:00",
+  bannedBy: null, liftedAt: null, liftedBy: null, active: true,
+};
+
+test("banAdminRegistration bans upstream as the admin and clears every removed player's cached rank", async () => {
+  let seen;
+  const rankingWheres = [];
+  const service = loadService({
+    client: {
+      banRegistration: async (input) => {
+        seen = input;
+        return {
+          ban: upstreamBan,
+          removed: [
+            { ...upstreamRow, name: "mush", tag: "1443", removal_id: REMOVAL_ID },
+            { ...upstreamRow, puuid: "alt-puuid", name: "mush2", tag: "0001", removal_id: "r2" },
+          ],
+        };
+      },
+    },
+    prisma: {
+      playerRanking: {
+        deleteMany: async ({ where }) => { rankingWheres.push(where); return { count: 1 }; },
+      },
+    },
+  });
+
+  const result = await service.banAdminRegistration({ puuid: upstreamRow.puuid, reason: "Keeps coming back", actorUserId: ADMIN_ID });
+
+  assert.deepEqual(seen, { puuid: upstreamRow.puuid, reason: "Keeps coming back", actorUserId: ADMIN_ID });
+  assert.deepEqual(
+    rankingWheres.map((where) => where.player.gameAccounts.some.externalId),
+    [upstreamRow.puuid, "alt-puuid"],
+  );
+  assert.equal(result.rankingsCleared, 2);
+  assert.deepEqual(result.removed.map((entry) => [entry.name, entry.removalId]), [["mush", REMOVAL_ID], ["mush2", "r2"]]);
+  assert.equal(result.ban.banId, BAN_ID);
+  assert.equal(result.ban.discordBanned, true);
+  assert.equal(result.ban.active, true);
+});
+
+test("banAdminRemoval with nothing left registered touches no rankings", async () => {
+  let deletes = 0;
+  const service = loadService({
+    client: { banRemoval: async () => ({ ban: { ...upstreamBan, puuid: null }, removed: [] }) },
+    prisma: { playerRanking: { deleteMany: async () => { deletes += 1; return { count: 0 }; } } },
+  });
+
+  const result = await service.banAdminRemoval({ removalId: REMOVAL_ID, reason: "x", actorUserId: ADMIN_ID });
+
+  assert.equal(deletes, 0);
+  assert.equal(result.rankingsCleared, 0);
+  assert.equal(result.ban.puuid, null);
+});
+
+test("listAdminBans maps bans and names who banned and who lifted", async () => {
+  let seen;
+  const service = loadService({
+    client: {
+      listBans: async (input) => {
+        seen = input;
+        return {
+          entries: [{ ...upstreamBan, active: false, lifted_at: "2026-09-18T00:00:00+00:00", lifted_by: "not-a-user-id" }],
+          total: 1, page: 1, per_page: 20, total_pages: 1,
+        };
+      },
+    },
+    prisma: { user: { findMany: async () => [{ id: ADMIN_ID, username: "Russel" }] } },
+  });
+
+  const result = await service.listAdminBans({ status: "all", query: "mush", page: 1, perPage: 20, actorUserId: ADMIN_ID });
+
+  assert.deepEqual(seen, { status: "all", query: "mush", page: 1, perPage: 20, actorUserId: ADMIN_ID });
+  assert.deepEqual(result.entries[0], {
+    ...mappedBan,
+    bannedBy: { id: ADMIN_ID, username: "Russel" },
+    liftedAt: "2026-09-18T00:00:00+00:00",
+    liftedBy: { id: null, username: null },
+    active: false,
+  });
+});
+
+test("ban and lift handlers require a reason and never call the service without one", async () => {
+  let called = false;
+  const controller = loadController({
+    service: {
+      banAdminRegistration: async () => { called = true; },
+      banAdminRemoval: async () => { called = true; },
+      liftAdminBan: async () => { called = true; },
+    },
+  });
+
+  for (const [handler, params] of [
+    [controller.banRegistration, { puuid: upstreamRow.puuid }],
+    [controller.banRemoval, { removalId: REMOVAL_ID }],
+    [controller.liftBan, { banId: BAN_ID }],
+  ]) {
+    for (const body of [{}, { reason: "   " }, { reason: "x".repeat(501) }]) {
+      const { error } = await run(handler, { params, body, user: { id: ADMIN_ID } });
+      assert.equal(error?.statusCode, 400);
+    }
+  }
+  assert.equal(called, false);
+});
+
+test("banRemoval audits the ban and each removed registration, without any PUUID", async () => {
+  const audits = [];
+  let seen;
+  const controller = loadController({
+    audits,
+    service: {
+      banAdminRemoval: async (input) => {
+        seen = input;
+        return {
+          ban: mappedBan,
+          removed: [{
+            puuid: "alt-puuid", name: "mush2", tag: "0001", discordUsername: "imalwaysobored",
+            currentTier: "Gold 1", elo: 1200, removalId: "r2",
+          }],
+          rankingsCleared: 1,
+        };
+      },
+    },
+  });
+
+  const { calls, error } = await run(controller.banRemoval, {
+    params: { removalId: REMOVAL_ID },
+    body: { reason: " Keeps coming back " },
+    user: { id: ADMIN_ID },
+  });
+
+  assert.equal(error, undefined);
+  assert.deepEqual(seen, { removalId: REMOVAL_ID, reason: "Keeps coming back", actorUserId: ADMIN_ID });
+  assert.equal(calls.json.data.ban.banId, BAN_ID);
+  assert.equal(audits.length, 1);
+  const [audit] = audits;
+  assert.equal(audit.action, "valorant.leaderboard_player.ban");
+  assert.equal(audit.reason, "Keeps coming back");
+  assert.deepEqual(audit.beforeData.registered, [
+    { riotId: "mush2#0001", discordUsername: "imalwaysobored", currentTier: "Gold 1", elo: 1200, removalId: "r2" },
+  ]);
+  assert.equal(audit.afterData.riotId, "mush#1443");
+  assert.equal(audit.afterData.riotAccountBanned, true);
+  assert.equal(JSON.stringify(audit).includes(upstreamRow.puuid), false);
+  assert.equal(JSON.stringify(audit).includes("alt-puuid"), false);
+});
+
+test("banRegistration records nothing when upstream refuses the ban", async () => {
+  const audits = [];
+  const controller = loadController({
+    audits,
+    service: {
+      banAdminRegistration: async () => {
+        const refusal = new Error("this player is already banned");
+        refusal.statusCode = 409;
+        throw refusal;
+      },
+    },
+  });
+
+  const { error } = await run(controller.banRegistration, {
+    params: { puuid: upstreamRow.puuid },
+    body: { reason: "Again" },
+    user: { id: ADMIN_ID },
+  });
+
+  assert.equal(error.statusCode, 409);
+  assert.equal(audits.length, 0);
+});
+
+test("liftBan audits the unban with the Riot ID, not the PUUID", async () => {
+  const audits = [];
+  const lifted = { ...mappedBan, liftedAt: "2026-09-18T00:00:00+00:00", active: false };
+  const controller = loadController({ audits, service: { liftAdminBan: async () => lifted } });
+
+  const { calls, error } = await run(controller.liftBan, {
+    params: { banId: BAN_ID },
+    body: { reason: "Appeal accepted" },
+    user: { id: ADMIN_ID },
+  });
+
+  assert.equal(error, undefined);
+  assert.equal(calls.json.data.active, false);
+  assert.equal(audits.length, 1);
+  assert.equal(audits[0].action, "valorant.leaderboard_player.unban");
+  assert.equal(audits[0].reason, "Appeal accepted");
+  assert.deepEqual(audits[0].afterData, {
+    riotId: "mush#1443", discordUsername: "imalwaysobored", liftedAt: "2026-09-18T00:00:00+00:00",
+  });
+  assert.equal(JSON.stringify(audits[0]).includes(upstreamRow.puuid), false);
+});
+
+test("listBans defaults an unknown status to active and clamps paging", async () => {
+  let seen;
+  const controller = loadController({
+    service: { listAdminBans: async (input) => { seen = input; return { entries: [] }; } },
+  });
+
+  await run(controller.listBans, {
+    query: { status: "everyone", q: "  mush  ", page: "0", per_page: "500" },
+    user: { id: ADMIN_ID },
+  });
+
+  assert.deepEqual(seen, { status: "active", query: "mush", page: 1, perPage: 100, actorUserId: ADMIN_ID });
 });
 
 test("listRemovals trims the query and clamps paging", async () => {

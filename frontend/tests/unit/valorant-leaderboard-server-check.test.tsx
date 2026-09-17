@@ -15,6 +15,10 @@ const mocks = vi.hoisted(() => ({
   fetchRegistrations: vi.fn(),
   fetchRemovals: vi.fn(),
   fetchServerChecks: vi.fn(),
+  fetchBans: vi.fn(),
+  banRegistration: vi.fn(),
+  banRemoval: vi.fn(),
+  lift: vi.fn(),
   remove: vi.fn(),
   restore: vi.fn(),
   clear: vi.fn(),
@@ -30,6 +34,10 @@ vi.mock("@/lib/valorant-api", () => ({
   restoreValorantLeaderboardRemoval: mocks.restore,
   clearValorantServerCheck: mocks.clear,
   reopenValorantServerCheck: mocks.reopen,
+  fetchValorantLeaderboardBans: mocks.fetchBans,
+  banValorantLeaderboardRegistration: mocks.banRegistration,
+  banValorantLeaderboardRemoval: mocks.banRemoval,
+  liftValorantLeaderboardBan: mocks.lift,
 }));
 vi.mock("@/hooks/useToastStore", () => ({
   useToastStore: (selector: (state: { showToast: typeof mocks.showToast }) => unknown) =>
@@ -100,6 +108,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.fetchRegistrations.mockResolvedValue(emptyPage);
   mocks.fetchRemovals.mockResolvedValue(emptyPage);
+  mocks.fetchBans.mockResolvedValue(emptyPage);
   mocks.fetchServerChecks.mockImplementation(async ({ status }: { status: string }) =>
     status === "flagged"
       ? checksPage([check()])

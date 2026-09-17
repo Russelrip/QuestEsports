@@ -12,6 +12,10 @@ import {
 const mocks = vi.hoisted(() => ({
   fetchRegistrations: vi.fn(),
   fetchRemovals: vi.fn(),
+  fetchBans: vi.fn(),
+  banRegistration: vi.fn(),
+  banRemoval: vi.fn(),
+  lift: vi.fn(),
   remove: vi.fn(),
   restore: vi.fn(),
   showToast: vi.fn(),
@@ -22,6 +26,10 @@ vi.mock("@/lib/valorant-api", () => ({
   fetchValorantLeaderboardRemovals: mocks.fetchRemovals,
   removeValorantLeaderboardRegistration: mocks.remove,
   restoreValorantLeaderboardRemoval: mocks.restore,
+  fetchValorantLeaderboardBans: mocks.fetchBans,
+  banValorantLeaderboardRegistration: mocks.banRegistration,
+  banValorantLeaderboardRemoval: mocks.banRemoval,
+  liftValorantLeaderboardBan: mocks.lift,
 }));
 vi.mock("@/hooks/useToastStore", () => ({
   useToastStore: (selector: (state: { showToast: typeof mocks.showToast }) => unknown) =>
@@ -56,6 +64,7 @@ const removal = (overrides: Partial<ValorantLeaderboardRemovedPlayer> = {}): Val
   restoredBy: null,
   registeredAgain: false,
   superseded: false,
+  banned: false,
   restorable: true,
   ...overrides,
 });
@@ -68,6 +77,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.fetchRegistrations.mockResolvedValue(page([registration]));
   mocks.fetchRemovals.mockResolvedValue(page([]));
+  mocks.fetchBans.mockResolvedValue(page([]));
 });
 afterEach(() => cleanup());
 
@@ -77,6 +87,7 @@ describe("leaderboard removal blocker", () => {
     expect(leaderboardRemovalBlocker(removal({ restoredAt: "2026-09-14T08:00:00Z", restorable: false }))).toBe("Already restored");
     expect(leaderboardRemovalBlocker(removal({ superseded: true, restorable: false }))).toMatch(/Removed again later/);
     expect(leaderboardRemovalBlocker(removal({ registeredAgain: true, restorable: false }))).toBe("Registered again");
+    expect(leaderboardRemovalBlocker(removal({ banned: true, registeredAgain: true, restorable: false }))).toMatch(/Banned/);
   });
 });
 
@@ -97,6 +108,7 @@ describe("removed players panel", () => {
     expect(within(section).getAllByText("by @Russel")).toHaveLength(2);
     // Only the restorable removal offers the button.
     expect(within(section).getAllByRole("button", { name: "Restore" })).toHaveLength(1);
+    expect(within(section).getAllByRole("button", { name: "Ban" })).toHaveLength(2);
 
     fireEvent.click(within(section).getByRole("button", { name: "Restore" }));
     const submit = within(section).getByRole("button", { name: "Restore player" }) as HTMLButtonElement;

@@ -9,7 +9,8 @@ an unranked player (Henrik 200 with no ``current``) still previews as
 404. ``submit`` 409s on a duplicate discord id or PUUID, upserts the
 ``leaderboard_players`` row, and returns the ``{success, message, player}``
 envelope (R13). Henrik failures map to stable ``AppError`` codes (R14) instead
-of valorantsl-new's blank ``None``-then-404 / generic 500.
+of valorantsl-new's blank ``None``-then-404 / generic 500. Every path refuses a
+PUUID or Discord id under an active ban with 403 ``REGISTRATION_BANNED`` (0019).
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.errors import AppError
 from app.config import get_settings
+from app.db.repositories.leaderboard_ban_repository import LeaderboardBanRepository
 from app.db.repositories.leaderboard_player_repository import LeaderboardPlayerRepository
 from app.integrations.henrik.client import HenrikClient
 from app.integrations.henrik.exceptions import (
@@ -44,14 +46,17 @@ class RegistrationService:
         session: AsyncSession,
         henrik: HenrikClient,
         repo: LeaderboardPlayerRepository,
+        bans: LeaderboardBanRepository | None = None,
     ) -> None:
         self._session = session
         self._henrik = henrik
         self._repo = repo
+        self._bans = bans or LeaderboardBanRepository(session)
 
     async def preview(self, puuid: str) -> PlayerPreview:
-        """Pre-registration snapshot, or 409/404/upstream ``AppError``."""
+        """Pre-registration snapshot, or 403/409/404/upstream ``AppError``."""
         settings = get_settings()
+        await self._refuse_banned(puuid=puuid, discord_id=None)
         if await self._repo.get_by_puuid(puuid) is not None:
             raise AppError("PUUID_ALREADY_REGISTERED", 409, "puuid already registered")
         try:
@@ -91,6 +96,7 @@ class RegistrationService:
         puuid: str,
     ) -> RegistrationSubmitResponse:
         """Register the player for the first time and return the success envelope."""
+        await self._refuse_banned(puuid=puuid, discord_id=discord_id)
         if await self._repo.get_by_discord_id(discord_id) is not None:
             raise AppError("DISCORD_ALREADY_REGISTERED", 409, "discord already registered")
         if await self._repo.get_by_puuid(puuid) is not None:
@@ -139,6 +145,10 @@ class RegistrationService:
             )
         except HenrikError as exc:
             raise _translate_henrik_error(exc) from exc
+        # Checked again under the lock, now that nothing slow is left before the
+        # commit: a ban made while Henrik answered must still stop this write.
+        await self._bans.lock_for_registration()
+        await self._refuse_banned(puuid=puuid, discord_id=discord_id)
         if release_puuid:
             await self._repo.release_discord(release_puuid)
         player = await self._repo.upsert(
@@ -194,6 +204,7 @@ class RegistrationService:
         registration must exist to be moved, and the destination must not
         already belong to somebody else.
         """
+        await self._refuse_banned(puuid=puuid, discord_id=discord_id)
         current = await self._repo.get_by_discord_id(discord_id)
         if current is None:
             raise AppError("DISCORD_NOT_REGISTERED", 404, "discord is not registered")
@@ -226,6 +237,25 @@ class RegistrationService:
             puuid=puuid,
             release_puuid=current.puuid,
         )
+
+    async def _refuse_banned(self, *, puuid: str, discord_id: str | None) -> None:
+        """403 when an active ban names the Riot account or the Discord account.
+
+        Riot account first: it is the one the player typed, so it is the more
+        useful thing to be told about.
+        """
+        bans = await self._bans.active_for(puuid=puuid, discord_id=discord_id)
+        if not bans:
+            return
+        # Read before the rollback, which expires the loaded rows.
+        riot_account_banned = any(ban.puuid == puuid for ban in bans)
+        # A failed check must not leave the ban lock or the transaction open.
+        await self._session.rollback()
+        if riot_account_banned:
+            raise AppError(
+                "REGISTRATION_BANNED", 403, "This Riot account is banned from the VALORANT leaderboard."
+            )
+        raise AppError("REGISTRATION_BANNED", 403, "This Discord account is banned from the VALORANT leaderboard.")
 
 def _parse_last_played(last_played: str | None) -> datetime | None:
     """ISO string -> ``datetime`` for the ``last_played_match`` column;

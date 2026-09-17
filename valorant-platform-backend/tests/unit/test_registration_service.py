@@ -129,9 +129,38 @@ class FakeRepo:
 class FakeSession:
     def __init__(self) -> None:
         self.committed = 0
+        self.rolled_back = 0
 
     async def commit(self) -> None:
         self.committed += 1
+
+    async def rollback(self) -> None:
+        self.rolled_back += 1
+
+
+class FakeBans:
+    """``LeaderboardBanRepository`` stand-in: active bans as ``(puuid, discord_id)`` pairs.
+
+    ``ban_on_lock`` is added when the registration lock is taken, standing in for
+    a ban that committed while Henrik was answering.
+    """
+
+    def __init__(self, bans: list[tuple[str | None, str | None]] | None = None, ban_on_lock=None) -> None:
+        self.bans = list(bans or [])
+        self.ban_on_lock = ban_on_lock
+        self.locks = 0
+
+    async def lock_for_registration(self) -> None:
+        self.locks += 1
+        if self.ban_on_lock:
+            self.bans.append(self.ban_on_lock)
+
+    async def active_for(self, *, puuid: str | None, discord_id: str | None) -> list[_Player]:
+        return [
+            _Player(puuid=ban_puuid, discord_id=ban_discord)
+            for ban_puuid, ban_discord in self.bans
+            if (puuid and ban_puuid == puuid) or (discord_id and ban_discord == discord_id)
+        ]
 
 
 def _service(
@@ -139,9 +168,84 @@ def _service(
     henrik: FakeHenrik,
     monkeypatch: pytest.MonkeyPatch,
     session: FakeSession | None = None,
+    bans: FakeBans | None = None,
 ) -> RegistrationService:
     monkeypatch.setattr(registration_service, "get_settings", lambda: SETTINGS)
-    return RegistrationService(session=session or FakeSession(), henrik=henrik, repo=repo)  # type: ignore[arg-type]
+    return RegistrationService(
+        session=session or FakeSession(),  # type: ignore[arg-type]
+        henrik=henrik,  # type: ignore[arg-type]
+        repo=repo,  # type: ignore[arg-type]
+        bans=bans or FakeBans(),  # type: ignore[arg-type]
+    )
+
+
+# ------------------------------------------------------------------- bans
+
+async def test_preview_403_when_the_riot_account_is_banned(monkeypatch: pytest.MonkeyPatch) -> None:
+    henrik = FakeHenrik(mmr=MMR)
+    svc = _service(FakeRepo(), henrik, monkeypatch, bans=FakeBans([("puuid-1", "d-1")]))
+
+    with pytest.raises(AppError) as excinfo:
+        await svc.preview("puuid-1")
+
+    assert (excinfo.value.status, excinfo.value.code) == (403, "REGISTRATION_BANNED")
+    assert "Riot account" in excinfo.value.message
+    assert henrik.calls == [], "a banned account is refused before any Henrik call"
+
+
+async def test_submit_403_when_the_discord_account_is_banned_under_a_new_riot_account(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The alt-account case: a fresh Riot account, the banned Discord account.
+    repo = FakeRepo()
+    henrik = FakeHenrik(mmr=MMR)
+    svc = _service(repo, henrik, monkeypatch, bans=FakeBans([("puuid-old", "d-1")]))
+
+    with pytest.raises(AppError) as excinfo:
+        await svc.submit(discord_id="d-1", discord_username="u", puuid="puuid-alt")
+
+    assert (excinfo.value.status, excinfo.value.code) == (403, "REGISTRATION_BANNED")
+    assert "Discord account" in excinfo.value.message
+    assert repo.upserted is None
+    assert henrik.calls == []
+
+
+async def test_submit_403_when_a_ban_lands_while_henrik_answers(monkeypatch: pytest.MonkeyPatch) -> None:
+    repo = FakeRepo()
+    session = FakeSession()
+    bans = FakeBans(ban_on_lock=("puuid-1", None))
+    svc = _service(repo, FakeHenrik(mmr=MMR), monkeypatch, session, bans)
+
+    with pytest.raises(AppError) as excinfo:
+        await svc.submit(discord_id="d-1", discord_username="u", puuid="puuid-1")
+
+    assert (excinfo.value.status, excinfo.value.code) == (403, "REGISTRATION_BANNED")
+    assert bans.locks == 1
+    assert repo.upserted is None
+    assert (session.committed, session.rolled_back) == (0, 1)
+
+
+async def test_submit_takes_the_ban_lock_before_writing(monkeypatch: pytest.MonkeyPatch) -> None:
+    repo = FakeRepo()
+    bans = FakeBans([("someone-else", "d-9")])
+    svc = _service(repo, FakeHenrik(mmr=MMR), monkeypatch, bans=bans)
+
+    result = await svc.submit(discord_id="d-1", discord_username="u", puuid="puuid-1")
+
+    assert result.success is True
+    assert bans.locks == 1
+
+
+async def test_repoint_403_when_moving_onto_a_banned_riot_account(monkeypatch: pytest.MonkeyPatch) -> None:
+    old_row = _Player(puuid="puuid-old", name="Old", tag="OLD", currenttierpatched="Silver 1", elo=900, discord_id="d-1")
+    repo = FakeRepo(by_puuid={"puuid-old": old_row}, by_discord_id={"d-1": old_row})
+    svc = _service(repo, FakeHenrik(mmr=MMR), monkeypatch, bans=FakeBans([("puuid-banned", None)]))
+
+    with pytest.raises(AppError) as excinfo:
+        await svc.repoint(discord_id="d-1", discord_username="u", puuid="puuid-banned")
+
+    assert (excinfo.value.status, excinfo.value.code) == (403, "REGISTRATION_BANNED")
+    assert repo.released == []
 
 
 # --------------------------------------------------------------- preview 409

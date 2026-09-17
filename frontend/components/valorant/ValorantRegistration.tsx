@@ -95,6 +95,9 @@ const messageForRegistrationError = (error: unknown, fallback: string): string =
   if (status === 404) {
     return "Player not found. Please check your PUUID and try again.";
   }
+  if (status === 403 && /banned/i.test(error.message)) {
+    return `${error.message} If you think this is a mistake, please contact an administrator.`;
+  }
   return error.message || fallback;
 };
 

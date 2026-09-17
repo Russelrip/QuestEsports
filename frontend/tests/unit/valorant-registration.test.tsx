@@ -105,4 +105,19 @@ describe("Valorant registration states", () => {
     await user.click(screen.getByRole("button", { name: "Verify Player" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Player lookup failed");
   });
+
+  it("tells a banned player they cannot register and who to contact", async () => {
+    mocks.auth.user = linkedUser;
+    mocks.preview.mockRejectedValueOnce(
+      Object.assign(new Error("This Riot account is banned from the VALORANT leaderboard."), { status: 403 }),
+    );
+    const user = userEvent.setup();
+    render(<ValorantRegistration />);
+    await user.type(await screen.findByLabelText("PUUID"), "p-1");
+    await user.click(screen.getByRole("button", { name: "Verify Player" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "This Riot account is banned from the VALORANT leaderboard. If you think this is a mistake, please contact an administrator.",
+    );
+    expect(mocks.submit).not.toHaveBeenCalled();
+  });
 });

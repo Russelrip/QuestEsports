@@ -175,6 +175,45 @@ const restoreRemoval = async ({ removalId, actorUserId }) =>
     actorUserId,
   });
 
+// Admin: ban a registered player's Riot and Discord accounts. Upstream removes
+// every registration holding either, in the same transaction as the ban.
+const banRegistration = async ({ puuid, reason, actorUserId }) =>
+  requestJson({
+    path: `/api/v1/leaderboard/players/${encodeURIComponent(puuid)}/ban`,
+    method: "POST",
+    body: { reason },
+    actorUserId,
+  });
+
+// Admin: ban an already-removed player by the accounts the removal kept.
+// Upstream refuses with 409 when both are already banned.
+const banRemoval = async ({ removalId, reason, actorUserId }) =>
+  requestJson({
+    path: `/api/v1/leaderboard/removals/${encodeURIComponent(removalId)}/ban`,
+    method: "POST",
+    body: { reason },
+    actorUserId,
+  });
+
+// Admin: bans newest first — "active" (the default upstream), "lifted" or "all".
+const listBans = async ({ status = "active", query = "", page = 1, perPage = 20, actorUserId }) => {
+  const params = new URLSearchParams();
+  params.set("status", status);
+  if (query) params.set("q", query);
+  params.set("page", String(page));
+  params.set("per_page", String(perPage));
+  return requestJson({ path: `/api/v1/leaderboard/bans?${params.toString()}`, actorUserId });
+};
+
+// Admin: let a banned player register again. Upstream refuses with 409 when
+// the ban was already lifted.
+const liftBan = async ({ banId, actorUserId }) =>
+  requestJson({
+    path: `/api/v1/leaderboard/bans/${encodeURIComponent(banId)}/lift`,
+    method: "POST",
+    actorUserId,
+  });
+
 // Admin: players the server check flags for review (status "flagged"), the
 // ones an admin already cleared ("cleared"), or every registration ("all").
 // `server` narrows any of them to players with a match on that server.
@@ -213,6 +252,10 @@ module.exports = {
   removeRegistration,
   listRemovals,
   restoreRemoval,
+  banRegistration,
+  banRemoval,
+  listBans,
+  liftBan,
   repointRegistration,
   getLeaderboard,
   searchLeaderboard,

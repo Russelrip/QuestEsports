@@ -618,6 +618,37 @@ Removals made before restoring existed (VALORANT migration `0017`) were not kept
 and cannot be restored from the page. The copy of a removed player is kept
 indefinitely, including when the player asked to be removed.
 
+## Banning Leaderboard Players
+
+A removed player can register again straight away. To stop that, ban them:
+
+- When removing, tick **Also ban them from registering again**. The button
+  becomes **Remove and ban**, and no Undo banner is offered.
+- For a player already removed, use **Ban** on their row under **Removed
+  players**.
+
+A ban covers the player's **Riot account (PUUID)** and their **Discord account**,
+not their Riot ID. Riot IDs can be renamed at will, so a ban by `name#tag` would
+not hold; the PUUID stays the same for the life of the Riot account, and the
+Discord id comes from the Discord account linked to their Quest login, which a
+player cannot type in. To get back on the board they would need a new Riot
+account *and* a new Discord account.
+
+Banning also removes, in the same step, anything registered on either account,
+including a new Riot account registered with the banned Discord. Each of those
+registrations shows under **Removed players** as usual. A banned player trying to
+register is told their Riot or Discord account is banned from the leaderboard.
+Restoring a banned player is refused until the ban is lifted.
+
+**Banned players**, below Removed players, lists active bans (and lifted ones, or
+all) with the reason and who banned them. **Lift ban** takes a reason and lets the
+accounts register again; it does not put the player back on the board. Lifted
+bans stay listed. Ban and lift are audited (`valorant.leaderboard_player.ban` /
+`.unban`) and open to admins and to staff with the `valorant_leaderboard` area.
+
+A ban only covers the leaderboard. It does not stop the player signing in to
+Quest or using the rest of the site. Bans need VALORANT migration `0019`.
+
 ## Leaderboard Server Check
 
 The leaderboard is for Sri Lankan players, and they play competitive on the

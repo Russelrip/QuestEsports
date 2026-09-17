@@ -20,6 +20,7 @@ from app.api.service_token import (
     verify_service_token,
 )
 from app.config import get_settings
+from app.db.repositories.leaderboard_ban_repository import LeaderboardBanRepository
 from app.db.repositories.leaderboard_player_repository import LeaderboardPlayerRepository
 from app.db.repositories.leaderboard_server_check_repository import LeaderboardServerCheckRepository
 from app.db.repositories.match_repository import MatchRepository
@@ -179,7 +180,11 @@ async def get_leaderboard_service(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> LeaderboardService:
     """Request-scoped ``LeaderboardService`` bound to the request session."""
-    return LeaderboardService(session=session, repo=LeaderboardPlayerRepository(session))
+    return LeaderboardService(
+        session=session,
+        repo=LeaderboardPlayerRepository(session),
+        bans=LeaderboardBanRepository(session),
+    )
 
 
 async def get_server_check_service(
@@ -203,6 +208,7 @@ async def get_registration_service(
         session=session,
         henrik=henrik,
         repo=LeaderboardPlayerRepository(session),
+        bans=LeaderboardBanRepository(session),
     )
 
 

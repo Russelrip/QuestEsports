@@ -47,10 +47,16 @@ records are loaded only in the existing admin detail workflow.
 
 - `valorant/ValorantLeaderboardPlayersManager.tsx` searches registrations and
   removes one with a reason, then offers a one-click **Undo** for that removal.
+  Ticking **Also ban them from registering again** calls the ban route instead;
+  that offers no Undo, because a restore is refused while the ban stands.
 - `valorant/ValorantLeaderboardRemovalsPanel.tsx` lists removals newest first and
-  restores one with a reason; whether a row can be restored comes from the
-  platform (`restorable`, `registeredAgain`, `superseded`), and a refused restore
-  shows the platform's message.
+  restores or bans one with a reason; whether a row can be restored comes from the
+  platform (`restorable`, `registeredAgain`, `superseded`, `banned`), and a refused
+  restore or ban shows the platform's message.
+- `valorant/ValorantLeaderboardBansPanel.tsx` lists bans (active, lifted or all)
+  and lifts one with a reason. A ban names the Riot account (PUUID) and Discord
+  account, never the Riot ID, so a rename does not get around it; the Riot ID and
+  handle shown are how the player looked when banned.
 - `valorant/ValorantLeaderboardServerCheckPanel.tsx` shows where the whole
   leaderboard plays (clickable per-server totals) and lists players the server
   check flags, that an admin kept, or everyone, with per-server match counts.

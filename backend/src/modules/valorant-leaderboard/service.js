@@ -10,6 +10,10 @@ const {
   removeRegistration: fetchRemoveRegistration,
   listRemovals: fetchRemovals,
   restoreRemoval: fetchRestoreRemoval,
+  banRegistration: fetchBanRegistration,
+  banRemoval: fetchBanRemoval,
+  listBans: fetchBans,
+  liftBan: fetchLiftBan,
   listServerChecks: fetchServerChecks,
   clearServerCheck: fetchClearServerCheck,
   reopenServerCheck: fetchReopenServerCheck,
@@ -261,19 +265,29 @@ const removeAdminRegistration = async ({ puuid, actorUserId }) => {
   const raw = await fetchRemoveRegistration({ puuid, actorUserId });
   const removed = mapRegistration(raw);
   snapshot = null;
-  let rankingsCleared = 0;
-  try {
-    ({ count: rankingsCleared } = await prisma.playerRanking.deleteMany({
-      where: {
-        game: "valorant",
-        player: { gameAccounts: { some: { game: "valorant", externalId: puuid } } },
-      },
-    }));
-  } catch (error) {
-    rankingsCleared = null;
-    logger.warn("Leaderboard removal could not clear the cached profile rank", { error });
-  }
+  const rankingsCleared = await clearProfileRankings([puuid]);
   return { removed, removalId: raw.removal_id ?? null, rankingsCleared };
+};
+
+// The profile ranks of the given removed PUUIDs; the count cleared, or null
+// when that failed (logged, never thrown — see removeAdminRegistration).
+const clearProfileRankings = async (puuids) => {
+  let cleared = 0;
+  try {
+    for (const puuid of puuids) {
+      const { count } = await prisma.playerRanking.deleteMany({
+        where: {
+          game: "valorant",
+          player: { gameAccounts: { some: { game: "valorant", externalId: puuid } } },
+        },
+      });
+      cleared += count;
+    }
+  } catch (error) {
+    logger.warn("Leaderboard removal could not clear the cached profile rank", { error });
+    return null;
+  }
+  return cleared;
 };
 
 // --- Admin: removals ----------------------------------------------------------
@@ -310,6 +324,7 @@ const mapRemoval = (entry, names) => ({
   restoredBy: mapActor(entry.restored_by, names),
   registeredAgain: Boolean(entry.registered_again),
   superseded: Boolean(entry.superseded),
+  banned: Boolean(entry.banned),
   restorable: Boolean(entry.restorable),
 });
 
@@ -338,6 +353,57 @@ const restoreAdminRemoval = async ({ removalId, actorUserId }) => {
     removedAt: raw.removed_at ?? null,
   };
 };
+
+// --- Admin: bans -------------------------------------------------------------
+//
+// A ban keeps a player's Riot account (PUUID) and Discord account from
+// registering again. Riot IDs can be renamed freely, so a ban never names one;
+// the Riot ID and Discord handle on it are only how the player looked when
+// banned. Banning removes whatever either account holds, so the same caches a
+// removal clears are cleared here.
+
+const mapBan = (entry, names) => ({
+  banId: entry.ban_id,
+  puuid: entry.puuid ?? null,
+  discordBanned: Boolean(entry.discord_banned),
+  name: entry.name,
+  tag: entry.tag,
+  discordUsername: entry.discord_username ?? "",
+  reason: entry.reason ?? null,
+  bannedAt: entry.banned_at,
+  bannedBy: mapActor(entry.banned_by, names),
+  liftedAt: entry.lifted_at ?? null,
+  liftedBy: mapActor(entry.lifted_by, names),
+  active: Boolean(entry.active),
+});
+
+const listAdminBans = async ({ status, query, page, perPage, actorUserId }) => {
+  const raw = await fetchBans({ status, query, page, perPage, actorUserId });
+  const entries = raw.entries || [];
+  const names = await loadActorNames(entries.flatMap((entry) => [entry.banned_by, entry.lifted_by]));
+  return {
+    entries: entries.map((entry) => mapBan(entry, names)),
+    total: raw.total ?? 0,
+    page: raw.page ?? page,
+    perPage: raw.per_page ?? perPage,
+    totalPages: raw.total_pages ?? 1,
+  };
+};
+
+const applyBan = async (raw) => {
+  const removed = (raw.removed || []).map((entry) => ({ ...mapRegistration(entry), removalId: entry.removal_id }));
+  if (removed.length > 0) snapshot = null;
+  const rankingsCleared = await clearProfileRankings(removed.map((entry) => entry.puuid));
+  return { ban: mapBan(raw.ban, new Map()), removed, rankingsCleared };
+};
+
+const banAdminRegistration = async ({ puuid, reason, actorUserId }) =>
+  applyBan(await fetchBanRegistration({ puuid, reason, actorUserId }));
+
+const banAdminRemoval = async ({ removalId, reason, actorUserId }) =>
+  applyBan(await fetchBanRemoval({ removalId, reason, actorUserId }));
+
+const liftAdminBan = async ({ banId, actorUserId }) => mapBan(await fetchLiftBan({ banId, actorUserId }), new Map());
 
 // --- Admin: server check ------------------------------------------------------
 //
@@ -426,6 +492,10 @@ module.exports = {
   removeAdminRegistration,
   listAdminRemovals,
   restoreAdminRemoval,
+  listAdminBans,
+  banAdminRegistration,
+  banAdminRemoval,
+  liftAdminBan,
   repointRegistration,
   listLeaderboard,
   searchLeaderboardPlayer,

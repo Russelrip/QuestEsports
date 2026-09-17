@@ -6,6 +6,10 @@ const {
   removeAdminRegistration,
   listAdminRemovals,
   restoreAdminRemoval,
+  listAdminBans,
+  banAdminRegistration,
+  banAdminRemoval,
+  liftAdminBan,
   listAdminServerChecks,
   clearAdminServerCheck,
   reopenAdminServerCheck,
@@ -168,6 +172,79 @@ const readReason = (req, missingMessage) => {
   return reason;
 };
 
+const BAN_STATUSES = new Set(["active", "lifted", "all"]);
+
+const listBans = asyncHandler(async (req, res) => {
+  const status = BAN_STATUSES.has(req.query.status) ? req.query.status : "active";
+  const query = String(req.query.q || "").trim().slice(0, ADMIN_QUERY_MAX_LENGTH);
+  const page = Math.max(1, parsePositiveInt(req.query.page, 1));
+  const perPage = clamp(parsePositiveInt(req.query.per_page, 20), 1, 100);
+  const data = await listAdminBans({ status, query, page, perPage, actorUserId: req.user.id });
+  respond(res, data);
+});
+
+// One audit row per ban, whichever list it was made from. The audit policy keeps
+// PUUIDs out, so the Riot ID and Discord handle identify the banned player and
+// every registration the ban removed.
+const auditBan = async (req, data, reason) => {
+  const { ban, removed } = data;
+  await recordAudit({
+    ...requestAuditContext(req),
+    action: "valorant.leaderboard_player.ban",
+    targetType: "valorant_leaderboard_player",
+    targetId: null,
+    beforeData: {
+      registered: removed.map((entry) => ({
+        riotId: `${entry.name}#${entry.tag}`,
+        discordUsername: entry.discordUsername,
+        currentTier: entry.currentTier,
+        elo: entry.elo,
+        removalId: entry.removalId,
+      })),
+    },
+    afterData: {
+      banId: ban.banId,
+      riotId: `${ban.name}#${ban.tag}`,
+      discordUsername: ban.discordUsername,
+      riotAccountBanned: ban.puuid !== null,
+      discordBanned: ban.discordBanned,
+      rankingsCleared: data.rankingsCleared,
+    },
+    source: "admin",
+    reason,
+  });
+};
+
+const banRegistration = asyncHandler(async (req, res) => {
+  const reason = readReason(req, "Give a reason for banning this player from the leaderboard.");
+  const data = await banAdminRegistration({ puuid: req.params.puuid, reason, actorUserId: req.user.id });
+  await auditBan(req, data, reason);
+  respond(res, data);
+});
+
+const banRemoval = asyncHandler(async (req, res) => {
+  const reason = readReason(req, "Give a reason for banning this player from the leaderboard.");
+  const data = await banAdminRemoval({ removalId: req.params.removalId, reason, actorUserId: req.user.id });
+  await auditBan(req, data, reason);
+  respond(res, data);
+});
+
+const liftBan = asyncHandler(async (req, res) => {
+  const reason = readReason(req, "Give a reason for lifting this ban.");
+  const ban = await liftAdminBan({ banId: req.params.banId, actorUserId: req.user.id });
+  await recordAudit({
+    ...requestAuditContext(req),
+    action: "valorant.leaderboard_player.unban",
+    targetType: "valorant_leaderboard_player",
+    targetId: null,
+    beforeData: { banned: true, banId: ban.banId, bannedAt: ban.bannedAt },
+    afterData: { riotId: `${ban.name}#${ban.tag}`, discordUsername: ban.discordUsername, liftedAt: ban.liftedAt },
+    source: "admin",
+    reason,
+  });
+  respond(res, ban);
+});
+
 // What a server check decision was based on, for the audit row. The audit
 // policy keeps PUUIDs out, so the Riot ID and Discord handle identify the player.
 const serverCheckAuditData = (entry) => ({
@@ -228,6 +305,10 @@ const reopenServerCheck = asyncHandler(async (req, res) => {
 });
 
 module.exports = {
+  listBans,
+  banRegistration,
+  banRemoval,
+  liftBan,
   listServerChecks,
   clearServerCheck,
   reopenServerCheck,

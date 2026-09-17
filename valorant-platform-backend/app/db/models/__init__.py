@@ -14,6 +14,7 @@ class Base(DeclarativeBase):
     """Declarative base for all ORM models."""
 
 
+from app.db.models.leaderboard_ban import LeaderboardBan
 from app.db.models.leaderboard_player import LeaderboardPlayer
 from app.db.models.leaderboard_player_removal import LeaderboardPlayerRemoval
 from app.db.models.leaderboard_server_check import LeaderboardServerCheck, LeaderboardServerMatch
@@ -29,6 +30,7 @@ from app.db.models.team import Team
 
 __all__ = [
     "Base",
+    "LeaderboardBan",
     "LeaderboardPlayer",
     "LeaderboardPlayerRemoval",
     "LeaderboardServerCheck",

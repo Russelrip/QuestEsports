@@ -3,6 +3,7 @@
 import { Fragment, useEffect, useState, type FormEvent } from "react";
 import ValorantEmptyState from "@/components/admin/valorant/ValorantEmptyState";
 import ValorantErrorAlert from "@/components/admin/valorant/ValorantErrorAlert";
+import ValorantLeaderboardBansPanel from "@/components/admin/valorant/ValorantLeaderboardBansPanel";
 import ValorantLeaderboardRemovalsPanel from "@/components/admin/valorant/ValorantLeaderboardRemovalsPanel";
 import ValorantLeaderboardServerCheckPanel from "@/components/admin/valorant/ValorantLeaderboardServerCheckPanel";
 import ValorantLoadingState from "@/components/admin/valorant/ValorantLoadingState";
@@ -21,6 +22,7 @@ import { formatSriLankaDate } from "@/lib/date-time";
 import { cn } from "@/lib/utils";
 import type { ValorantLeaderboardRegistration } from "@/lib/valorant";
 import {
+  banValorantLeaderboardRegistration,
   removeValorantLeaderboardRegistration,
   restoreValorantLeaderboardRemoval,
 } from "@/lib/valorant-api";
@@ -44,10 +46,12 @@ export default function ValorantLeaderboardPlayersManager() {
   const [page, setPage] = useState(1);
   const [removingPuuid, setRemovingPuuid] = useState<string | null>(null);
   const [reason, setReason] = useState("");
+  const [alsoBan, setAlsoBan] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [lastRemoval, setLastRemoval] = useState<LastRemoval | null>(null);
   const [undoing, setUndoing] = useState(false);
   const [removalsVersion, setRemovalsVersion] = useState(0);
+  const [bansVersion, setBansVersion] = useState(0);
   // Bumped whenever a registration leaves or returns, so the server check follows.
   const [serverChecksVersion, setServerChecksVersion] = useState(0);
 
@@ -61,6 +65,7 @@ export default function ValorantLeaderboardPlayersManager() {
   const closeRemoval = () => {
     setRemovingPuuid(null);
     setReason("");
+    setAlsoBan(false);
   };
 
   // Same behaviour as the public leaderboard search: results follow the input
@@ -78,6 +83,7 @@ export default function ValorantLeaderboardPlayersManager() {
     const timer = setTimeout(() => {
       setRemovingPuuid(null);
       setReason("");
+      setAlsoBan(false);
       setPage(1);
       setQuery(next);
     }, LEADERBOARD_SEARCH_DEBOUNCE_MS);
@@ -100,10 +106,24 @@ export default function ValorantLeaderboardPlayersManager() {
     if (!trimmed) return;
     setSubmitting(true);
     try {
-      const result = await removeValorantLeaderboardRegistration(entry.puuid, trimmed);
       const label = `${entry.name}#${entry.tag}`;
-      showToast({ title: `${label} removed from the leaderboard`, tone: "success" });
-      setLastRemoval(result.removalId ? { removalId: result.removalId, label } : null);
+      if (alsoBan) {
+        const result = await banValorantLeaderboardRegistration(entry.puuid, trimmed);
+        const alts = result.removed.length - 1;
+        showToast({
+          title: alts > 0
+            ? `${label} banned; ${alts} other ${alts === 1 ? "registration" : "registrations"} on the same accounts removed too`
+            : `${label} removed and banned from registering again`,
+          tone: "success",
+        });
+        // Nothing to undo in one click: a restore is refused while the ban stands.
+        setLastRemoval(null);
+        setBansVersion((version) => version + 1);
+      } else {
+        const result = await removeValorantLeaderboardRegistration(entry.puuid, trimmed);
+        showToast({ title: `${label} removed from the leaderboard`, tone: "success" });
+        setLastRemoval(result.removalId ? { removalId: result.removalId, label } : null);
+      }
       setRemovalsVersion((version) => version + 1);
       setServerChecksVersion((version) => version + 1);
       closeRemoval();
@@ -303,9 +323,26 @@ export default function ValorantLeaderboardPlayersManager() {
                                       its next pass, unless they have the Manual role.
                                     </li>
                                     <li>The rank shown on their Quest profile is cleared. Their linked game account stays.</li>
-                                    <li>They can register again at any time, and you can restore them from Removed players below.</li>
+                                    {alsoBan ? (
+                                      <li>
+                                        Their Riot account and Discord account are banned: neither can register again, even under a
+                                        new Riot ID, until you lift the ban under Banned players below. Anything else registered on
+                                        either account is removed too.
+                                      </li>
+                                    ) : (
+                                      <li>They can register again at any time, and you can restore them from Removed players below.</li>
+                                    )}
                                   </ul>
                                 </div>
+                                <label className="flex items-start gap-2 text-sm text-slate-300">
+                                  <input
+                                    type="checkbox"
+                                    checked={alsoBan}
+                                    onChange={(event) => setAlsoBan(event.target.checked)}
+                                    className="mt-0.5 h-4 w-4 accent-red-500"
+                                  />
+                                  <span>Also ban them from registering again</span>
+                                </label>
                                 <label className="grid gap-1.5 text-sm text-slate-300">
                                   Reason (kept in the audit log)
                                   <Textarea
@@ -323,7 +360,7 @@ export default function ValorantLeaderboardPlayersManager() {
                                     Cancel
                                   </Button>
                                   <Button type="submit" variant="danger" size="sm" disabled={submitting || !reason.trim()}>
-                                    {submitting ? "Removing…" : "Remove player"}
+                                    {submitting ? (alsoBan ? "Banning…" : "Removing…") : alsoBan ? "Remove and ban" : "Remove player"}
                                   </Button>
                                 </div>
                               </form>
@@ -387,6 +424,18 @@ export default function ValorantLeaderboardPlayersManager() {
           setServerChecksVersion((version) => version + 1);
           void registrationsQuery.refetch();
         }}
+        onBanned={() => {
+          setLastRemoval(null);
+          setBansVersion((version) => version + 1);
+          setServerChecksVersion((version) => version + 1);
+          void registrationsQuery.refetch();
+        }}
+      />
+
+      <ValorantLeaderboardBansPanel
+        refreshToken={bansVersion}
+        // Lifting a ban can make a removal restorable again.
+        onLifted={() => setRemovalsVersion((version) => version + 1)}
       />
     </div>
   );

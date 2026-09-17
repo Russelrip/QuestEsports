@@ -17,6 +17,10 @@ import type {
   SeriesViewLite,
   ValorantCheckPuuidResult,
   ValorantFormat,
+  ValorantLeaderboardBan,
+  ValorantLeaderboardBanPage,
+  ValorantLeaderboardBanResult,
+  ValorantLeaderboardBanStatus,
   ValorantLeaderboardRegistrationPage,
   ValorantLeaderboardRemoval,
   ValorantLeaderboardRemovalPage,
@@ -237,6 +241,36 @@ export const fetchValorantLeaderboardRemovals = ({ query = "", page = 1 }: { que
 export const restoreValorantLeaderboardRemoval = (removalId: string, reason: string) =>
   valorantAdminRequest<ValorantLeaderboardRestore>(
     `/api/v1/admin/valorant/leaderboard/removals/${encodeURIComponent(removalId)}/restore`,
+    { method: "POST", json: { reason } }
+  );
+
+export const banValorantLeaderboardRegistration = (puuid: string, reason: string) =>
+  valorantAdminRequest<ValorantLeaderboardBanResult>(
+    `/api/v1/admin/valorant/leaderboard/players/${encodeURIComponent(puuid)}/ban`,
+    { method: "POST", json: { reason } }
+  );
+
+export const banValorantLeaderboardRemoval = (removalId: string, reason: string) =>
+  valorantAdminRequest<ValorantLeaderboardBanResult>(
+    `/api/v1/admin/valorant/leaderboard/removals/${encodeURIComponent(removalId)}/ban`,
+    { method: "POST", json: { reason } }
+  );
+
+export const fetchValorantLeaderboardBans = ({
+  status = "active",
+  page = 1,
+}: { status?: ValorantLeaderboardBanStatus; page?: number } = {}) => {
+  const params = new URLSearchParams();
+  params.set("status", status);
+  params.set("page", String(page));
+  return valorantAdminRequest<ValorantLeaderboardBanPage>(
+    `/api/v1/admin/valorant/leaderboard/bans?${params.toString()}`
+  );
+};
+
+export const liftValorantLeaderboardBan = (banId: string, reason: string) =>
+  valorantAdminRequest<ValorantLeaderboardBan>(
+    `/api/v1/admin/valorant/leaderboard/bans/${encodeURIComponent(banId)}/lift`,
     { method: "POST", json: { reason } }
   );
 

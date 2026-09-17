@@ -277,6 +277,11 @@ router.delete("/admin/valorant/leaderboard/players/:puuid", requireAuth, leaderb
 // the player back on the cached public leaderboard straight away.
 router.get("/admin/valorant/leaderboard/removals", requireAuth, leaderboardStaff, valorantLeaderboardController.listRemovals);
 router.post("/admin/valorant/leaderboard/removals/:removalId/restore", requireAuth, leaderboardStaff, invalidateCache("foundation"), valorantLeaderboardController.restoreRemoval);
+// Bans keep a removed player from registering again; banning removes them too.
+router.post("/admin/valorant/leaderboard/players/:puuid/ban", requireAuth, leaderboardStaff, invalidateCache("foundation"), valorantLeaderboardController.banRegistration);
+router.post("/admin/valorant/leaderboard/removals/:removalId/ban", requireAuth, leaderboardStaff, invalidateCache("foundation"), valorantLeaderboardController.banRemoval);
+router.get("/admin/valorant/leaderboard/bans", requireAuth, leaderboardStaff, valorantLeaderboardController.listBans);
+router.post("/admin/valorant/leaderboard/bans/:banId/lift", requireAuth, leaderboardStaff, valorantLeaderboardController.liftBan);
 // The server check flags players to review; clearing or reopening a flag changes
 // nothing on the public leaderboard, so no cache is cleared.
 router.get("/admin/valorant/leaderboard/server-checks", requireAuth, leaderboardStaff, valorantLeaderboardController.listServerChecks);
