@@ -1,0 +1,13 @@
+[Unit]
+Description=Apply Quest Esports off-site backup retention weekly
+
+[Timer]
+# Sunday, after the nightly database (02:40) and media (03:10) backups; the
+# shared release lock serialises it with any backup or release still running.
+OnCalendar=Sun *-*-* 04:30:00 UTC
+RandomizedDelaySec=900
+Persistent=true
+Unit=quest-esports-backup-retention.service
+
+[Install]
+WantedBy=timers.target

@@ -196,7 +196,7 @@ This is read-only apart from acquiring the shared release lock and has no dry-ru
 
 ### Review and prune expired remote backups
 
-The policy, current inventory, and tested recovery drill are in [Backup Storage and Retention](../docs/backup-storage-and-retention.md). Run as root: the tool reads root-only rehearsal evidence so it never prunes an archive a signed rehearsal names. First run the **dry-run** without a confirmation; it requires `BACKUP_ENV_FILE` (default `/etc/quest-esports-backup.env`), `BACKUP_REMOTE_MINIMUM_RECOVERY_POINTS`, and `BACKUP_REHEARSAL_EVIDENCE_ROOT`, and prints a keep/delete decision with reasons for every recovery pair. The shared release lock is held while each remote is listed and evaluated.
+The policy, current inventory, and tested recovery drill are in [Backup Storage and Retention](../docs/backup-storage-and-retention.md). Production runs it weekly through `quest-esports-backup-retention.timer`; the commands below are for policy changes and supervised runs. Run as root: the tool reads root-only rehearsal evidence so it never prunes an archive a signed rehearsal names. First run the **dry-run** without a confirmation; it requires `BACKUP_ENV_FILE` (default `/etc/quest-esports-backup.env`), `BACKUP_REMOTE_MINIMUM_RECOVERY_POINTS`, and `BACKUP_REHEARSAL_EVIDENCE_ROOT`, and prints a keep/delete decision with reasons for every recovery pair. The shared release lock is held while each remote is listed and evaluated.
 
 ```bash
 sudo env \

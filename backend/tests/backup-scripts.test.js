@@ -82,6 +82,27 @@ test("remote retention deletes only complete recovery pairs, and to trash first"
   assert.match(retentionScript, /rehearsal-evidence\*/);
 });
 
+test("weekly retention empties last week's trash before trashing newly expired pairs", () => {
+  const service = fs.readFileSync(
+    path.join(__dirname, "../../ops/systemd/quest-esports-backup-retention.service"),
+    "utf8"
+  );
+  const timer = fs.readFileSync(
+    path.join(__dirname, "../../ops/systemd/quest-esports-backup-retention.timer"),
+    "utf8"
+  );
+
+  const starts = service.match(/^ExecStart=.*$/gm);
+  assert.equal(starts.length, 2);
+  assert.match(starts[0], /TRASH_CONFIRMATION=EMPTY_QUEST_BACKUP_TRASH .*prune-production-backups\.sh$/);
+  assert.match(starts[1], /RETENTION_CONFIRMATION=PRUNE_QUEST_PRODUCTION .*prune-production-backups\.sh$/);
+  assert.match(service, /^User=root$/m);
+  assert.match(service, /^OnFailure=quest-esports-backup-failure@%n\.service$/m);
+  assert.match(service, /^ReadWritePaths=.*\/var\/lock\/quest-esports-release\.lock/m);
+  assert.match(timer, /^OnCalendar=Sun /m);
+  assert.match(timer, /^Persistent=true$/m);
+});
+
 test("production backup dumps both schemas when the valorant schema exists", () => {
   const backupScript = fs.readFileSync(
     path.join(__dirname, "../../ops/backup-production-multi-remote.sh"),

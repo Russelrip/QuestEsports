@@ -1,0 +1,26 @@
+[Unit]
+Description=Quest Esports off-site backup retention (empty last week's trash, then trash expired pairs)
+After=network-online.target
+Wants=network-online.target
+OnFailure=quest-esports-backup-failure@%n.service
+
+[Service]
+Type=oneshot
+# Root is required: the tool reads the root-only signed rehearsal evidence under
+# /secure/recovery so it never prunes an archive a rehearsal names, and it fails
+# closed when that evidence cannot be read.
+User=root
+Environment=BACKUP_ENV_FILE=/etc/quest-esports-backup.env
+WorkingDirectory=/var/www/QuestEsports
+ExecStartPre=/usr/bin/test -r /var/www/QuestEsports/ops/prune-production-backups.sh
+# Order matters. Emptying first releases only what the previous run trashed, so
+# every pruned pair spends a full week in trash as an undo window, and trash
+# never holds more than one week of deletions against the Drive quota.
+ExecStart=/usr/bin/env TRASH_CONFIRMATION=EMPTY_QUEST_BACKUP_TRASH /usr/bin/bash /var/www/QuestEsports/ops/prune-production-backups.sh
+ExecStart=/usr/bin/env RETENTION_CONFIRMATION=PRUNE_QUEST_PRODUCTION /usr/bin/bash /var/www/QuestEsports/ops/prune-production-backups.sh
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+# rclone rewrites its config when it refreshes the OAuth token.
+ReadWritePaths=/srv/quest-esports/rclone /var/lock/quest-esports-release.lock

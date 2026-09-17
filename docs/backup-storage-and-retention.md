@@ -113,21 +113,55 @@ cutover  pairs=5   keep=3   delete=2   frees=0.13 GiB of 0.28 GiB
 | Second dry run | after trash | `delete=0` for every family |
 | `quest-pg17-interim-freshness.service` | after trash | `Result=success`; newest database and media pairs fresh and off-site |
 | Drills from Drive | after trash | Database and media drills passed as below; pinned `20260903T165638Z` checksum OK |
+| Empty trash (`TRASH_CONFIRMATION`) | 04:02–04:08 | Trash re-checked first (still exactly the 75 pairs); exit 0, 150 objects (8.17 GiB) permanently removed |
+| Afterwards | after emptying | `rclone about`: Used **2.96 GiB**, Free **11.99 GiB**, Trashed 0 B; 114 live objects (2.76 GiB); freshness `Result=success` |
 
 `verify-backup-evidence.sh` was not re-run end to end: it refuses before reading
 the remote because the age identity is only on the host during a gated release.
 The archive it binds for the current migration release
 (`quest-production-20260917T012243Z`) is live and rehearsal-bound.
 
-Emptying the trash (step 4 below) is still pending owner confirmation. Until
-then, Drive reports Used 11.13 GiB with 8.171 GiB of it in trash, and the pairs
-can be restored from the Drive web UI.
+At the steady state the policy targets, Drive holds about 3–3.5 GiB of live
+backups plus at most one week of trashed pairs.
 
 ## Applying retention
 
-The policy settings are in `ops/quest-esports-backup.env.example` and must be
-copied into `/etc/quest-esports-backup.env` before the first run. Every step
-holds the shared release lock, so it cannot race a backup or a release.
+### Automatically
+
+`quest-esports-backup-retention.timer` runs every Sunday at 04:30 UTC (plus up to
+15 minutes). The service runs as root and does two steps in this order:
+
+1. Empty the trash: permanently remove the backup pairs the previous run moved
+   to trash.
+2. Move newly expired pairs to trash.
+
+So every pruned pair spends a week in Drive trash, where it can be restored from
+the Drive web UI, before it is gone for good. Trash never holds more than one
+week of deletions against the quota. A failure in either step stops the run and
+alerts through `quest-esports-backup-failure@`.
+
+The empty step removes **every** trashed object whose name is a backup archive
+or checksum and that is not live, including one a person trashed by hand in the
+Drive UI. To keep a trashed pair, restore it before Sunday.
+
+Install, or reinstall after changing either unit:
+
+```bash
+sudo install -m 0644 ops/systemd/quest-esports-backup-retention.service \
+  ops/systemd/quest-esports-backup-retention.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now quest-esports-backup-retention.timer
+```
+
+Check the destinations are not masked first (`ls -l /etc/systemd/system/quest-esports-backup-retention.*`);
+a masked unit is a symlink to `/dev/null`.
+
+### By hand
+
+The policy settings are in `ops/quest-esports-backup.env.example` and live in
+`/etc/quest-esports-backup.env` on the host. Every step holds the shared release
+lock, so it cannot race a backup or a release. Use the manual sequence after a
+policy change, or when a run needs to be watched step by step.
 
 1. **Dry run.** Read every `Would delete` line. Each `Would keep` line gives its
    reasons (`pinned`, `rehearsal-bound`, `minimum-recovery-point`,
@@ -223,9 +257,6 @@ least monthly.
 
 ## Open items
 
-- **Pruning is manual.** Once one full apply-and-verify cycle has passed, add a
-  weekly timer for the dry run and the trash step. Keep the empty-trash step
-  manual until the tool has run clean a few times.
 - **No quota alarm.** Freshness checks confirm the newest pair is off-site but
   not how much space is left. A check that fails below about 2 GiB free would
   have flagged this weeks in advance.
