@@ -1,0 +1,15 @@
+[Unit]
+Description=Interim encrypted Quest upload backup
+After=network-online.target
+Wants=network-online.target
+OnFailure=quest-esports-backup-failure@%n.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/quest-esports-backup.env
+ExecStart=/usr/local/sbin/quest-media-interim-backup.sh
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/quest-esports /var/lock/quest-esports-release.lock

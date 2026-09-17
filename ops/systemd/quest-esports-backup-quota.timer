@@ -1,0 +1,12 @@
+[Unit]
+Description=Check Quest Esports backup remote free space daily
+
+[Timer]
+# After the nightly database (02:40) and media (03:10) uploads land.
+OnCalendar=*-*-* 05:15:00 UTC
+RandomizedDelaySec=600
+Persistent=true
+Unit=quest-esports-backup-quota.service
+
+[Install]
+WantedBy=timers.target

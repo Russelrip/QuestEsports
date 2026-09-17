@@ -1,0 +1,21 @@
+[Unit]
+Description=Alert before a Quest Esports backup remote runs out of space
+After=network-online.target
+Wants=network-online.target
+OnFailure=quest-esports-backup-failure@%n.service
+
+[Service]
+Type=oneshot
+# Root matches the other rclone users of this config, so a token refresh leaves
+# the file with the ownership it already has.
+User=root
+Environment=BACKUP_ENV_FILE=/etc/quest-esports-backup.env
+WorkingDirectory=/var/www/QuestEsports
+ExecStartPre=/usr/bin/test -r /var/www/QuestEsports/ops/check-backup-remote-quota.sh
+ExecStart=/usr/bin/bash /var/www/QuestEsports/ops/check-backup-remote-quota.sh
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+# rclone rewrites its config when it refreshes the OAuth token.
+ReadWritePaths=/srv/quest-esports/rclone

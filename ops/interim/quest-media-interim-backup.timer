@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily interim encrypted Quest upload backup
+
+[Timer]
+OnCalendar=*-*-* 03:10:00 UTC
+RandomizedDelaySec=600
+Persistent=true
+Unit=quest-media-interim-backup.service
+
+[Install]
+WantedBy=timers.target
