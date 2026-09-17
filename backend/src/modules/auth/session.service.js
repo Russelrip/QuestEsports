@@ -26,6 +26,7 @@ const mapUserForSession = (record) => ({
     ? `/api/uploads/avatars/${record.avatarImageName}`
     : null,
   role: record.role,
+  isSuperAdmin: record.role === "admin" && record.isSuperAdmin === true,
   pendingEmail: record.pendingEmail || null,
   emailVerified: Boolean(record.emailVerified),
   emailVerifiedAt: record.emailVerifiedAt || null,

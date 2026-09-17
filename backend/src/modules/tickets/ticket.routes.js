@@ -1,5 +1,5 @@
 const express = require("express");
-const { requireAdmin } = require("../auth/auth.middleware");
+const { requireStaffPermission } = require("../permissions/permission.middleware");
 const { createRateLimiter } = require("../../middleware/rate-limit");
 const controller = require("./ticket.controller");
 
@@ -31,50 +31,50 @@ router.post(
 );
 router.get("/ticket-orders/status", controller.getOrder);
 
-router.get("/admin/ticket-events", requireAdmin, controller.getAdminEvents);
-router.post("/admin/ticket-events", requireAdmin, controller.createAdminEvent);
+router.get("/admin/ticket-events", requireStaffPermission("tickets"), controller.getAdminEvents);
+router.post("/admin/ticket-events", requireStaffPermission("tickets"), controller.createAdminEvent);
 router.get(
   "/admin/ticket-events/:eventId",
-  requireAdmin,
+  requireStaffPermission("tickets"),
   controller.getAdminEvent,
 );
 router.patch(
   "/admin/ticket-events/:eventId",
-  requireAdmin,
+  requireStaffPermission("tickets"),
   controller.updateAdminEvent,
 );
 router.get(
   "/admin/ticket-events/:eventId/orders",
-  requireAdmin,
+  requireStaffPermission("tickets"),
   controller.getAdminOrders,
 );
 router.get(
   "/admin/ticket-events/:eventId/tickets",
-  requireAdmin,
+  requireStaffPermission("tickets"),
   controller.getAdminTickets,
 );
 router.get(
   "/admin/ticket-events/:eventId/report",
-  requireAdmin,
+  requireStaffPermission("tickets"),
   controller.exportReport,
 );
 router.post(
   "/admin/ticket-events/:eventId/scan",
-  requireAdmin,
+  requireStaffPermission("tickets"),
   scanLimiter,
   controller.scanTicket,
 );
 router.post(
   "/admin/ticket-events/:eventId/tickets/:ticketId/check-in",
-  requireAdmin,
+  requireStaffPermission("tickets"),
   scanLimiter,
   controller.checkInTicket,
 );
 router.post(
   "/admin/tickets/:ticketId/reissue",
-  requireAdmin,
+  requireStaffPermission("tickets"),
   controller.reissueTicket,
 );
-router.patch("/admin/tickets/:ticketId", requireAdmin, controller.updateTicket);
+router.patch("/admin/tickets/:ticketId", requireStaffPermission("tickets"), controller.updateTicket);
 
 module.exports = router;

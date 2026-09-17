@@ -3,6 +3,7 @@
 import { ChangeEvent, FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import AdminPosterStudio from "@/components/posters/AdminPosterStudio";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { hasStaffPermission } from "@/lib/staff-permissions";
 import { Button } from "@/components/ui/button";
 import MediaModal from "@/components/posters/MediaModal";
 import PosterGallery from "@/components/posters/PosterGallery";
@@ -33,7 +34,8 @@ export default function PostersContent({
   adminOnly?: boolean;
 }) {
   const { user, isLoading: authLoading } = useAuth();
-  const isAdmin = user?.role === "admin";
+  // Poster tools follow the `media` staff area, which every admin holds.
+  const canManagePosters = hasStaffPermission(user, "media");
   const showToast = useToastStore((state) => state.showToast);
   const initialPostersRef = useRef(initialPosters);
   const [images, setImages] = useState<ImageAsset[]>([]);
@@ -55,8 +57,8 @@ export default function PostersContent({
 
   const loadMedia = useCallback(async () => {
     const initialPosterItems = initialPostersRef.current;
-    const shouldFetchPosters = initialPosterItems.length === 0 || isAdmin;
-    const shouldFetchImages = !authLoading && isAdmin;
+    const shouldFetchPosters = initialPosterItems.length === 0 || canManagePosters;
+    const shouldFetchImages = !authLoading && canManagePosters;
 
     if (!shouldFetchPosters && !shouldFetchImages) {
       setLoading(false);
@@ -117,18 +119,18 @@ export default function PostersContent({
         setLoading(false);
       }
     }
-  }, [authLoading, isAdmin, showToast]);
+  }, [authLoading, canManagePosters, showToast]);
 
   useEffect(() => {
     void loadMedia();
   }, [loadMedia]);
 
   useEffect(() => {
-    if (!isAdmin) return;
+    if (!canManagePosters) return;
     void adminRequest<{ tournaments: TournamentOption[] }>("/api/admin/tournaments?page=1&pageSize=50")
       .then((data) => setTournaments(data.tournaments))
       .catch(() => setTournaments([]));
-  }, [isAdmin]);
+  }, [canManagePosters]);
 
   useEffect(
     () => () => {
@@ -286,7 +288,7 @@ export default function PostersContent({
 
   return (
     <>
-      {isAdmin ? (
+      {canManagePosters ? (
         <AdminPosterStudio
           images={images}
           uploadTitle={uploadTitle}
@@ -342,7 +344,7 @@ export default function PostersContent({
               >
                 Download PNG
               </Button>
-              {isAdmin ? (
+              {canManagePosters ? (
                 <Button
                   type="button"
                   variant="danger"

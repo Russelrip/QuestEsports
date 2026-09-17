@@ -7,9 +7,9 @@ const {
 const sponsorController = require("./sponsor.controller");
 const {
   requireAuth,
-  requireAdmin,
   requireVerifiedEmail,
 } = require("../auth/auth.middleware");
+const { requireStaffPermission } = require("../permissions/permission.middleware");
 const { createRateLimiter } = require("../../middleware/rate-limit");
 const { cachePublicData } = require("../../middleware/cache-control");
 const { cacheJson, invalidateCache } = require("../../middleware/response-cache");
@@ -76,31 +76,31 @@ router.delete(
   cancelTournamentRegistration
 );
 
-router.get("/admin/tournaments", requireAdmin, getAdminTournaments);
-router.get("/admin/tournaments/:tournamentId", requireAdmin, getAdminTournament);
-router.get("/admin/tournaments/:tournamentId/sponsors", requireAdmin, sponsorController.listSponsors);
-router.post("/admin/tournaments/:tournamentId/sponsors", requireAdmin, invalidateCache("tournaments", "foundation"), imageUpload.single("logo"), sponsorController.createSponsor);
-router.patch("/admin/tournaments/:tournamentId/sponsors/:sponsorId", requireAdmin, invalidateCache("tournaments", "foundation"), imageUpload.single("logo"), sponsorController.updateSponsor);
-router.delete("/admin/tournaments/:tournamentId/sponsors/:sponsorId", requireAdmin, invalidateCache("tournaments", "foundation"), sponsorController.deleteSponsor);
-router.get("/admin/tournaments/:tournamentId/bracket", requireAdmin, getTournamentBracket);
-router.post("/admin/tournaments/:tournamentId/bracket/generate", requireAdmin, invalidateCache("tournaments", "foundation"), generateBracket);
+router.get("/admin/tournaments", requireStaffPermission("tournaments", "registrations", "media"), getAdminTournaments);
+router.get("/admin/tournaments/:tournamentId", requireStaffPermission("tournaments"), getAdminTournament);
+router.get("/admin/tournaments/:tournamentId/sponsors", requireStaffPermission("tournaments"), sponsorController.listSponsors);
+router.post("/admin/tournaments/:tournamentId/sponsors", requireStaffPermission("tournaments"), invalidateCache("tournaments", "foundation"), imageUpload.single("logo"), sponsorController.createSponsor);
+router.patch("/admin/tournaments/:tournamentId/sponsors/:sponsorId", requireStaffPermission("tournaments"), invalidateCache("tournaments", "foundation"), imageUpload.single("logo"), sponsorController.updateSponsor);
+router.delete("/admin/tournaments/:tournamentId/sponsors/:sponsorId", requireStaffPermission("tournaments"), invalidateCache("tournaments", "foundation"), sponsorController.deleteSponsor);
+router.get("/admin/tournaments/:tournamentId/bracket", requireStaffPermission("tournaments"), getTournamentBracket);
+router.post("/admin/tournaments/:tournamentId/bracket/generate", requireStaffPermission("tournaments"), invalidateCache("tournaments", "foundation"), generateBracket);
 router.patch(
   "/admin/tournaments/:tournamentId/bracket/matches/:matchId",
-  requireAdmin,
+  requireStaffPermission("tournaments"),
   invalidateCache("tournaments", "foundation"),
   express.json(),
   updateBracketMatch
 );
 router.patch(
   "/admin/tournaments/:tournamentId/bracket/publish",
-  requireAdmin,
+  requireStaffPermission("tournaments"),
   invalidateCache("tournaments", "foundation"),
   express.json(),
   publishBracket
 );
 router.post(
   "/admin/tournaments",
-  requireAdmin,
+  requireStaffPermission("tournaments"),
   invalidateCache("tournaments", "foundation"),
   tournamentAssetsSizeGuard,
   adminTournamentAssetsUpload.fields([
@@ -116,7 +116,7 @@ router.post(
 );
 router.patch(
   "/admin/tournaments/:tournamentId",
-  requireAdmin,
+  requireStaffPermission("tournaments"),
   invalidateCache("tournaments", "foundation"),
   tournamentAssetsSizeGuard,
   adminTournamentAssetsUpload.fields([
@@ -130,6 +130,6 @@ router.patch(
   ]),
   updateTournament
 );
-router.delete("/admin/tournaments/:tournamentId", requireAdmin, invalidateCache("tournaments", "foundation"), deleteTournament);
+router.delete("/admin/tournaments/:tournamentId", requireStaffPermission("tournaments"), invalidateCache("tournaments", "foundation"), deleteTournament);
 
 module.exports = router;

@@ -93,6 +93,7 @@ test("scoped permission identifiers and role mappings are explicit and stable", 
 test("future global-only scopes are not automatically granted to tournament staff", async () => {
   const prisma = {
     tournament: { findUnique: async ({ where }) => ({ id: where.id }) },
+    userStaffRole: { findFirst: async () => null },
     tournamentStaffAssignment: {
       findFirst: async ({ where }) => where.role.in.length ? { id: "assignment-a" } : null,
     },
@@ -115,6 +116,7 @@ test("future global-only scopes are not automatically granted to tournament staf
 test("tournament admins receive every intended scoped permission", async () => {
   const prisma = {
     tournament: { findUnique: async ({ where }) => ({ id: where.id }) },
+    userStaffRole: { findFirst: async () => null },
     tournamentStaffAssignment: {
       findFirst: async ({ where }) => where.tournamentId === "tournament-a" && where.role.in.includes("tournament_admin")
         ? { id: "assignment-a" }
@@ -155,6 +157,7 @@ test("tournament admins cannot manage the staff roster of their own tournament",
 test("referees receive operational scopes but not roster or catalog scopes", async () => {
   const prisma = {
     tournament: { findUnique: async ({ where }) => ({ id: where.id }) },
+    userStaffRole: { findFirst: async () => null },
     tournamentStaffAssignment: {
       findFirst: async ({ where }) => where.tournamentId === "tournament-a" && where.role.in.includes("referee")
         ? { id: "assignment-a" }

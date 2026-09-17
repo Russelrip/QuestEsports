@@ -247,20 +247,22 @@ router.patch("/admin/matches/:matchId", requireAuth, requirePermission(scopes.MA
 router.post("/admin/matches/:matchId/room", requireAuth, requirePermission(scopes.MATCH_OPERATIONS), matchRoomController.sync);
 router.get("/admin/match-rooms", requireAuth, unscopedMatchRoomRead, matchRoomController.staffRooms);
 
-router.get("/admin/tournaments/:id/staff", requireAuth, requireSuperAdmin, staffRosterManagement, staffController.listStaff);
-router.post("/admin/tournaments/:id/staff", requireAuth, requireSuperAdmin, staffRosterManagement, staffController.assignStaff);
+// Assigning tournament staff hands out access, so it stays with admins rather
+// than following the `tournaments` staff area.
+router.get("/admin/tournaments/:id/staff", requireAuth, requireAdmin, staffRosterManagement, staffController.listStaff);
+router.post("/admin/tournaments/:id/staff", requireAuth, requireAdmin, staffRosterManagement, staffController.assignStaff);
 router.delete(
   "/admin/tournaments/:id/staff/:assignmentId",
   requireAuth,
-  requireSuperAdmin,
+  requireAdmin,
   staffRosterManagement,
   staffController.removeStaff
 );
 
-// Identity administration sits behind the same admin guard as the rest of the
-// VALORANT operations surface.
-router.get("/admin/game-accounts/change-requests", requireAuth, requireAdmin, gameAccountController.listAdminChangeRequests);
-router.post("/admin/game-accounts/change-requests/:requestId/review", requireAuth, requireAdmin, gameAccountController.reviewAdminChangeRequest);
+// Game account change review is the `game_accounts` staff area.
+const gameAccountStaff = requireStaffPermission("game_accounts");
+router.get("/admin/game-accounts/change-requests", requireAuth, gameAccountStaff, gameAccountController.listAdminChangeRequests);
+router.post("/admin/game-accounts/change-requests/:requestId/review", requireAuth, gameAccountStaff, gameAccountController.reviewAdminChangeRequest);
 
 // Delegated admin areas. Declared before the blanket admin guard below so a
 // user granted only `valorant_leaderboard` reaches these and nothing else under
@@ -286,9 +288,16 @@ router.delete("/admin/valorant/leaderboard/server-checks/:puuid/clear", requireA
 router.get("/admin/audit-logs", requireAuth, requireAdmin, auditLogController.getAuditLogs);
 router.get("/admin/audit-logs/facets", requireAuth, requireAdmin, auditLogController.getAuditLogFacets);
 
-// Granting delegated areas is itself admin-only.
-router.get("/admin/users/:userId/staff-permissions", requireAuth, requireAdmin, staffPermissionController.getUserStaffPermissions);
-router.put("/admin/users/:userId/staff-permissions", requireAuth, requireAdmin, staffPermissionController.updateUserStaffPermissions);
+// Staff roles, like Discord roles: a named set of admin areas held by users.
+// Every admin can see them; only a super admin can change a role or who holds
+// one, because either one hands out access.
+router.get("/admin/staff-roles", requireAuth, requireAdmin, staffPermissionController.getStaffRoles);
+router.post("/admin/staff-roles", requireAuth, requireSuperAdmin, staffPermissionController.postStaffRole);
+router.get("/admin/staff-roles/:roleId", requireAuth, requireAdmin, staffPermissionController.getStaffRoleDetail);
+router.patch("/admin/staff-roles/:roleId", requireAuth, requireSuperAdmin, staffPermissionController.patchStaffRole);
+router.delete("/admin/staff-roles/:roleId", requireAuth, requireSuperAdmin, staffPermissionController.removeStaffRole);
+router.get("/admin/users/:userId/staff-roles", requireAuth, requireAdmin, staffPermissionController.getUserStaffRoles);
+router.put("/admin/users/:userId/staff-roles", requireAuth, requireSuperAdmin, staffPermissionController.updateUserStaffRoles);
 
 router.use("/admin/valorant", requireAdmin);
 router.get("/admin/valorant/teams", valorantController.listTeams);

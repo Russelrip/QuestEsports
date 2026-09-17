@@ -1,9 +1,7 @@
 const { prisma } = require("../../lib/prisma");
 const { asyncHandler } = require("../../lib/async-handler");
 const { HttpError } = require("../../lib/http-error");
-const { hasStaffPermission, STAFF_PERMISSION_KEYS } = require("./staff-permission.service");
-
-const isSuperAdmin = (user) => user?.role === "admin";
+const { hasStaffPermission, isAdmin, isSuperAdmin, STAFF_PERMISSION_KEYS } = require("./staff-permission.service");
 
 const PERMISSION_SCOPES = Object.freeze({
   TOURNAMENT_READ: "tournament.read",
@@ -36,6 +34,14 @@ const ROLE_SCOPES = Object.freeze({
 });
 
 const validScopes = new Set(Object.values(PERMISSION_SCOPES));
+
+// Tournament-scoped operations that a site-wide staff area also opens, for every
+// tournament. Someone with the `tournaments` area runs the whole tournament
+// editor, and the Challonge panel in it sits behind tournament administration.
+// Match and veto operations are not here: those stay with tournament staff.
+const SITE_AREA_FOR_SCOPE = Object.freeze({
+  [PERMISSION_SCOPES.TOURNAMENT_ADMINISTRATION]: "tournaments",
+});
 
 const suppliedValues = (...values) => values.filter((value) => value !== undefined && value !== null && value !== "");
 
@@ -123,7 +129,11 @@ const requirePermission = (scope, options = {}) =>
     if (!validScopes.has(scope)) throw new HttpError(400, "Unknown permission scope.");
 
     const tournamentId = await resolveTournamentId(req, options);
-    if (isSuperAdmin(req.user)) {
+    if (isAdmin(req.user)) {
+      next();
+      return;
+    }
+    if (SITE_AREA_FOR_SCOPE[scope] && await hasStaffPermission(req.user, SITE_AREA_FOR_SCOPE[scope])) {
       next();
       return;
     }
@@ -180,7 +190,13 @@ const requireVetoRoomCredential = (req, res, next) => {
   next(new HttpError(401, "This veto room requires an authorized account or access link."));
 };
 
+// The owner tier: making or unmaking admins and managing staff roles. An admin
+// without the flag is refused.
 const requireSuperAdmin = (req, res, next) => {
+  if (!req.user) {
+    next(new HttpError(401, "You must be logged in to access this resource."));
+    return;
+  }
   if (!isSuperAdmin(req.user)) {
     next(new HttpError(403, "Super admin access is required."));
     return;
@@ -188,16 +204,22 @@ const requireSuperAdmin = (req, res, next) => {
   next();
 };
 
-// Site-wide delegated admin area (see staff-permission.service). Admins pass;
-// anyone else needs a grant for exactly this area. Unknown areas fail closed at
-// startup rather than silently letting nobody — or everybody — through.
-const requireStaffPermission = (permission) => {
-  if (!STAFF_PERMISSION_KEYS.includes(permission)) {
-    throw new Error(`Unknown staff permission: ${permission}`);
+// Site-wide admin areas granted through staff roles (see
+// staff-permission.service). Admins pass; anyone else needs a role granting at
+// least one of `permissions`. Pass several when a read is shared between pages,
+// such as the tournament list the album and registration screens pick from.
+// Unknown areas fail closed at startup rather than silently letting nobody — or
+// everybody — through.
+const requireStaffPermission = (...permissions) => {
+  if (permissions.length === 0) throw new Error("requireStaffPermission needs at least one area.");
+  for (const permission of permissions) {
+    if (!STAFF_PERMISSION_KEYS.includes(permission)) {
+      throw new Error(`Unknown staff permission: ${permission}`);
+    }
   }
   return asyncHandler(async (req, res, next) => {
     if (!req.user) throw new HttpError(401, "You must be logged in to access this resource.");
-    if (!(await hasStaffPermission(req.user, permission))) {
+    if (!(await hasStaffPermission(req.user, ...permissions))) {
       throw new HttpError(403, "You do not have access to this area.");
     }
     next();
@@ -210,7 +232,7 @@ const requireTournamentStaff = ({
 } = {}) =>
   asyncHandler(async (req, res, next) => {
     if (!req.user) throw new HttpError(401, "You must be logged in to access this resource.");
-    if (isSuperAdmin(req.user)) {
+    if (isAdmin(req.user)) {
       next();
       return;
     }
@@ -228,7 +250,7 @@ const requireTournamentStaff = ({
 const requireMatchStaff = ({ roles = ["tournament_admin", "referee"] } = {}) =>
   asyncHandler(async (req, res, next) => {
     if (!req.user) throw new HttpError(401, "You must be logged in to access this resource.");
-    if (isSuperAdmin(req.user)) {
+    if (isAdmin(req.user)) {
       next();
       return;
     }
@@ -248,7 +270,7 @@ const requireMatchStaff = ({ roles = ["tournament_admin", "referee"] } = {}) =>
 const requireVetoRoomStaff = ({ roles = ["tournament_admin", "referee"] } = {}) =>
   asyncHandler(async (req, res, next) => {
     if (!req.user) throw new HttpError(401, "You must be logged in to access this resource.");
-    if (isSuperAdmin(req.user)) {
+    if (isAdmin(req.user)) {
       next();
       return;
     }
@@ -285,7 +307,7 @@ const requireVetoTournamentStaff = ({
       }
       tournamentId = match.tournamentId;
     }
-    if (isSuperAdmin(req.user)) {
+    if (isAdmin(req.user)) {
       next();
       return;
     }
@@ -299,6 +321,7 @@ const requireVetoTournamentStaff = ({
   });
 
 module.exports = {
+  isAdmin,
   isSuperAdmin,
   PERMISSION_SCOPES,
   SCOPES: PERMISSION_SCOPES,

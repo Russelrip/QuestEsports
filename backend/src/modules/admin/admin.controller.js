@@ -78,7 +78,7 @@ const getUser = asyncHandler(async (req, res) => {
 });
 
 const createUser = asyncHandler(async (req, res) => {
-  const user = await createAdminUser({ body: req.body });
+  const user = await createAdminUser({ body: req.body, currentUser: req.user });
   await recordAudit({ ...requestAuditContext(req), action: "admin.user.created", targetType: "User", targetId: user.id, afterData: { role: user.role, emailVerified: user.emailVerified } });
 
   res.status(201).json({
