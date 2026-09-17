@@ -103,6 +103,26 @@ release  pairs=74  keep=10  delete=64  frees=6.84 GiB of 8.25 GiB
 cutover  pairs=5   keep=3   delete=2   frees=0.13 GiB of 0.28 GiB
 ```
 
+### First application (2026-09-17)
+
+| Step | Time (UTC) | Result |
+| --- | --- | --- |
+| Integrity sweep of all 132 Drive archives | from 03:19, finished during the trash run | 131 OK; 1 transient stream error on a pair later proven intact |
+| Fresh dry run | 03:51 | Delete and keep sets identical to the reviewed list |
+| Trash (`RETENTION_CONFIRMATION`) | 03:51–03:59 | Exit 0; trash holds exactly the 75 approved pairs (150 objects, 8.171 GiB); live holds exactly the 57 kept pairs |
+| Second dry run | after trash | `delete=0` for every family |
+| `quest-pg17-interim-freshness.service` | after trash | `Result=success`; newest database and media pairs fresh and off-site |
+| Drills from Drive | after trash | Database and media drills passed as below; pinned `20260903T165638Z` checksum OK |
+
+`verify-backup-evidence.sh` was not re-run end to end: it refuses before reading
+the remote because the age identity is only on the host during a gated release.
+The archive it binds for the current migration release
+(`quest-production-20260917T012243Z`) is live and rehearsal-bound.
+
+Emptying the trash (step 4 below) is still pending owner confirmation. Until
+then, Drive reports Used 11.13 GiB with 8.171 GiB of it in trash, and the pairs
+can be restored from the Drive web UI.
+
 ## Applying retention
 
 The policy settings are in `ops/quest-esports-backup.env.example` and must be
