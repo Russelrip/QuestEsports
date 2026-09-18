@@ -158,6 +158,8 @@ export type EventSeries = {
   isPublished: boolean;
   featured?: boolean;
   tournaments: Tournament[];
+  // Sponsors of the event as a whole; each child tournament also has its own.
+  sponsors?: TournamentSponsor[];
   ticketEvent?: TicketedEvent | null;
 };
 

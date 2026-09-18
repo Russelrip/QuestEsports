@@ -169,7 +169,10 @@ test("event registration route is gated to the tournaments or registrations staf
   const { module: router, restore } = loadModuleWithMocks(routesPath, {
     [authPath]: {},
     [permissionPath]: { requireStaffPermission },
-    [uploadPathForRoutes]: { tournamentBannerUpload: { fields: () => (_req, _res, next) => next(), single: () => (_req, _res, next) => next() } },
+    [uploadPathForRoutes]: {
+      imageUpload: { single: () => (_req, _res, next) => next() },
+      tournamentBannerUpload: { fields: () => (_req, _res, next) => next(), single: () => (_req, _res, next) => next() },
+    },
     [cachePath]: { cacheJson: () => (_req, _res, next) => next(), invalidateCache: () => (_req, _res, next) => next() },
     [cacheControlPath]: { cachePublicData: () => (_req, _res, next) => next() },
     [envPath]: { env: { CACHE_TTL_SECONDS: 60 } },

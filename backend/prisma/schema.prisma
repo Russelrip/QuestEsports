@@ -504,6 +504,7 @@ model EventSeries {
   updatedAt                  DateTime     @updatedAt @map("updated_at")
   tournaments                Tournament[]
   ticketEvent                TicketEvent?
+  sponsors                   EventSponsor[]
 
   @@index([isPublished, displayOrder])
   @@index([isPublished, featured, displayOrder])
@@ -921,6 +922,24 @@ model TournamentSponsor {
 
   @@index([tournamentId, displayOrder])
   @@map("tournament_sponsors")
+}
+
+// Sponsors of a whole event rather than one of its games. Same shape as
+// TournamentSponsor, and the logos share the sponsor-logos upload directory.
+model EventSponsor {
+  id               String      @id @default(uuid()) @db.Uuid
+  seriesId         String      @map("series_id") @db.Uuid
+  name             String
+  partnershipLabel String      @default("Official Sponsor") @map("partnership_label")
+  logoImageName    String?     @map("logo_image_name")
+  websiteUrl       String?     @map("website_url")
+  displayOrder     Int         @default(100) @map("display_order")
+  createdAt        DateTime    @default(now()) @map("created_at")
+  updatedAt        DateTime    @updatedAt @map("updated_at")
+  series           EventSeries @relation(fields: [seriesId], references: [id], onDelete: Cascade)
+
+  @@index([seriesId, displayOrder])
+  @@map("event_sponsors")
 }
 
 // Which tier of the rules hierarchy a document sits at. Conduct, cheating and
