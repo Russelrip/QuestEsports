@@ -124,7 +124,10 @@ const buildSeriesTournamentInclude = ({ includeDrafts = false } = {}) => ({
     { seriesOrder: "asc" },
     { startDate: { sort: "asc", nulls: "last" } },
   ],
-  include: buildRegistrationCountInclude(),
+  include: {
+    ...buildRegistrationCountInclude(),
+    sponsors: { orderBy: [{ displayOrder: "asc" }, { createdAt: "asc" }] },
+  },
 });
 
 const mapSeriesWithAggregate = async (series, includeDrafts, aggregate) => mapSeries(series, {
