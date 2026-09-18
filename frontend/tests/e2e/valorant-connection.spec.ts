@@ -122,7 +122,9 @@ test("a pending change is readable from the header and withdrawable in the panel
   await page.setViewportSize({ width: 320, height: 568 });
   await openPage(page, "/profile?tab=account#valorant-account");
 
-  await expect(page.getByRole("heading", { name: "VALORANT account" })).toBeInViewport();
+  // The jump waits for sign-in and both account requests, so on a busy runner
+  // this wait covers the whole page load, not only the scroll.
+  await expect(page.getByRole("heading", { name: "VALORANT account" })).toBeInViewport({ timeout: 10_000 });
   await expect(page.getByRole("button", { name: "Withdraw request" })).toBeVisible();
   const requested = page.getByText("QuestMainAccountWithAVeryLongName#0001", { exact: true });
   await expect(requested).toBeVisible();

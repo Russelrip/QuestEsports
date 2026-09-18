@@ -203,7 +203,11 @@ export default function ProfileView() {
     if (!scrollToGameAccounts || activeTab !== "account" || !gameAccountsSettled) return;
     const panel = document.getElementById(GAME_ACCOUNTS_ANCHOR);
     if (!panel) return;
-    panel.scrollIntoView({ behavior: "smooth", block: "start" });
+    // Instant, not smooth: this is arriving at a link, not moving within the
+    // page. The site sets `scroll-behavior: smooth` on the whole document, so
+    // leaving it unsaid animates too. An animated jump only advances as frames
+    // are drawn, and on a busy device it could leave the panel out of view.
+    panel.scrollIntoView({ behavior: "instant", block: "start" });
     setScrollToGameAccounts(false);
   }, [activeTab, scrollToGameAccounts, gameAccountsSettled, user]);
 
