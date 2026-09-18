@@ -41,6 +41,536 @@
 .veto-coin-shadow,
 .veto-live-dot,
 .veto-live-dot::after {
+  border-radius: 9999px !important;
+}
+
+.account-menu-trigger,
+.account-menu-panel {
+  border-radius: 1rem !important;
+}
+
+.account-menu-avatar,
+.account-menu-item,
+.account-menu-action {
+  border-radius: 0.625rem !important;
+}
+
+.account-menu-badge {
+  border-radius: 0.375rem !important;
+}
+
+header a.auth-nav-action {
+  border-radius: 1rem !important;
+}
+
+html {
+  scroll-behavior: smooth;
+  overflow-x: clip;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  color: var(--foreground);
+  background: #07060b;
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  line-height: 1.6;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.profile-identity-text,
+.profile-identity-text * {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+a:hover,
+a:active,
+a:focus-visible {
+  color: var(--interactive-text);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button,
+a {
+  touch-action: manipulation;
+}
+
+input[type="checkbox"] {
+  --checkbox-accent: #a855f7;
+  appearance: none;
+  flex: 0 0 auto;
+  width: 1.125rem;
+  height: 1.125rem;
+  border: 1px solid rgba(203, 213, 225, 0.72);
+  border-radius: 0.25rem;
+  background-color: rgba(0, 0, 0, 0.22);
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 0.75rem 0.625rem;
+  box-shadow: 0 1px 1px rgba(0, 16, 75, 0.08);
+  cursor: pointer;
+  transition:
+    background-color 0.2s ease,
+    background-size 0.3s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    transform 0.2s ease;
+}
+
+input[type="checkbox"]:hover {
+  border-color: var(--checkbox-accent);
+}
+
+input[type="checkbox"]:focus-visible {
+  border-color: var(--checkbox-accent);
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--checkbox-accent) 24%, transparent);
+}
+
+input[type="checkbox"]:checked {
+  border-color: var(--checkbox-accent);
+  background-color: var(--checkbox-accent);
+  background-image: url("data:image/svg+xml,%3Csvg width='12' height='10' viewBox='0 0 12 10' xmlns='http://www.w3.org/2000/svg'%3E%3Cpolyline points='1.5 6 4.5 9 10.5 1' fill='none' stroke='%23fff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-size: 0.75rem 0.625rem;
+  animation: checkbox-wave 0.4s ease;
+}
+
+input[type="checkbox"]:not(:checked) {
+  background-size: 0 0;
+}
+
+input[type="checkbox"]:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+label:has(input[type="checkbox"]:not(:disabled)) {
+  cursor: pointer;
+}
+
+img {
+  display: block;
+  max-width: 100%;
+}
+
+main {
+  display: block;
+  min-width: 0;
+  overflow-x: clip;
+}
+
+.menu-enter,
+.popover-enter,
+.toast-enter,
+.modal-backdrop-enter,
+.modal-panel-enter {
+  animation: ui-fade-in 0.24s ease-out;
+}
+
+.menu-enter,
+.toast-enter {
+  animation-name: menu-fade-in;
+}
+
+.popover-enter,
+.modal-panel-enter {
+  animation-name: panel-fade-in;
+}
+
+.font-display,
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: var(--font-display);
+}
+
+.container,
+.form-container {
+  width: min(100%, 80rem);
+  margin-inline: auto;
+  padding-inline: 1rem;
+}
+
+.page-shell {
+  position: relative;
+  isolation: isolate;
+}
+
+.page-shell::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, rgba(7, 6, 11, 0.4), rgba(7, 6, 11, 0.7)),
+    url("/images/otherbg.webp") center top / cover no-repeat;
+}
+
+.page-header {
+  position: relative;
+  overflow: hidden;
+  padding: 2rem 0 0;
+}
+
+.section-intro {
+  color: var(--muted);
+}
+
+.btn {
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 1rem;
+  padding: 0 1.25rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  transition: 0.2s ease;
+}
+
+.btn:hover {
+  transform: translateY(-1px);
+}
+
+.btn-primary {
+  border: 1px solid rgba(168, 85, 247, 0.34);
+  background: #5b21b6;
+  color: white;
+}
+
+.btn-secondary {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  color: white;
+}
+
+.btn-small {
+  min-height: 2.5rem;
+  padding-inline: 1rem;
+  font-size: 0.875rem;
+}
+
+.error-message,
+.field-error {
+  color: #fda4af;
+}
+
+.success-inline,
+.success-message {
+  color: #86efac;
+}
+
+.success-message,
+.auth-callout,
+.rulebook-box {
+  border-radius: 1.5rem;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  padding: 1rem;
+}
+
+.auth-callout-warning {
+  border-color: rgba(250, 204, 21, 0.3);
+  background: rgba(250, 204, 21, 0.06);
+}
+
+.auth-callout-success {
+  border-color: rgba(74, 222, 128, 0.28);
+  background: rgba(74, 222, 128, 0.08);
+}
+
+.profile-badge,
+.status,
+.status-chip,
+.registration-closed-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  padding: 0.35rem 0.75rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.status-completed,
+.status-chip-accepted {
+  color: #bbf7d0;
+  background: rgba(34, 197, 94, 0.12);
+}
+
+.status-registration_open,
+.status-ongoing,
+.status-chip-pending {
+  color: #e9d5ff;
+  background: rgba(168, 85, 247, 0.1);
+}
+
+.status-upcoming,
+.status-draft,
+.status-chip-declined,
+.registration-closed-chip {
+  color: #e9d5ff;
+  background: rgba(139, 92, 246, 0.12);
+}
+
+.status-cancelled {
+  color: #fecaca;
+  background: rgba(239, 68, 68, 0.12);
+}
+
+.empty-state,
+.rulebook-section,
+.gallery-popup-content,
+.admin-modal,
+.poster-preview,
+.media-preview-card,
+.profile-team-card {
+  border-radius: 1.75rem;
+}
+
+.social-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.social-links a {
+  display: inline-flex;
+  height: 2.5rem;
+  width: 2.5rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.form-row {
+  display: grid;
+  gap: 1rem;
+}
+
+.form-group {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.form-group input,
+.form-group select,
+.form-group textarea {
+  width: 100%;
+  min-height: 3rem;
+  border-radius: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.3);
+  padding: 0.75rem 1rem;
+  color: white;
+}
+
+.form-group textarea {
+  min-height: 8rem;
+}
+
+.form-group.checkbox label {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+
+fieldset {
+  display: grid;
+  gap: 1rem;
+  border: 0;
+  padding: 0;
+}
+
+legend {
+  padding-inline: 0;
+  color: white;
+  font-family: var(--font-display);
+}
+
+.player-section,
+.team-invite-summary {
+  display: grid;
+  gap: 1rem;
+  border-radius: 1.25rem;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.03);
+  padding: 1rem;
+}
+
+@keyframes checkbox-wave {
+  50% {
+    transform: scale(0.9);
+  }
+}
+
+@keyframes ui-fade-in {
+  from { opacity: 0; }
+}
+
+@keyframes menu-fade-in {
+  from { opacity: 0; transform: translate3d(0, -8px, 0); }
+}
+
+@keyframes panel-fade-in {
+  from { opacity: 0; transform: translate3d(0, 12px, 0) scale(0.985); }
+}
+
+@keyframes gallery-photo-enter-next {
+  from { opacity: 0; transform: translate3d(2rem, 0, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+
+@keyframes gallery-photo-enter-previous {
+  from { opacity: 0; transform: translate3d(-2rem, 0, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+
+.gallery-photo-enter--next {
+  animation: gallery-photo-enter-next 400ms ease-out both;
+}
+
+.gallery-photo-enter--previous {
+  animation: gallery-photo-enter-previous 400ms ease-out both;
+}
+
+/* Veto room: GSAP (components/veto/vetoMotion.ts) owns the motion; these are the resting styles. */
+@keyframes veto-live-ping {
+  from { transform: scale(1); opacity: .75; }
+  to { transform: scale(2.6); opacity: 0; }
+}
+
+.veto-coin-stage {
+  width: 8.5rem;
+  height: 8.5rem;
+  margin-inline: auto;
+  perspective: 800px;
+  filter: drop-shadow(0 0 26px rgb(245 200 90 / .28));
+}
+
+.veto-coin {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transform-style: preserve-3d;
+}
+
+/* Stacked discs between the faces give the coin real thickness mid-spin. */
+.veto-coin__edge {
+  position: absolute;
+  inset: 0;
+  background: repeating-conic-gradient(#7a5514 0 3deg, #c99a36 3deg 6deg);
+}
+
+.veto-coin__face {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  backface-visibility: hidden;
+  background: radial-gradient(circle at 34% 26%, #fff7d6 0%, #f6d77e 16%, #dcab43 42%, #a8781f 72%, #6e4b10 100%);
+  box-shadow: inset 0 0 0 2px #6e4b10, inset 0 0 22px rgb(0 0 0 / .4);
+  transform: translateZ(6px);
+}
+
+.veto-coin__face--tails {
+  background: radial-gradient(circle at 66% 26%, #fff7d6 0%, #f6d77e 16%, #dcab43 42%, #a8781f 72%, #6e4b10 100%);
+  transform: rotateY(180deg) translateZ(6px);
+}
+
+/* Milled rim. */
+.veto-coin__face::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-conic-gradient(#8a6418 0 2deg, #f3d57c 2deg 4deg);
+  mask: radial-gradient(closest-side, transparent 86%, #000 87%);
+}
+
+/* Light sweeping across the metal. */
+.veto-coin__face::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(115deg, transparent 30%, rgb(255 255 255 / .38) 48%, transparent 62%);
+  mix-blend-mode: overlay;
+}
+
+.veto-coin__ring {
+  position: absolute;
+  inset: 15%;
+  border: 1.5px solid rgb(110 75 16 / .6);
+  box-shadow: 0 1px 0 rgb(255 240 190 / .55), inset 0 1px 0 rgb(255 240 190 / .45);
+}
+
+.veto-coin__emblem {
+  width: 46%;
+  height: 46%;
+  margin-top: -8%;
+  background: linear-gradient(160deg, #5c3e0b, #a0741f);
+  mask: url("/images/veto-coin-emblem.webp") center / contain no-repeat;
+}
+
+.veto-coin__mark {
+  margin-top: -8%;
+  color: #8a6418;
+  font-size: 3.1rem;
+  font-weight: 900;
+  line-height: 1;
+  text-shadow: 0 1px 0 rgb(255 240 190 / .85), 0 -1px 0 rgb(60 40 5 / .55);
+}
+
+.veto-coin__legend {
+  position: absolute;
+  bottom: 21%;
+  color: #6e4b10;
+  font-size: .5rem;
+  font-weight: 900;
+  letter-spacing: .32em;
+  text-transform: uppercase;
+  text-shadow: 0 1px 0 rgb(255 240 190 / .7);
+}
+
+.veto-coin-shadow {
+  width: 5rem;
+  height: .5rem;
+  border-radius: 9999px;
+  background: radial-gradient(closest-side, rgb(0 0 0 / .6), transparent);
+}
+
+.veto-vs {
+  border: 1px solid rgb(255 255 255 / .18);
+  background: radial-gradient(circle at 30% 25%, rgb(255 255 255 / .18), transparent 60%), linear-gradient(135deg, #22d3ee55, #fb718555);
+  box-shadow: 0 0 36px rgb(168 85 247 / .35), inset 0 0 0 4px rgb(0 0 0 / .25);
+  letter-spacing: .08em;
+}
+
+.veto-live-dot {
   position: relative;
   display: inline-block;
   width: .45rem;

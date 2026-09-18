@@ -522,7 +522,10 @@ test("staff launches an integrated BO3 veto and role views stay correctly isolat
         await expect(mapButton).toBeEnabled({ timeout: 15_000 });
         await mapButton.click();
       }
+      const recorded = state.actions.length;
       await page.getByRole("dialog").getByRole("button", { name: /Confirm/i }).click();
+      // The next step is read from the fixture, so wait for this action to land first.
+      await expect.poll(() => state.actions.length).toBeGreaterThan(recorded);
     }
     expect(state.actionRequests).toHaveLength(9);
     expect(state.status).toBe("completed");
