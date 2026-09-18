@@ -4,21 +4,26 @@ import { gsap } from "gsap";
 import { useGSAP } from "@gsap/react";
 
 gsap.registerPlugin(useGSAP);
+// Keep animations on wall-clock time. With lag smoothing, a device that drops
+// frames stretches every reveal, so a pick or the confirm dialog could stay
+// hidden for seconds after the room has already moved on.
+gsap.ticker.lagSmoothing(0);
 
 // Environments without matchMedia (tests, very old browsers) get the static
 // end state, the same as a viewer who asked for reduced motion.
 export const prefersReducedMotion = () =>
   typeof window === "undefined" || typeof window.matchMedia !== "function" || window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
+// Kept under a second so a team on the clock can act almost immediately.
 export function introTimeline(scope: HTMLElement) {
   const q = gsap.utils.selector(scope);
-  const tl = gsap.timeline({ defaults: { ease: "power3.out" } });
-  tl.from(q("[data-veto-hero] > *"), { y: 24, autoAlpha: 0, duration: 0.6, stagger: 0.08 })
-    .from(q("[data-veto-team='1']"), { x: -80, autoAlpha: 0, duration: 0.7 }, "-=0.35")
-    .from(q("[data-veto-team='2']"), { x: 80, autoAlpha: 0, duration: 0.7 }, "<")
-    .from(q("[data-veto-vs]"), { scale: 0, rotate: -180, autoAlpha: 0, duration: 0.6, ease: "back.out(2.2)" }, "-=0.45")
-    .from(q("[data-veto-panel]"), { y: 30, autoAlpha: 0, duration: 0.55, stagger: 0.1 }, "-=0.3")
-    .from(q("[data-veto-map]"), { y: 40, scale: 0.94, autoAlpha: 0, duration: 0.55, stagger: { each: 0.06, from: "start" } }, "-=0.35");
+  const tl = gsap.timeline({ defaults: { ease: "power3.out", duration: 0.4 } });
+  tl.from(q("[data-veto-hero] > *"), { y: 16, autoAlpha: 0, stagger: 0.05 })
+    .from(q("[data-veto-team='1']"), { x: -60, autoAlpha: 0 }, 0.1)
+    .from(q("[data-veto-team='2']"), { x: 60, autoAlpha: 0 }, 0.1)
+    .from(q("[data-veto-vs]"), { scale: 0, rotate: -180, autoAlpha: 0, ease: "back.out(2.2)" }, 0.2)
+    .from(q("[data-veto-panel]"), { y: 20, autoAlpha: 0, stagger: 0.05 }, 0.2)
+    .from(q("[data-veto-map]"), { y: 24, scale: 0.96, autoAlpha: 0, stagger: 0.03 }, 0.25);
   return tl;
 }
 
@@ -66,8 +71,9 @@ export function headingSwap(target: Element) {
 
 export function dialogIn(backdrop: Element, panel: Element) {
   return gsap.timeline()
-    .fromTo(backdrop, { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.2, ease: "power1.out" })
-    .fromTo(panel, { y: 30, scale: 0.94, autoAlpha: 0 }, { y: 0, scale: 1, autoAlpha: 1, duration: 0.4, ease: "back.out(1.6)" }, 0.05);
+    // Opacity rather than autoAlpha keeps the buttons clickable from the first frame.
+    .fromTo(backdrop, { opacity: 0 }, { opacity: 1, duration: 0.15, ease: "power1.out" })
+    .fromTo(panel, { y: 20, scale: 0.96, opacity: 0 }, { y: 0, scale: 1, opacity: 1, duration: 0.25, ease: "back.out(1.6)" }, 0);
 }
 
 export { gsap, useGSAP };

@@ -383,7 +383,9 @@ test.afterEach(async ({ page }) => {
 });
 
 test("staff launches an integrated BO3 veto and role views stay correctly isolated", async ({ page, browser }, testInfo: TestInfo) => {
-  test.setTimeout(120_000);
+  // Five live veto pages run at once and the room animates every step; WebKit
+  // renders all of them in software on CI, which needs more than 120s there.
+  test.setTimeout(180_000);
   const state = makeFixtureState();
   await installFixture(page.context(), state, true);
 
@@ -525,7 +527,7 @@ test("staff launches an integrated BO3 veto and role views stay correctly isolat
       const recorded = state.actions.length;
       await page.getByRole("dialog").getByRole("button", { name: /Confirm/i }).click();
       // The next step is read from the fixture, so wait for this action to land first.
-      await expect.poll(() => state.actions.length).toBeGreaterThan(recorded);
+      await expect.poll(() => state.actions.length, { intervals: [50] }).toBeGreaterThan(recorded);
     }
     expect(state.actionRequests).toHaveLength(9);
     expect(state.status).toBe("completed");
