@@ -729,6 +729,36 @@ const setChatLock = async ({ code, user, locked }) => {
   return { chatLocked: Boolean(updated.chatLockedAt) };
 };
 
+// Creates (or resyncs) the room for every match in a tournament that would get
+// one automatically, and explains each match it skips. Deliberately not forced:
+// a room without two registered teams has no players who could join it.
+const syncTournamentRooms = async ({ tournamentId }) => {
+  const tournament = await prisma.tournament.findUnique({ where: { id: tournamentId }, select: { id: true } });
+  if (!tournament) throw new HttpError(404, "Tournament not found.");
+  const matches = await prisma.match.findMany({
+    where: { tournamentId },
+    select: {
+      id: true, identifier: true, externalId: true, status: true,
+      matchRoom: { select: { id: true } },
+      participants: { select: { slot: true, displayName: true, registrationId: true }, orderBy: { slot: "asc" } },
+    },
+    orderBy: [{ scheduledAt: { sort: "asc", nulls: "last" } }, { createdAt: "asc" }],
+  });
+  const summary = { total: matches.length, created: 0, updated: 0, skipped: [] };
+  for (const match of matches) {
+    const label = match.identifier || match.externalId || match.id.slice(0, 8);
+    const teams = match.participants.map((participant) => participant.displayName).filter(Boolean).join(" vs ") || "Teams not set";
+    const skip = (reason) => summary.skipped.push({ matchId: match.id, label, teams, reason });
+    if (TERMINAL_MATCH_STATUSES.has(match.status)) { skip("Match is finished"); continue; }
+    if (match.participants.filter((participant) => participant.registrationId).length !== 2) { skip("Needs two registered teams"); continue; }
+    const room = await ensureMatchRoom({ matchId: match.id });
+    if (!room) { skip("Neither team has a captain account"); continue; }
+    if (match.matchRoom) summary.updated += 1;
+    else summary.created += 1;
+  }
+  return summary;
+};
+
 // Rooms for active matches are rebuilt on demand (see ensureMatchRoom), so a
 // delete there would only wipe chat and support history. Finished matches only.
 const deleteMatchRoom = async ({ matchId }) => {
@@ -809,6 +839,7 @@ const notifyVetoTurn = async (vetoRoom) => {
 module.exports = {
   collectRoomMembers,
   deleteMatchRoom,
+  syncTournamentRooms,
   ensureMatchRoom,
   ensureMatchVetoRoom,
   accessRoom,

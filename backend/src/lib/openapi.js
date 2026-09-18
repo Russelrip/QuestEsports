@@ -1346,6 +1346,9 @@ const additionalPaths = {
     post: createOperation("Match Rooms", "Create or resynchronize a match room", { authenticated: true, permissionScopes: [PERMISSION_SCOPES.MATCH_OPERATIONS], parameters: idParameter("matchId") }),
     delete: createOperation("Match Rooms", "Delete the room of a finished match with its chat and support history", { authenticated: true, permissionScopes: [PERMISSION_SCOPES.MATCH_OPERATIONS], parameters: idParameter("matchId") }),
   },
+  "/api/v1/admin/tournaments/{id}/match-rooms": {
+    post: createOperation("Match Rooms", "Create or resync rooms for every eligible match in a tournament", { authenticated: true, permissionScopes: [PERMISSION_SCOPES.MATCH_OPERATIONS], parameters: idParameter("id") }),
+  },
   "/api/v1/admin/match-rooms": {
     get: createOperation("Match Rooms", "List match rooms visible to tournament staff or directly assigned match staff", {
       authenticated: true,

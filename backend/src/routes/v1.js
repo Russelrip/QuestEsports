@@ -250,6 +250,7 @@ router.patch("/admin/matches/:matchId", requireAuth, requirePermission(scopes.MA
 router.post("/admin/matches/:matchId/room", requireAuth, requirePermission(scopes.MATCH_OPERATIONS), matchRoomController.sync);
 router.delete("/admin/matches/:matchId/room", requireAuth, requirePermission(scopes.MATCH_OPERATIONS), matchRoomController.remove);
 router.get("/admin/match-rooms", requireAuth, unscopedMatchRoomRead, matchRoomController.staffRooms);
+router.post("/admin/tournaments/:id/match-rooms", requireAuth, tournamentStaff, matchRoomController.syncTournament);
 
 // Assigning tournament staff hands out access, so it stays with admins rather
 // than following the `tournaments` staff area.

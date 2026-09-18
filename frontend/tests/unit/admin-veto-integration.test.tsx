@@ -220,3 +220,19 @@ describe("deleting rooms", () => {
     expect(screen.queryByRole("button", { name: "Delete room" })).not.toBeInTheDocument();
   });
 });
+
+describe("creating rooms for a whole tournament", () => {
+  it("creates rooms for every match and lists why others were skipped", async () => {
+    mocks.adminRequest.mockResolvedValue({ tournaments: [{ id: "tournament-1", title: "Valorant Cup", status: "published" }] });
+    mocks.roomRequest.mockImplementation((path: string, options?: { method?: string }) => options?.method === "POST"
+      ? Promise.resolve({ total: 3, created: 1, updated: 1, skipped: [{ matchId: "m-3", label: "A3", teams: "Echo vs Fox", reason: "Needs two registered teams" }] })
+      : Promise.resolve([]));
+    const user = userEvent.setup();
+    render(<AdminMatchRoomsManager />);
+    await user.selectOptions(await screen.findByRole("combobox", { name: "Tournament" }), await screen.findByRole("option", { name: "Valorant Cup" }));
+    await user.click(screen.getByRole("button", { name: "Create rooms for all matches" }));
+    expect(mocks.roomRequest).toHaveBeenCalledWith("/api/v1/admin/tournaments/tournament-1/match-rooms", { method: "POST", json: {} });
+    expect(await screen.findByText("1 created · 1 already existed · 1 skipped, out of 3 matches.")).toBeInTheDocument();
+    expect(screen.getByText(/Echo vs Fox — Needs two registered teams/)).toBeInTheDocument();
+  });
+});
