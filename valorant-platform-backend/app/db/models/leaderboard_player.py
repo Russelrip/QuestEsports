@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, Index, Integer, Text, UniqueConstraint, func, text
+from sqlalchemy import CheckConstraint, DateTime, Index, Integer, Text, UniqueConstraint, func, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -30,8 +30,16 @@ class LeaderboardPlayer(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+    # Hidden from the public board by an admin while staying registered (0020).
+    hidden_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    hidden_by: Mapped[str | None] = mapped_column(Text)
+    hidden_reason: Mapped[str | None] = mapped_column(Text)
 
     __table_args__ = (
+        CheckConstraint(
+            "hidden_at IS NOT NULL OR (hidden_by IS NULL AND hidden_reason IS NULL)",
+            name="leaderboard_players_hidden_check",
+        ),
         UniqueConstraint("discord_username", name="leaderboard_players_discord_username_key"),
         Index(
             "leaderboard_players_discord_id_key",

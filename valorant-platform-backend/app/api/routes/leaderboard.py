@@ -9,7 +9,8 @@ out-of-range-page 404 is raised here as ``AppError``
 is the admin surface: every registration regardless of the board filter, and
 removal of one. The ``/removals`` pair lists removals and restores one. The
 ``/bans`` routes list bans and lift one; a player is banned from their
-registration or from a removal of it. The
+registration or from a removal of it. ``/players/{puuid}/hide`` keeps a
+registered player off the public board and puts them back. The
 ``/server-checks`` routes list players the server check flags, and clear or
 reopen a flag.
 """
@@ -29,7 +30,9 @@ from app.schemas.leaderboard import (
     LeaderboardBanRequest,
     LeaderboardBanResult,
     LeaderboardEntry,
+    LeaderboardHideRequest,
     LeaderboardPage,
+    LeaderboardRegistration,
     LeaderboardRegistrationPage,
     LeaderboardRemovalPage,
     LeaderboardRemovedRegistration,
@@ -86,11 +89,40 @@ async def get_leaderboard_stats(svc: _ServiceDep) -> LeaderboardStats:
 async def list_registrations(
     svc: _ServiceDep,
     q: str = Query("", max_length=100),
+    hidden: bool = Query(False),
     page: int = Query(1, ge=1),
     per_page: int = Query(50, ge=1, le=200),
 ) -> LeaderboardRegistrationPage:
-    """Every registration, including rows the public board hides (admin view)."""
-    return await svc.registrations(q, page, per_page)
+    """Every registration, including rows the public board hides (admin view).
+
+    ``hidden=true`` keeps only the players an admin hid from the board.
+    """
+    return await svc.registrations(q, page, per_page, hidden_only=hidden)
+
+
+@router.post(
+    "/leaderboard/players/{puuid}/hide",
+    response_model=LeaderboardRegistration,
+    dependencies=[Depends(require_service_token)],
+)
+async def hide_registration(
+    svc: _ServiceDep,
+    principal: _PrincipalDep,
+    puuid: str,
+    body: LeaderboardHideRequest,
+) -> LeaderboardRegistration:
+    """Keep a registered player off the public board; they stay registered (409 if already hidden)."""
+    return await svc.hide(puuid, body.reason, principal.actor_id)
+
+
+@router.delete(
+    "/leaderboard/players/{puuid}/hide",
+    response_model=LeaderboardRegistration,
+    dependencies=[Depends(require_service_token)],
+)
+async def unhide_registration(svc: _ServiceDep, puuid: str) -> LeaderboardRegistration:
+    """Put a hidden player back on the public board (409 if not hidden)."""
+    return await svc.unhide(puuid)
 
 
 @router.delete(

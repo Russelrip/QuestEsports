@@ -26,6 +26,9 @@ REGISTRATION_COLUMNS = (
     "last_played_match",
     "update_source",
     "updated_at",
+    "hidden_at",
+    "hidden_by",
+    "hidden_reason",
 )
 
 
@@ -51,6 +54,9 @@ class LeaderboardPlayerRemoval(Base):
     last_played_match: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     update_source: Mapped[str | None] = mapped_column(Text)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    hidden_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    hidden_by: Mapped[str | None] = mapped_column(Text)
+    hidden_reason: Mapped[str | None] = mapped_column(Text)
     removed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

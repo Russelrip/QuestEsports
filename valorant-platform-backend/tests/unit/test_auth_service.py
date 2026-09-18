@@ -52,7 +52,7 @@ class _Player:
     """Minimal stand-in for a ``LeaderboardPlayer`` row."""
 
     def __init__(self, **fields: object) -> None:
-        self.__dict__.update(fields)
+        self.__dict__.update({"hidden_at": None, "hidden_reason": None, **fields})
 
 
 @pytest.fixture(autouse=True)

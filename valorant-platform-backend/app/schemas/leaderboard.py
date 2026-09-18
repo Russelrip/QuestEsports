@@ -55,6 +55,8 @@ class LeaderboardRegistration(BaseModel):
 
     Covers every registration, including the ones the public board filters
     out; ``on_leaderboard`` says which side of that filter the row is on.
+    ``hidden_at`` is set while an admin keeps the player off the board (0020),
+    which is one reason ``on_leaderboard`` can be false.
     """
 
     puuid: str
@@ -67,6 +69,9 @@ class LeaderboardRegistration(BaseModel):
     update_source: str | None = None
     updated_at: str
     on_leaderboard: bool
+    hidden_at: str | None = None
+    hidden_by: str | None = None
+    hidden_reason: str | None = None
 
 
 class LeaderboardRegistrationPage(BaseModel):
@@ -133,6 +138,12 @@ class LeaderboardRemovalPage(BaseModel):
 
 class LeaderboardBanRequest(BaseModel):
     """Why a player is being banned; kept on the ban for the admin list."""
+
+    reason: str = Field("", max_length=500)
+
+
+class LeaderboardHideRequest(BaseModel):
+    """Why a player is hidden from the board; shown to them on their Quest profile."""
 
     reason: str = Field("", max_length=500)
 

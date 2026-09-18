@@ -9,12 +9,16 @@ import ValorantLeaderboardPlayersManager from "../../components/admin/valorant/V
 const mocks = vi.hoisted(() => ({
   fetchRegistrations: vi.fn(),
   removeRegistration: vi.fn(),
+  hideRegistration: vi.fn(),
+  unhideRegistration: vi.fn(),
   showToast: vi.fn(),
 }));
 
 vi.mock("@/lib/valorant-api", () => ({
   fetchValorantLeaderboardRegistrations: mocks.fetchRegistrations,
   removeValorantLeaderboardRegistration: mocks.removeRegistration,
+  hideValorantLeaderboardRegistration: mocks.hideRegistration,
+  unhideValorantLeaderboardRegistration: mocks.unhideRegistration,
 }));
 
 vi.mock("@/hooks/useToastStore", () => ({
@@ -61,7 +65,7 @@ describe("ValorantLeaderboardPlayersManager", () => {
     render(<ValorantLeaderboardPlayersManager />);
 
     expect(await screen.findByText("Chamsy#0001")).toBeTruthy();
-    expect(screen.getByText("Hidden")).toBeTruthy();
+    expect(screen.getByText("Not listed")).toBeTruthy();
     expect(screen.getByText("Listed")).toBeTruthy();
     expect(screen.getByText("Updater is not refreshing this player")).toBeTruthy();
     expect(screen.getByText("None recorded")).toBeTruthy();
@@ -80,7 +84,7 @@ describe("ValorantLeaderboardPlayersManager", () => {
     // No button press: the debounce sends the normalized query from page one.
     fireEvent.change(box, { target: { value: "  @Cham " } });
     await waitFor(() =>
-      expect(mocks.fetchRegistrations).toHaveBeenLastCalledWith({ query: "Cham", page: 1 })
+      expect(mocks.fetchRegistrations).toHaveBeenLastCalledWith({ query: "Cham", page: 1, hidden: false })
     );
     expect(mocks.fetchRegistrations).toHaveBeenCalledTimes(2);
   });
@@ -93,21 +97,21 @@ describe("ValorantLeaderboardPlayersManager", () => {
     fireEvent.change(box, { target: { value: "cham" } });
     // Submitting flushes the debounce.
     fireEvent.submit(box.closest("form") as HTMLFormElement);
-    await waitFor(() => expect(mocks.fetchRegistrations).toHaveBeenLastCalledWith({ query: "cham", page: 1 }));
+    await waitFor(() => expect(mocks.fetchRegistrations).toHaveBeenLastCalledWith({ query: "cham", page: 1, hidden: false }));
     await waitFor(() => expect(document.querySelectorAll("mark").length).toBeGreaterThan(0));
     expect([...document.querySelectorAll("mark")].map((mark) => mark.textContent)).toContain("Cham");
     expect(screen.getByText(/matching/).textContent).toContain("cham");
 
     fireEvent.click(screen.getByRole("button", { name: "Clear search" }));
     expect((box as HTMLInputElement).value).toBe("");
-    await waitFor(() => expect(mocks.fetchRegistrations).toHaveBeenLastCalledWith({ query: "", page: 1 }));
+    await waitFor(() => expect(mocks.fetchRegistrations).toHaveBeenLastCalledWith({ query: "", page: 1, hidden: false }));
 
     fireEvent.change(box, { target: { value: "sahan" } });
     fireEvent.submit(box.closest("form") as HTMLFormElement);
-    await waitFor(() => expect(mocks.fetchRegistrations).toHaveBeenLastCalledWith({ query: "sahan", page: 1 }));
+    await waitFor(() => expect(mocks.fetchRegistrations).toHaveBeenLastCalledWith({ query: "sahan", page: 1, hidden: false }));
     fireEvent.keyDown(box, { key: "Escape" });
     expect((box as HTMLInputElement).value).toBe("");
-    await waitFor(() => expect(mocks.fetchRegistrations).toHaveBeenLastCalledWith({ query: "", page: 1 }));
+    await waitFor(() => expect(mocks.fetchRegistrations).toHaveBeenLastCalledWith({ query: "", page: 1, hidden: false }));
   });
 
   it("will not remove without a reason, then sends the trimmed reason and refreshes", async () => {
@@ -140,6 +144,79 @@ describe("ValorantLeaderboardPlayersManager", () => {
     );
     expect(mocks.fetchRegistrations).toHaveBeenCalledTimes(2);
     expect(screen.queryByRole("button", { name: "Remove player" })).toBeNull();
+  });
+
+  it("marks a player hidden by staff with who hid them and why", async () => {
+    mocks.fetchRegistrations.mockResolvedValue(
+      page([
+        {
+          ...listed,
+          onLeaderboard: false,
+          hiddenAt: "2026-09-18T07:33:25+00:00",
+          hiddenBy: { id: "admin-1", username: "russel" },
+          hiddenReason: "Smurf account under review",
+        },
+      ])
+    );
+    render(<ValorantLeaderboardPlayersManager />);
+
+    expect(await screen.findByText("Hidden by staff")).toBeTruthy();
+    expect(screen.getByText(/By russel/)).toBeTruthy();
+    expect(screen.getByText("Smurf account under review")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Show" })).toBeTruthy();
+  });
+
+  it("will not hide without a reason, tells the admin the player sees it, then hides", async () => {
+    mocks.hideRegistration.mockResolvedValue({ player: { ...listed, hiddenAt: "2026-09-18T07:33:25+00:00" } });
+    render(<ValorantLeaderboardPlayersManager />);
+    await screen.findByText("Sahan#QST");
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Hide" })[1]);
+    expect(screen.getByText(/Hide Sahan#QST from the public leaderboard\?/)).toBeTruthy();
+    expect(screen.getByText(/They stay registered/)).toBeTruthy();
+    const submit = screen.getByRole("button", { name: "Hide player" }) as HTMLButtonElement;
+    expect(submit.disabled).toBe(true);
+
+    fireEvent.change(screen.getByRole("textbox", { name: /the player sees this/ }), {
+      target: { value: "  Smurf account under review  " },
+    });
+    fireEvent.click(submit);
+
+    await waitFor(() =>
+      expect(mocks.hideRegistration).toHaveBeenCalledWith(listed.puuid, "Smurf account under review")
+    );
+    await waitFor(() =>
+      expect(mocks.showToast).toHaveBeenCalledWith({ title: "Sahan#QST hidden from the public leaderboard", tone: "success" })
+    );
+    expect(mocks.removeRegistration).not.toHaveBeenCalled();
+  });
+
+  it("shows a hidden player again", async () => {
+    mocks.fetchRegistrations.mockResolvedValue(
+      page([{ ...listed, onLeaderboard: false, hiddenAt: "2026-09-18T07:33:25+00:00", hiddenReason: "Review" }])
+    );
+    mocks.unhideRegistration.mockResolvedValue({ player: listed });
+    render(<ValorantLeaderboardPlayersManager />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Show" }));
+    fireEvent.change(screen.getByRole("textbox", { name: /Reason/ }), { target: { value: "Cleared after review" } });
+    fireEvent.click(screen.getByRole("button", { name: "Show player" }));
+
+    await waitFor(() => expect(mocks.unhideRegistration).toHaveBeenCalledWith(listed.puuid, "Cleared after review"));
+    await waitFor(() =>
+      expect(mocks.showToast).toHaveBeenCalledWith({ title: "Sahan#QST is back on the public leaderboard", tone: "success" })
+    );
+  });
+
+  it("filters to the players hidden by staff", async () => {
+    render(<ValorantLeaderboardPlayersManager />);
+    await screen.findByText("Chamsy#0001");
+
+    fireEvent.click(screen.getByRole("button", { name: "Show only players hidden by staff" }));
+
+    await waitFor(() =>
+      expect(mocks.fetchRegistrations).toHaveBeenLastCalledWith({ query: "", page: 1, hidden: true })
+    );
   });
 
   it("keeps the confirmation open and reports the error when removal fails", async () => {

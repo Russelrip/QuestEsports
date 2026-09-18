@@ -45,7 +45,9 @@ from app.schemas.leaderboard import (
     LeaderboardBanRequest,
     LeaderboardBanResult,
     LeaderboardEntry,
+    LeaderboardHideRequest,
     LeaderboardPage,
+    LeaderboardRegistration,
     LeaderboardRegistrationPage,
     LeaderboardRemovalPage,
     LeaderboardRemovedRegistration,
@@ -103,6 +105,10 @@ DOCUMENTED_SURFACE: dict[str, dict[str, tuple[type | None, type | None]]] = {
     "/api/v1/leaderboard/removals/{removal_id}/ban": {"post": (LeaderboardBanRequest, LeaderboardBanResult)},
     "/api/v1/leaderboard/bans": {"get": (None, LeaderboardBanPage)},
     "/api/v1/leaderboard/bans/{ban_id}/lift": {"post": (None, LeaderboardBan)},
+    "/api/v1/leaderboard/players/{puuid}/hide": {
+        "post": (LeaderboardHideRequest, LeaderboardRegistration),
+        "delete": (None, LeaderboardRegistration),
+    },
     "/api/v1/leaderboard/server-checks": {"get": (None, LeaderboardServerCheckPage)},
     "/api/v1/leaderboard/server-checks/{puuid}/clear": {
         "post": (None, LeaderboardServerCheckEntry),

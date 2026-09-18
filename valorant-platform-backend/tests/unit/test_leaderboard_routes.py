@@ -59,6 +59,7 @@ class _FakeLeaderboardService:
         ban_result: LeaderboardBanResult | None = None,
         bans: LeaderboardBanPage | None = None,
         lifted: LeaderboardBan | AppError | None = None,
+        hidden: LeaderboardRegistration | AppError | None = None,
     ) -> None:
         self._page = page
         self._top = top
@@ -71,6 +72,7 @@ class _FakeLeaderboardService:
         self._ban_result = ban_result
         self._bans = bans
         self._lifted = lifted
+        self._hidden = hidden
         self.calls: list[tuple] = []
 
     async def leaderboard(self, page: int, per_page: int) -> LeaderboardPage:
@@ -88,10 +90,26 @@ class _FakeLeaderboardService:
         assert self._stats is not None, "stats() not stubbed"
         return self._stats
 
-    async def registrations(self, query: str, page: int, per_page: int) -> LeaderboardRegistrationPage:
+    async def registrations(
+        self, query: str, page: int, per_page: int, *, hidden_only: bool = False
+    ) -> LeaderboardRegistrationPage:
         assert self._registrations is not None, "registrations() not stubbed"
-        self.calls.append(("registrations", query, page, per_page))
+        self.calls.append(("registrations", query, page, per_page, hidden_only))
         return self._registrations
+
+    async def hide(self, puuid: str, reason: str | None, actor_id: str | None = None) -> LeaderboardRegistration:
+        self.calls.append(("hide", puuid, reason, actor_id))
+        if isinstance(self._hidden, AppError):
+            raise self._hidden
+        assert self._hidden is not None, "hide() not stubbed"
+        return self._hidden
+
+    async def unhide(self, puuid: str) -> LeaderboardRegistration:
+        self.calls.append(("unhide", puuid))
+        if isinstance(self._hidden, AppError):
+            raise self._hidden
+        assert self._hidden is not None, "unhide() not stubbed"
+        return self._hidden
 
     async def remove(self, puuid: str, actor_id: str | None = None) -> LeaderboardRemovedRegistration:
         self.calls.append(("remove", puuid, actor_id))
@@ -264,7 +282,59 @@ def test_registrations_route_passes_query_and_paging(monkeypatch: pytest.MonkeyP
     resp = client.get("/api/v1/leaderboard/players", params={"q": "chamsy", "page": 2, "per_page": 25})
     assert resp.status_code == 200
     assert resp.json() == page.model_dump()
-    assert fake.calls == [("registrations", "chamsy", 2, 25)]
+    assert fake.calls == [("registrations", "chamsy", 2, 25, False)]
+
+
+def test_registrations_route_filters_to_hidden_players(monkeypatch: pytest.MonkeyPatch) -> None:
+    page = LeaderboardRegistrationPage(entries=[], total=0, page=1, per_page=50, total_pages=1)
+    fake = _FakeLeaderboardService(registrations=page)
+    client = TestClient(_app(monkeypatch, fake))
+    resp = client.get("/api/v1/leaderboard/players", params={"hidden": "true"})
+    assert resp.status_code == 200
+    assert fake.calls == [("registrations", "", 1, 50, True)]
+
+
+# ------------------------------------------------------------------ hiding (0020)
+
+HIDDEN = LeaderboardRegistration(
+    **{
+        **REGISTRATION.model_dump(),
+        "on_leaderboard": False,
+        "hidden_at": "2026-09-18T07:33:25+00:00",
+        "hidden_by": "actor-1",
+        "hidden_reason": "smurf account under review",
+    }
+)
+
+
+def test_hide_routes_pass_the_reason_and_the_acting_admin(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = _FakeLeaderboardService(hidden=HIDDEN)
+    client = TestClient(_app(monkeypatch, fake))
+    headers = {"X-Quest-Actor-Id": "actor-1"}
+
+    hidden = client.post(
+        "/api/v1/leaderboard/players/p1/hide", json={"reason": "smurf account under review"}, headers=headers
+    )
+    shown = client.delete("/api/v1/leaderboard/players/p1/hide", headers=headers)
+
+    assert (hidden.status_code, shown.status_code) == (200, 200)
+    assert hidden.json() == HIDDEN.model_dump()
+    assert fake.calls == [("hide", "p1", "smurf account under review", "actor-1"), ("unhide", "p1")]
+
+
+def test_hide_route_rejects_an_overlong_reason_and_surfaces_a_refusal(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = _FakeLeaderboardService(
+        hidden=AppError("LEADERBOARD_PLAYER_ALREADY_HIDDEN", 409, "this player is already hidden")
+    )
+    client = TestClient(_app(monkeypatch, fake))
+
+    overlong = client.post("/api/v1/leaderboard/players/p1/hide", json={"reason": "x" * 501})
+    refused = client.post("/api/v1/leaderboard/players/p1/hide", json={"reason": "again"})
+
+    assert overlong.status_code == 422
+    assert refused.status_code == 409
+    assert refused.json()["error"]["code"] == "LEADERBOARD_PLAYER_ALREADY_HIDDEN"
+    assert fake.calls == [("hide", "p1", "again", None)]
 
 
 REMOVED = LeaderboardRemovedRegistration(**REGISTRATION.model_dump(), removal_id="0b5c9a8e-2f4d-4b7e-9c1a-3d5e7f9a1b2c")

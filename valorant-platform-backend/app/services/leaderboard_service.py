@@ -57,6 +57,10 @@ def _discord_taken() -> AppError:
     )
 
 
+def _player_not_found() -> AppError:
+    return AppError("LEADERBOARD_PLAYER_NOT_FOUND", 404, "leaderboard player not found")
+
+
 def _removal_not_found() -> AppError:
     return AppError("LEADERBOARD_REMOVAL_NOT_FOUND", 404, "leaderboard removal not found")
 
@@ -103,9 +107,13 @@ class LeaderboardService:
         return (await self.leaderboard(1, count)).entries
 
     async def search(self, discord_username: str) -> LeaderboardEntry | None:
-        """Case-insensitive exact ``discord_username`` match, or ``None``."""
+        """Case-insensitive exact ``discord_username`` match, or ``None``.
+
+        A hidden player (0020) is not found: the public search must not show
+        what the board leaves out.
+        """
         player = await self._repo.get_by_discord_username(discord_username)
-        if player is None:
+        if player is None or player.hidden_at is not None:
             return None
         return self._to_entry(player)
 
@@ -120,9 +128,11 @@ class LeaderboardService:
             rank_distribution=stats["rank_distribution"],
         )
 
-    async def registrations(self, query: str, page: int, per_page: int) -> LeaderboardRegistrationPage:
+    async def registrations(
+        self, query: str, page: int, per_page: int, *, hidden_only: bool = False
+    ) -> LeaderboardRegistrationPage:
         """Every registration matching ``query``, listed on the board or not."""
-        rows, total = await self._repo.list_registrations(query, page, per_page)
+        rows, total = await self._repo.list_registrations(query, page, per_page, hidden_only=hidden_only)
         now = datetime.now(UTC)
         return LeaderboardRegistrationPage(
             entries=[self._to_registration(player, now) for player in rows],
@@ -131,6 +141,43 @@ class LeaderboardService:
             per_page=per_page,
             total_pages=math.ceil(total / per_page) if total > 0 else 1,
         )
+
+    async def hide(
+        self, puuid: str, reason: str | None, actor_id: str | None = None
+    ) -> LeaderboardRegistration:
+        """Keep a registered player off the public board (0020).
+
+        Nothing else changes: the player stays registered, the updater keeps
+        their rank current and the Discord bot keeps their rank role. 409 when
+        they are already hidden, so a second admin cannot silently replace the
+        first one's reason.
+        """
+        player = await self._repo.get_by_puuid(puuid)
+        if player is None:
+            raise _player_not_found()
+        if player.hidden_at is not None:
+            raise AppError("LEADERBOARD_PLAYER_ALREADY_HIDDEN", 409, "this player is already hidden")
+        hidden = await self._repo.set_hidden(puuid, hidden_by=actor_id, reason=(reason or "").strip() or None)
+        if hidden is None:
+            # Removed between the read and the update.
+            await self._session.rollback()
+            raise _player_not_found()
+        await self._session.commit()
+        return self._to_registration(hidden, datetime.now(UTC))
+
+    async def unhide(self, puuid: str) -> LeaderboardRegistration:
+        """Put a hidden player back on the public board (409 if not hidden)."""
+        player = await self._repo.get_by_puuid(puuid)
+        if player is None:
+            raise _player_not_found()
+        if player.hidden_at is None:
+            raise AppError("LEADERBOARD_PLAYER_NOT_HIDDEN", 409, "this player is not hidden")
+        shown = await self._repo.clear_hidden(puuid)
+        if shown is None:
+            await self._session.rollback()
+            raise _player_not_found()
+        await self._session.commit()
+        return self._to_registration(shown, datetime.now(UTC))
 
     async def remove(self, puuid: str, actor_id: str | None = None) -> LeaderboardRemovedRegistration:
         """Delete a registration and return what it was, with the removal id.
@@ -142,7 +189,7 @@ class LeaderboardService:
         """
         removal = await self._repo.remove(puuid, removed_by=actor_id)
         if removal is None:
-            raise AppError("LEADERBOARD_PLAYER_NOT_FOUND", 404, "leaderboard player not found")
+            raise _player_not_found()
         await self._session.commit()
         return LeaderboardRemovedRegistration(
             **self._to_registration(removal, datetime.now(UTC)).model_dump(),
@@ -219,7 +266,7 @@ class LeaderboardService:
         player = await self._repo.get_by_puuid(puuid)
         if player is None:
             await self._session.rollback()
-            raise AppError("LEADERBOARD_PLAYER_NOT_FOUND", 404, "leaderboard player not found")
+            raise _player_not_found()
         return await self._ban(player, reason, actor_id)
 
     async def ban_removal(
@@ -356,6 +403,9 @@ class LeaderboardService:
             update_source=player.update_source,
             updated_at=player.updated_at.isoformat(),
             on_leaderboard=is_listed(player, now),
+            hidden_at=player.hidden_at.isoformat() if player.hidden_at else None,
+            hidden_by=player.hidden_by,
+            hidden_reason=player.hidden_reason,
         )
 
     @staticmethod

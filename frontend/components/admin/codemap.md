@@ -49,6 +49,9 @@ records are loaded only in the existing admin detail workflow.
   removes one with a reason, then offers a one-click **Undo** for that removal.
   Ticking **Also ban them from registering again** calls the ban route instead;
   that offers no Undo, because a restore is refused while the ban stands.
+  **Hide** / **Show** keep a player registered but off the public board (reason
+  required, shown to the player on their profile by
+  `components/auth/GameAccountsPanel.tsx`), and a toggle lists only the hidden.
 - `valorant/ValorantLeaderboardRemovalsPanel.tsx` lists removals newest first and
   restores or bans one with a reason; whether a row can be restored comes from the
   platform (`restorable`, `registeredAgain`, `superseded`, `banned`), and a refused

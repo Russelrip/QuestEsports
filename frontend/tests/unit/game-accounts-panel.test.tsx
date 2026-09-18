@@ -153,13 +153,28 @@ describe("connecting an account", () => {
     expect(screen.queryByText("Registration steps")).not.toBeInTheDocument();
   });
 
-  it("does not look the leaderboard up once an account is connected", async () => {
+  it("does not offer the leaderboard account or registration once an account is connected", async () => {
     mocks.list = { ...mocks.list, accounts: [valorantAccount()] };
+    mocks.getMyValorantLeaderboardRegistration.mockResolvedValue(registration({ linkedToYou: true }));
     render(<GameAccountsPanel />);
 
     await screen.findByRole("button", { name: "Change account" });
-    expect(mocks.getMyValorantLeaderboardRegistration).not.toHaveBeenCalled();
+    expect(screen.queryByText("Already on the VALORANT leaderboard")).not.toBeInTheDocument();
     expect(screen.queryByText("Registration steps")).not.toBeInTheDocument();
+    expect(screen.queryByText("Hidden from the public leaderboard")).not.toBeInTheDocument();
+  });
+
+  it("tells a connected player that staff hid them from the board, and why", async () => {
+    mocks.list = { ...mocks.list, accounts: [valorantAccount()] };
+    mocks.getMyValorantLeaderboardRegistration.mockResolvedValue(
+      registration({ linkedToYou: true, hidden: true, hiddenReason: "Smurf account under review" }),
+    );
+    render(<GameAccountsPanel />);
+
+    expect(await screen.findByText("Hidden from the public leaderboard")).toBeInTheDocument();
+    expect(screen.getByText(/Staff have hidden Russel#1234/)).toBeInTheDocument();
+    expect(screen.getByText("Smurf account under review")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Change account" })).toBeInTheDocument();
   });
 });
 

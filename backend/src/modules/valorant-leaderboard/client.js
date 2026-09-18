@@ -140,9 +140,11 @@ const repointRegistration = async (input) =>
   });
 
 // Admin: every registration, including the ones the public board filters out.
-const listRegistrations = async ({ query = "", page = 1, perPage = 50, actorUserId }) => {
+// `hidden` keeps only the players an admin hid from the board.
+const listRegistrations = async ({ query = "", hidden = false, page = 1, perPage = 50, actorUserId }) => {
   const params = new URLSearchParams();
   if (query) params.set("q", query);
+  if (hidden) params.set("hidden", "true");
   params.set("page", String(page));
   params.set("per_page", String(perPage));
   return requestJson({ path: `/api/v1/leaderboard/players?${params.toString()}`, actorUserId });
@@ -153,6 +155,24 @@ const listRegistrations = async ({ query = "", page = 1, perPage = 50, actorUser
 const removeRegistration = async ({ puuid, actorUserId }) =>
   requestJson({
     path: `/api/v1/leaderboard/players/${encodeURIComponent(puuid)}`,
+    method: "DELETE",
+    actorUserId,
+  });
+
+// Admin: keep a registered player off the public board. They stay registered.
+// Upstream refuses with 409 when they are already hidden.
+const hideRegistration = async ({ puuid, reason, actorUserId }) =>
+  requestJson({
+    path: `/api/v1/leaderboard/players/${encodeURIComponent(puuid)}/hide`,
+    method: "POST",
+    body: { reason },
+    actorUserId,
+  });
+
+// Admin: put a hidden player back on the board. 409 when they are not hidden.
+const unhideRegistration = async ({ puuid, actorUserId }) =>
+  requestJson({
+    path: `/api/v1/leaderboard/players/${encodeURIComponent(puuid)}/hide`,
     method: "DELETE",
     actorUserId,
   });
@@ -250,6 +270,8 @@ module.exports = {
   reopenServerCheck,
   listRegistrations,
   removeRegistration,
+  hideRegistration,
+  unhideRegistration,
   listRemovals,
   restoreRemoval,
   banRegistration,

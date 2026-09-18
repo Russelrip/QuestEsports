@@ -250,7 +250,8 @@ export type ValorantPlayerLeaderboardPage = {
 
 // Admin view of a leaderboard registration. Unlike the public entries this
 // covers every registered player; `onLeaderboard` is false for the ones the
-// public board filters out (unranked, or no competitive match in 14 days).
+// public board filters out (unranked, no competitive match in 14 days, or
+// hidden by staff — `hiddenAt` set).
 export type ValorantLeaderboardRegistration = {
   puuid: string;
   name: string;
@@ -262,6 +263,17 @@ export type ValorantLeaderboardRegistration = {
   updateSource: string | null;
   updatedAt: string;
   onLeaderboard: boolean;
+  // Hidden from the public board by staff while staying registered.
+  hiddenAt?: string | null;
+  hiddenBy?: ValorantLeaderboardActor | null;
+  // Shown to the player on their profile.
+  hiddenReason?: string | null;
+};
+
+export type ValorantLeaderboardHideResult = {
+  player: ValorantLeaderboardRegistration;
+  // Profile ranks cleared on hide; null when that failed (never on unhide).
+  rankingsCleared?: number | null;
 };
 
 export type ValorantLeaderboardRegistrationPage = {

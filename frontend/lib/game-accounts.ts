@@ -229,6 +229,9 @@ export type LeaderboardRegistrationLookup = {
     linkedToYou: boolean;
     linkedElsewhere: boolean;
     unclaimedRecord: boolean;
+    /** Staff keep this player off the public board; they stay registered. */
+    hidden?: boolean;
+    hiddenReason?: string | null;
   } | null;
 };
 

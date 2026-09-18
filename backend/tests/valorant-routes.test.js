@@ -102,7 +102,7 @@ test("v1 router guards /admin/valorant with requireAdmin and declares every prox
     }
     const leaderboardGuard = staffPermissionGuards.get("valorant_leaderboard");
     const leaderboardLayers = valorantRouteLayers.filter(isDelegatedLeaderboardRoute);
-    assert.equal(leaderboardLayers.length, 11);
+    assert.equal(leaderboardLayers.length, 13);
     for (const layer of leaderboardLayers) {
       assert.ok(
         leaderboardGuard && layer.route.stack.some((routeLayer) => routeLayer.handle === leaderboardGuard),
