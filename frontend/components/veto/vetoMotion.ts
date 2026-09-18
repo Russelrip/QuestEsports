@@ -54,10 +54,10 @@ export function pickGlow(card: Element) {
   return tl;
 }
 
-export function turnPulse(target: Element, color: string) {
-  return gsap.fromTo(target,
-    { boxShadow: `0 0 0 0 ${color}00, inset 0 0 0 1px ${color}55` },
-    { boxShadow: `0 0 42px 2px ${color}66, inset 0 0 0 1px ${color}cc`, duration: 1.1, repeat: -1, yoyo: true, ease: "sine.inOut" });
+// Breathes the team card's glow layer. Opacity only, so the compositor does
+// the work and the card is never repainted while a team is on the clock.
+export function turnPulse(glow: Element) {
+  return gsap.fromTo(glow, { autoAlpha: 0.2 }, { autoAlpha: 1, duration: 1.1, repeat: -1, yoyo: true, ease: "sine.inOut" });
 }
 
 export function headingSwap(target: Element) {

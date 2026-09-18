@@ -203,9 +203,8 @@ export default function VetoRoomView({ code, onRoomChange }: { code: string; onR
   // Glow around whichever team is on the clock.
   useGSAP(() => {
     if (!onTheClock || prefersReducedMotion()) return;
-    const card = rootRef.current?.querySelector(`[data-veto-team="${onTheClock}"]`);
-    const participant = room?.participants.find((entry) => entry.slot === onTheClock);
-    if (card) turnPulse(card, participant?.accentColor || "#a855f7");
+    const glow = rootRef.current?.querySelector(`[data-veto-team="${onTheClock}"] [data-veto-glow]`);
+    if (glow) turnPulse(glow);
   }, { scope: rootRef, dependencies: [onTheClock], revertOnUpdate: true });
 
   useGSAP(() => {
@@ -329,6 +328,7 @@ export default function VetoRoomView({ code, onRoomChange }: { code: string; onR
           const onClock = onTheClock === participant.slot;
           return (
             <div key={participant.id} data-veto-team={participant.slot} className={`${index === 1 ? "md:col-start-3" : ""} relative overflow-hidden border border-white/10 bg-[#11131c] p-5`} style={{ borderTopColor: participant.accentColor, background: `linear-gradient(${index === 1 ? "225deg" : "135deg"}, ${participant.accentColor}1f, transparent 55%), #11131c` }}>
+              {onClock ? <span data-veto-glow className="veto-team-glow pointer-events-none absolute inset-0" style={{ boxShadow: `inset 0 0 0 1px ${participant.accentColor}cc, inset 0 0 48px ${participant.accentColor}55` }} aria-hidden="true" /> : null}
               <div className={`flex items-start justify-between gap-4 ${index === 1 ? "md:flex-row-reverse md:text-right" : ""}`}>
                 <div className={`flex min-w-0 items-center gap-4 ${index === 1 ? "md:flex-row-reverse" : ""}`}><ParticipantMark name={participant.displayName} logoUrl={participant.logoUrl} accentColor={participant.accentColor} /><div className="min-w-0"><p className="text-[10px] uppercase tracking-[0.2em] text-slate-500">Slot {participant.slot}{participant.team ? ` · Team ${participant.team}` : ""}</p><h2 className="mt-1 truncate text-2xl font-black uppercase tracking-tight text-white">{participant.displayName}</h2></div></div>
                 <span className={`size-3 shrink-0 rounded-full ${participant.ready ? "bg-emerald-400 shadow-[0_0_18px_#34d399]" : "bg-slate-700"}`} />
