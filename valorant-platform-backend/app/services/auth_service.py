@@ -110,6 +110,8 @@ class AuthService:
                 tag=player.tag,
                 discord_username=player.discord_username,
                 current_rank=get_rank_field(player.rank_details, "currenttierpatched"),
+                hidden=player.hidden_at is not None,
+                hidden_reason=player.hidden_reason,
             ),
         )
 

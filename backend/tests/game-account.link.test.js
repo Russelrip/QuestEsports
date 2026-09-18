@@ -704,9 +704,27 @@ test("the leaderboard lookup names the account without exposing its identifier",
         linkedToYou: false,
         linkedElsewhere: false,
         unclaimedRecord: false,
+        hidden: false,
+        hiddenReason: null,
       },
     });
     assert.doesNotMatch(JSON.stringify(result), /puuid-abc/);
+  } finally {
+    restore();
+  }
+});
+
+test("the leaderboard lookup tells the player when staff hid them from the board, and why", async () => {
+  const { module: service, restore } = loadService({
+    checkDiscord: async () => ({
+      exists: true,
+      user: { puuid: "puuid-abc", name: "Russel", tag: "1234", hidden: true, hidden_reason: "Smurf account under review" },
+    }),
+  });
+  try {
+    const result = await service.findLeaderboardRegistration({ userId: "user-1" });
+    assert.equal(result.registration.hidden, true);
+    assert.equal(result.registration.hiddenReason, "Smurf account under review");
   } finally {
     restore();
   }

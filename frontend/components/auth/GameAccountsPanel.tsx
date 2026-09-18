@@ -58,11 +58,11 @@ export default function GameAccountsPanel({ className = "", onAccountsChange }: 
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
 
-  // What the leaderboard already holds for this player's Discord. Fetched only
-  // for somebody with nothing connected. A player who registered before
-  // registration connected the account here is already on the leaderboard, so
-  // the registration steps would stop them at "already registered"; they are
-  // offered that account, by name, instead.
+  // What the leaderboard already holds for this player's Discord. A player who
+  // registered before registration connected the account here is already on the
+  // leaderboard, so the registration steps would stop them at "already
+  // registered"; they are offered that account, by name, instead. It is also
+  // how a connected player learns that staff hid them from the public board.
   const [leaderboard, setLeaderboard] = useState<LeaderboardRegistrationLookup | null>(null);
   const [leaderboardSettled, setLeaderboardSettled] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -107,7 +107,7 @@ export default function GameAccountsPanel({ className = "", onAccountsChange }: 
   const hasAccount = Boolean(valorant);
 
   useEffect(() => {
-    if (loading || hasAccount) return;
+    if (loading) return;
     let cancelled = false;
     setLeaderboardSettled(false);
     getMyValorantLeaderboardRegistration()
@@ -207,6 +207,7 @@ export default function GameAccountsPanel({ className = "", onAccountsChange }: 
     : null;
 
   const offer = !loading && !valorant ? leaderboard?.registration ?? null : null;
+  const hiddenFromBoard = !loading && leaderboard?.registration?.hidden ? leaderboard.registration : null;
 
   return (
     <section
@@ -231,6 +232,22 @@ export default function GameAccountsPanel({ className = "", onAccountsChange }: 
         <div className="mt-5 flex flex-wrap items-center gap-3 border border-white/8 bg-white/[.02] p-4" role="status">
           <ValorantConnectionBadge state={summary.state} label={summary.label} />
           <p className="min-w-0 flex-1 text-sm leading-6 text-slate-300">{summary.detail}</p>
+        </div>
+      ) : null}
+
+      {hiddenFromBoard ? (
+        <div className="mt-5 border border-amber-300/20 bg-amber-400/[0.06] p-4" role="status">
+          <p className="text-[10px] uppercase tracking-[0.22em] text-amber-200/80">Hidden from the public leaderboard</p>
+          <p className="mt-2 text-sm leading-6 text-slate-200">
+            Staff have hidden {hiddenFromBoard.riotId} from the public VALORANT leaderboard. You are still registered, your
+            account stays connected, and your rank keeps updating — it just is not shown on the board.
+          </p>
+          {hiddenFromBoard.hiddenReason ? (
+            <p className="mt-2 break-words text-sm leading-6 text-slate-300 [overflow-wrap:anywhere]">
+              <span className="text-slate-400">Reason:</span> {hiddenFromBoard.hiddenReason}
+            </p>
+          ) : null}
+          <SupportHelpLink subject="Hidden from the VALORANT leaderboard" />
         </div>
       ) : null}
 

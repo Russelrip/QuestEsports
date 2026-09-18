@@ -226,8 +226,25 @@ class FakeAdminRepo:
         self.total = total
         self.removed: list[tuple[str, str | None]] = []
 
-    async def list_registrations(self, query: str, page: int, per_page: int) -> tuple[list[LeaderboardPlayer], int]:
+    async def list_registrations(
+        self, query: str, page: int, per_page: int, *, hidden_only: bool = False
+    ) -> tuple[list[LeaderboardPlayer], int]:
         return self.rows, self.total
+
+    async def get_by_puuid(self, puuid: str) -> LeaderboardPlayer | None:
+        return next((row for row in self.rows if row.puuid == puuid), None)
+
+    async def set_hidden(self, puuid: str, *, hidden_by: str | None, reason: str | None) -> LeaderboardPlayer | None:
+        row = await self.get_by_puuid(puuid)
+        if row is not None:
+            row.hidden_at, row.hidden_by, row.hidden_reason = NOW, hidden_by, reason
+        return row
+
+    async def clear_hidden(self, puuid: str) -> LeaderboardPlayer | None:
+        row = await self.get_by_puuid(puuid)
+        if row is not None:
+            row.hidden_at, row.hidden_by, row.hidden_reason = None, None, None
+        return row
 
     async def remove(self, puuid: str, *, removed_by: str | None) -> LeaderboardPlayerRemoval | None:
         self.removed.append((puuid, removed_by))
@@ -257,15 +274,57 @@ async def test_registrations_flag_rows_the_public_board_hides() -> None:
         # The row the updater cannot refresh: migrated rank, never a match date.
         _row(puuid="stale", last_played_match=None, updated_at=recent),
         _row(puuid="unrated", currenttierpatched="Unrated", last_played_match=recent, updated_at=recent),
+        _row(puuid="hidden", last_played_match=recent, updated_at=recent, hidden_at=recent, hidden_reason="smurf"),
     ]
-    page = await _service(FakeAdminRepo(rows=rows, total=3)).registrations("", 1, 50)  # type: ignore[arg-type]
+    page = await _service(FakeAdminRepo(rows=rows, total=4)).registrations("", 1, 50)  # type: ignore[arg-type]
 
     assert [(entry.puuid, entry.on_leaderboard) for entry in page.entries] == [
         ("listed", True),
         ("stale", False),
         ("unrated", False),
+        ("hidden", False),
     ]
+    assert page.entries[3].hidden_reason == "smurf"
+    assert page.entries[0].hidden_at is None
     assert page.total_pages == 1
+
+
+async def test_hide_records_the_admin_and_reason_and_unhide_clears_them() -> None:
+    row = _row(puuid="p1", last_played_match=datetime.now(UTC), updated_at=NOW)
+    session = FakeSession()
+    service = LeaderboardService(session=session, repo=FakeAdminRepo(rows=[row]))  # type: ignore[arg-type]
+
+    hidden = await service.hide("p1", "  smurf account  ", "admin-user-id")
+    assert (hidden.on_leaderboard, hidden.hidden_by, hidden.hidden_reason) == (False, "admin-user-id", "smurf account")
+    assert hidden.hidden_at == NOW.isoformat()
+
+    shown = await service.unhide("p1")
+    assert (shown.on_leaderboard, shown.hidden_at, shown.hidden_by, shown.hidden_reason) == (True, None, None, None)
+    assert session.commits == 2
+
+
+async def test_hide_refuses_a_hidden_player_and_unhide_a_visible_one() -> None:
+    rows = [_row(puuid="shown", updated_at=NOW), _row(puuid="hidden", updated_at=NOW, hidden_at=NOW)]
+    service = LeaderboardService(session=FakeSession(), repo=FakeAdminRepo(rows=rows))  # type: ignore[arg-type]
+
+    with pytest.raises(AppError) as again:
+        await service.hide("hidden", "", None)
+    with pytest.raises(AppError) as not_hidden:
+        await service.unhide("shown")
+    with pytest.raises(AppError) as missing:
+        await service.hide("nobody", "", None)
+
+    assert (again.value.code, again.value.status) == ("LEADERBOARD_PLAYER_ALREADY_HIDDEN", 409)
+    assert (not_hidden.value.code, not_hidden.value.status) == ("LEADERBOARD_PLAYER_NOT_HIDDEN", 409)
+    assert (missing.value.code, missing.value.status) == ("LEADERBOARD_PLAYER_NOT_FOUND", 404)
+
+
+async def test_search_does_not_find_a_hidden_player() -> None:
+    class _Repo:
+        async def get_by_discord_username(self, discord_username: str) -> LeaderboardPlayer:
+            return _row(hidden_at=NOW)
+
+    assert await _service(_Repo()).search("player") is None  # type: ignore[arg-type]
 
 
 async def test_remove_commits_and_returns_the_removed_row() -> None:

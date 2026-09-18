@@ -3,7 +3,8 @@
 ``LeaderboardPlayerRepository`` is the only code that issues
 ``leaderboard_players`` queries/inserts/upserts. The leaderboard read is the
 Sri Lankan filter: ``elo IS NOT NULL``, ``last_played_match >= now()-14d``, and
-``currenttierpatched != 'Unrated'``, ordered ``elo DESC``.
+``currenttierpatched != 'Unrated'``, and not hidden by an admin (0020), ordered
+``elo DESC``.
 """
 
 from __future__ import annotations
@@ -21,12 +22,14 @@ from app.db.models.leaderboard_player_removal import REGISTRATION_COLUMNS
 _LEADERBOARD_FILTERS = (
     LeaderboardPlayer.elo.is_not(None),
     LeaderboardPlayer.currenttierpatched != "Unrated",
+    # Hidden by an admin (0020): still registered, just not on the public board.
+    LeaderboardPlayer.hidden_at.is_(None),
 )
 _LEADERBOARD_WINDOW = timedelta(weeks=2)
 
 
 def is_listed(player: LeaderboardPlayer, now: datetime | None = None) -> bool:
-    """Whether ``list_page`` would show this row — the same three filters, in Python.
+    """Whether ``list_page`` would show this row — the same filters, in Python.
 
     ``currenttierpatched != 'Unrated'`` is NULL (so false) in SQL for a NULL
     tier, which is why a missing tier counts as unlisted here too.
@@ -38,6 +41,7 @@ def is_listed(player: LeaderboardPlayer, now: datetime | None = None) -> bool:
         and player.currenttierpatched != "Unrated"
         and player.last_played_match is not None
         and player.last_played_match >= cutoff
+        and player.hidden_at is None
     )
 
 
@@ -107,7 +111,7 @@ class LeaderboardPlayerRepository:
         )).scalars().all())
 
     async def list_registrations(
-        self, query: str, page: int, per_page: int
+        self, query: str, page: int, per_page: int, *, hidden_only: bool = False
     ) -> tuple[list[LeaderboardPlayer], int]:
         """Every registration, listed or not, for the admin view.
 
@@ -124,7 +128,9 @@ class LeaderboardPlayerRepository:
         the public page.
 
         Without a query, least recently refreshed first, so rows the updater
-        keeps failing on sit at the top.
+        keeps failing on sit at the top. ``hidden_only`` keeps the rows an admin
+        hid from the board (0020), most recently hidden first when there is no
+        query.
         """
         needle = query.strip().lstrip("@").lower()
         if len(needle) < MIN_QUERY_LENGTH:
@@ -132,6 +138,9 @@ class LeaderboardPlayerRepository:
 
         statement = select(LeaderboardPlayer)
         count = select(func.count()).select_from(LeaderboardPlayer)
+        if hidden_only:
+            statement = statement.where(LeaderboardPlayer.hidden_at.is_not(None))
+            count = count.where(LeaderboardPlayer.hidden_at.is_not(None))
         if needle:
             score = _match_score(needle)
             statement = statement.where(score.is_not(None)).order_by(
@@ -141,6 +150,8 @@ class LeaderboardPlayerRepository:
                 LeaderboardPlayer.puuid,
             )
             count = count.where(score.is_not(None))
+        elif hidden_only:
+            statement = statement.order_by(LeaderboardPlayer.hidden_at.desc(), LeaderboardPlayer.puuid)
         else:
             statement = statement.order_by(LeaderboardPlayer.updated_at.asc(), LeaderboardPlayer.puuid)
 
@@ -251,6 +262,32 @@ class LeaderboardPlayerRepository:
         await self._session.flush()
         return player
 
+    async def set_hidden(
+        self, puuid: str, *, hidden_by: str | None, reason: str | None
+    ) -> LeaderboardPlayer | None:
+        """Hide a registration from the public board (0020); ``None`` if absent.
+
+        Only the three hidden columns change, so the updater's concurrent
+        ``refresh_rank`` of the same row cannot undo it. The caller commits.
+        """
+        return (await self._session.execute(
+            update(LeaderboardPlayer)
+            .where(LeaderboardPlayer.puuid == puuid)
+            .values(hidden_at=func.now(), hidden_by=hidden_by, hidden_reason=reason)
+            .returning(LeaderboardPlayer)
+            .execution_options(populate_existing=True, synchronize_session=False)
+        )).scalar_one_or_none()
+
+    async def clear_hidden(self, puuid: str) -> LeaderboardPlayer | None:
+        """Put a hidden registration back on the board; ``None`` if absent. The caller commits."""
+        return (await self._session.execute(
+            update(LeaderboardPlayer)
+            .where(LeaderboardPlayer.puuid == puuid)
+            .values(hidden_at=None, hidden_by=None, hidden_reason=None)
+            .returning(LeaderboardPlayer)
+            .execution_options(populate_existing=True, synchronize_session=False)
+        )).scalar_one_or_none()
+
     async def refresh_rank(self, puuid: str, *, name: str, tag: str, **fields) -> bool:
         """Write the updater's fresh Riot data onto an EXISTING row and commit.
 
@@ -290,11 +327,11 @@ class LeaderboardPlayerRepository:
     async def get_stats(self) -> dict:
         total, highest, lowest, average = (await self._session.execute(
             select(func.count(), func.max(LeaderboardPlayer.elo), func.min(LeaderboardPlayer.elo), func.avg(LeaderboardPlayer.elo))
-            .where(LeaderboardPlayer.elo.is_not(None))
+            .where(LeaderboardPlayer.elo.is_not(None), LeaderboardPlayer.hidden_at.is_(None))
         )).one()
         dist = (await self._session.execute(
             select(LeaderboardPlayer.currenttierpatched, func.count())
-            .where(LeaderboardPlayer.currenttierpatched.is_not(None))
+            .where(LeaderboardPlayer.currenttierpatched.is_not(None), LeaderboardPlayer.hidden_at.is_(None))
             .group_by(LeaderboardPlayer.currenttierpatched)
         )).all()
         return {

@@ -4,6 +4,8 @@ const { recordAudit, requestAuditContext } = require("../../lib/audit");
 const {
   listAdminRegistrations,
   removeAdminRegistration,
+  hideAdminRegistration,
+  unhideAdminRegistration,
   listAdminRemovals,
   restoreAdminRemoval,
   listAdminBans,
@@ -81,9 +83,10 @@ const REMOVAL_REASON_MAX_LENGTH = 500;
 
 const listRegistrations = asyncHandler(async (req, res) => {
   const query = String(req.query.q || "").trim().slice(0, ADMIN_QUERY_MAX_LENGTH);
+  const hidden = req.query.hidden === "true";
   const page = Math.max(1, parsePositiveInt(req.query.page, 1));
   const perPage = clamp(parsePositiveInt(req.query.per_page, 50), 1, 200);
-  const data = await listAdminRegistrations({ query, page, perPage, actorUserId: req.user.id });
+  const data = await listAdminRegistrations({ query, hidden, page, perPage, actorUserId: req.user.id });
   respond(res, data);
 });
 
@@ -175,6 +178,54 @@ const readReason = (req, missingMessage) => {
   }
   return reason;
 };
+
+// Hiding keeps a player registered and connected but off the public board. The
+// reason is shown to the player on their profile, so it is required here the way
+// a ban's is. The audit policy keeps PUUIDs out, so the Riot ID and Discord
+// handle identify the player.
+const hideAuditData = (player) => ({
+  riotId: `${player.name}#${player.tag}`,
+  discordUsername: player.discordUsername,
+  currentTier: player.currentTier,
+  elo: player.elo,
+});
+
+const hideRegistration = asyncHandler(async (req, res) => {
+  const reason = readReason(req, "Give a reason for hiding this player. They will see it on their profile.");
+  const data = await hideAdminRegistration({ puuid: req.params.puuid, reason, actorUserId: req.user.id });
+  await recordAudit({
+    ...requestAuditContext(req),
+    action: "valorant.leaderboard_player.hide",
+    targetType: "valorant_leaderboard_player",
+    targetId: null,
+    beforeData: { hidden: false },
+    afterData: {
+      ...hideAuditData(data.player),
+      hidden: true,
+      hiddenAt: data.player.hiddenAt,
+      rankingsCleared: data.rankingsCleared,
+    },
+    source: "admin",
+    reason,
+  });
+  respond(res, data);
+});
+
+const unhideRegistration = asyncHandler(async (req, res) => {
+  const reason = readReason(req, "Give a reason for showing this player on the leaderboard again.");
+  const data = await unhideAdminRegistration({ puuid: req.params.puuid, actorUserId: req.user.id });
+  await recordAudit({
+    ...requestAuditContext(req),
+    action: "valorant.leaderboard_player.unhide",
+    targetType: "valorant_leaderboard_player",
+    targetId: null,
+    beforeData: { hidden: true },
+    afterData: { ...hideAuditData(data.player), hidden: false, onLeaderboard: data.player.onLeaderboard },
+    source: "admin",
+    reason,
+  });
+  respond(res, data);
+});
 
 const BAN_STATUSES = new Set(["active", "lifted", "all"]);
 
@@ -318,6 +369,8 @@ module.exports = {
   reopenServerCheck,
   listRegistrations,
   removeRegistration,
+  hideRegistration,
+  unhideRegistration,
   listRemovals,
   restoreRemoval,
   getLeaderboard,

@@ -89,7 +89,7 @@ class _Player:
     """Minimal stand-in for the ``LeaderboardPlayer`` row the fake upsert returns."""
 
     def __init__(self, **fields: object) -> None:
-        self.__dict__.update(fields)
+        self.__dict__.update({"hidden_at": None, "hidden_by": None, "hidden_reason": None, **fields})
 
 
 class FakeRepo:
@@ -444,6 +444,27 @@ async def test_repoint_moves_the_discord_to_the_new_account(
     # One commit: the detach and the new row land together, so a failure cannot
     # leave a player attached to neither.
     assert session.committed == 1
+    # A registration that was never hidden moves as a visible one.
+    assert repo.upserted["hidden_at"] is None
+
+
+async def test_repoint_carries_a_hide_to_the_new_account(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    hidden_at = datetime(2026, 9, 18, 7, 33, tzinfo=UTC)
+    old_row = _Player(
+        puuid="puuid-old", name="Old", tag="OLD", currenttierpatched="Silver 1", elo=900, discord_id="d-1",
+        hidden_at=hidden_at, hidden_by="admin-1", hidden_reason="smurf account",
+    )
+    repo = FakeRepo(by_puuid={"puuid-old": old_row}, by_discord_id={"d-1": old_row})
+    svc = _service(repo, FakeHenrik(mmr=MMR, last_played=None), monkeypatch, FakeSession())
+
+    await svc.repoint(discord_id="d-1", discord_username="dusername", puuid="puuid-new")
+
+    # Changing Riot accounts must not be a way off a hide.
+    assert (repo.upserted["hidden_at"], repo.upserted["hidden_by"], repo.upserted["hidden_reason"]) == (
+        hidden_at, "admin-1", "smurf account",
+    )
 
 
 async def test_repoint_404_when_there_is_nothing_to_move(

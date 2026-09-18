@@ -23,9 +23,9 @@ export function useValorantBindings() {
   return useApiQuery(["valorant-bindings"], fetchValorantBindings);
 }
 
-export function useValorantLeaderboardRegistrations(query: string, page: number) {
-  return useApiQuery(["valorant-leaderboard-registrations", query, page], () =>
-    fetchValorantLeaderboardRegistrations({ query, page })
+export function useValorantLeaderboardRegistrations(query: string, page: number, hidden = false) {
+  return useApiQuery(["valorant-leaderboard-registrations", query, page, hidden], () =>
+    fetchValorantLeaderboardRegistrations({ query, page, hidden })
   );
 }
 

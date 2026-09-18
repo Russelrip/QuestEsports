@@ -8,6 +8,8 @@ const {
   repointRegistration: fetchRepointRegistration,
   listRegistrations: fetchRegistrations,
   removeRegistration: fetchRemoveRegistration,
+  hideRegistration: fetchHideRegistration,
+  unhideRegistration: fetchUnhideRegistration,
   listRemovals: fetchRemovals,
   restoreRemoval: fetchRestoreRemoval,
   banRegistration: fetchBanRegistration,
@@ -228,7 +230,8 @@ const repointRegistration = async ({ userId, puuid }) => {
 
 // --- Admin: registrations ---------------------------------------------------
 
-const mapRegistration = (entry) => ({
+// `names` resolves who hid a player (see loadActorNames).
+const mapRegistration = (entry, names = new Map()) => ({
   puuid: entry.puuid,
   name: entry.name,
   tag: entry.tag,
@@ -239,12 +242,17 @@ const mapRegistration = (entry) => ({
   updateSource: entry.update_source ?? null,
   updatedAt: entry.updated_at,
   onLeaderboard: Boolean(entry.on_leaderboard),
+  hiddenAt: entry.hidden_at ?? null,
+  hiddenBy: mapActor(entry.hidden_by, names),
+  hiddenReason: entry.hidden_reason ?? null,
 });
 
-const listAdminRegistrations = async ({ query, page, perPage, actorUserId }) => {
-  const raw = await fetchRegistrations({ query, page, perPage, actorUserId });
+const listAdminRegistrations = async ({ query, hidden = false, page, perPage, actorUserId }) => {
+  const raw = await fetchRegistrations({ query, hidden, page, perPage, actorUserId });
+  const entries = raw.entries || [];
+  const names = await loadActorNames(entries.map((entry) => entry.hidden_by));
   return {
-    entries: (raw.entries || []).map(mapRegistration),
+    entries: entries.map((entry) => mapRegistration(entry, names)),
     total: raw.total ?? 0,
     page: raw.page ?? page,
     perPage: raw.per_page ?? perPage,
@@ -271,6 +279,28 @@ const removeAdminRegistration = async ({ puuid, actorUserId }) => {
   snapshot = null;
   const rankingsCleared = await clearProfileRankings([puuid]);
   return { removed, removalId: raw.removal_id ?? null, rankingsCleared };
+};
+
+// Keep a registered player off the public board.
+//
+// Unlike a removal the player stays registered: the rank updater and Discord
+// bot carry on, and their Quest account stays connected. What Quest shows of
+// the board is cleared the same way a removal clears it — the search snapshot,
+// and the profile rank, whose "Sri Lanka #N" would otherwise keep naming a
+// place the player no longer has. Clearing that rank never fails the request.
+const hideAdminRegistration = async ({ puuid, reason, actorUserId }) => {
+  const raw = await fetchHideRegistration({ puuid, reason, actorUserId });
+  snapshot = null;
+  const rankingsCleared = await clearProfileRankings([puuid]);
+  return { player: mapRegistration(raw, await loadActorNames([raw.hidden_by])), rankingsCleared };
+};
+
+// Put a hidden player back. The profile rank comes back with the next ranking
+// sync, as it does after a restore.
+const unhideAdminRegistration = async ({ puuid, actorUserId }) => {
+  const raw = await fetchUnhideRegistration({ puuid, actorUserId });
+  snapshot = null;
+  return { player: mapRegistration(raw) };
 };
 
 // The profile ranks of the given removed PUUIDs; the count cleared, or null
@@ -494,6 +524,8 @@ module.exports = {
   reopenAdminServerCheck,
   listAdminRegistrations,
   removeAdminRegistration,
+  hideAdminRegistration,
+  unhideAdminRegistration,
   listAdminRemovals,
   restoreAdminRemoval,
   listAdminBans,

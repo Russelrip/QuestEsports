@@ -1444,6 +1444,10 @@ const additionalPaths = {
   "/api/v1/admin/valorant/leaderboard/removals/{removalId}/restore": {
     post: createOperation("valorant", "Restore a removed VALORANT leaderboard player exactly as they were (reason required, audited; 409 when registered again; admin or valorant_leaderboard staff permission)", { authenticated: true }),
   },
+  "/api/v1/admin/valorant/leaderboard/players/{puuid}/hide": {
+    post: createOperation("valorant", "Hide a registered VALORANT leaderboard player from the public board, search and stats; they stay registered and connected and see the reason on their profile (reason required, audited; 409 when already hidden; admin or valorant_leaderboard staff permission)", { authenticated: true }),
+    delete: createOperation("valorant", "Show a hidden VALORANT leaderboard player on the public board again (reason required, audited; 409 when not hidden; admin or valorant_leaderboard staff permission)", { authenticated: true }),
+  },
   "/api/v1/admin/valorant/leaderboard/players/{puuid}/ban": {
     post: createOperation("valorant", "Ban a registered VALORANT leaderboard player's Riot and Discord accounts from registering, removing every registration either holds (reason required, audited; admin or valorant_leaderboard staff permission)", { authenticated: true }),
   },

@@ -71,7 +71,7 @@ test("listAdminRegistrations maps upstream rows to camelCase and signs as the ad
 
   const result = await service.listAdminRegistrations({ query: "chamsy", page: 1, perPage: 50, actorUserId: ADMIN_ID });
 
-  assert.deepEqual(seen, { query: "chamsy", page: 1, perPage: 50, actorUserId: ADMIN_ID });
+  assert.deepEqual(seen, { query: "chamsy", hidden: false, page: 1, perPage: 50, actorUserId: ADMIN_ID });
   assert.deepEqual(result.entries[0], {
     puuid: upstreamRow.puuid,
     name: "Chamsy",
@@ -83,8 +83,186 @@ test("listAdminRegistrations maps upstream rows to camelCase and signs as the ad
     updateSource: "migration",
     updatedAt: "2026-08-15T14:09:35+00:00",
     onLeaderboard: false,
+    hiddenAt: null,
+    hiddenBy: null,
+    hiddenReason: null,
   });
   assert.equal(result.totalPages, 1);
+});
+
+// --- hiding ---------------------------------------------------------------
+
+const hiddenRow = {
+  ...upstreamRow,
+  on_leaderboard: false,
+  hidden_at: "2026-09-18T07:33:25+00:00",
+  hidden_by: ADMIN_ID,
+  hidden_reason: "Smurf account under review",
+};
+
+test("listAdminRegistrations passes the hidden filter and names who hid each player", async () => {
+  let seen;
+  const service = loadService({
+    client: {
+      listRegistrations: async (input) => {
+        seen = input;
+        return { entries: [hiddenRow], total: 1, page: 1, per_page: 50, total_pages: 1 };
+      },
+    },
+    prisma: { user: { findMany: async () => [{ id: ADMIN_ID, username: "russel" }] } },
+  });
+
+  const result = await service.listAdminRegistrations({ query: "", hidden: true, page: 1, perPage: 50, actorUserId: ADMIN_ID });
+
+  assert.equal(seen.hidden, true);
+  assert.equal(result.entries[0].hiddenAt, "2026-09-18T07:33:25+00:00");
+  assert.equal(result.entries[0].hiddenReason, "Smurf account under review");
+  assert.deepEqual(result.entries[0].hiddenBy, { id: ADMIN_ID, username: "russel" });
+});
+
+test("hideAdminRegistration hides upstream as the admin, then clears the cached profile rank", async () => {
+  const order = [];
+  const service = loadService({
+    client: {
+      hideRegistration: async ({ puuid, reason, actorUserId }) => {
+        order.push(["upstream", puuid, reason, actorUserId]);
+        return hiddenRow;
+      },
+    },
+    prisma: {
+      user: { findMany: async () => [{ id: ADMIN_ID, username: "russel" }] },
+      playerRanking: {
+        deleteMany: async () => {
+          order.push(["rankings"]);
+          return { count: 1 };
+        },
+      },
+    },
+  });
+
+  const result = await service.hideAdminRegistration({
+    puuid: upstreamRow.puuid,
+    reason: "Smurf account under review",
+    actorUserId: ADMIN_ID,
+  });
+
+  assert.deepEqual(order, [["upstream", upstreamRow.puuid, "Smurf account under review", ADMIN_ID], ["rankings"]]);
+  assert.equal(result.player.hiddenReason, "Smurf account under review");
+  assert.equal(result.rankingsCleared, 1);
+});
+
+test("hideAdminRegistration leaves Quest rankings alone when upstream refuses", async () => {
+  let cleared = false;
+  const service = loadService({
+    client: {
+      hideRegistration: async () => {
+        const refusal = new Error("this player is already hidden");
+        refusal.statusCode = 409;
+        throw refusal;
+      },
+    },
+    prisma: { playerRanking: { deleteMany: async () => { cleared = true; return { count: 0 }; } } },
+  });
+
+  await assert.rejects(
+    service.hideAdminRegistration({ puuid: upstreamRow.puuid, reason: "Again", actorUserId: ADMIN_ID }),
+    (error) => error.statusCode === 409,
+  );
+  assert.equal(cleared, false);
+});
+
+test("unhideAdminRegistration shows the player again upstream, signed as the admin", async () => {
+  let seen;
+  const service = loadService({
+    client: {
+      unhideRegistration: async (input) => {
+        seen = input;
+        return { ...upstreamRow, on_leaderboard: true };
+      },
+    },
+  });
+
+  const result = await service.unhideAdminRegistration({ puuid: upstreamRow.puuid, actorUserId: ADMIN_ID });
+
+  assert.deepEqual(seen, { puuid: upstreamRow.puuid, actorUserId: ADMIN_ID });
+  assert.equal(result.player.onLeaderboard, true);
+  assert.equal(result.player.hiddenAt, null);
+});
+
+test("hide and unhide handlers require a reason and never call the service without one", async () => {
+  let called = false;
+  const controller = loadController({
+    service: {
+      hideAdminRegistration: async () => { called = true; },
+      unhideAdminRegistration: async () => { called = true; },
+    },
+  });
+
+  for (const handler of [controller.hideRegistration, controller.unhideRegistration]) {
+    const missing = await run(handler, { params: { puuid: upstreamRow.puuid }, body: { reason: "  " }, user: { id: ADMIN_ID } });
+    const overlong = await run(handler, { params: { puuid: upstreamRow.puuid }, body: { reason: "x".repeat(501) }, user: { id: ADMIN_ID } });
+    assert.equal(missing.error.statusCode, 400);
+    assert.equal(overlong.error.statusCode, 400);
+  }
+  assert.equal(called, false);
+});
+
+test("hideRegistration and unhideRegistration audit the Riot ID and reason, without the PUUID", async () => {
+  const audits = [];
+  const controller = loadController({
+    audits,
+    service: {
+      hideAdminRegistration: async () => ({
+        player: { ...upstreamRow, name: "Chamsy", tag: "0001", discordUsername: "chamsy.", hiddenAt: hiddenRow.hidden_at },
+        rankingsCleared: 1,
+      }),
+      unhideAdminRegistration: async () => ({
+        player: { ...upstreamRow, name: "Chamsy", tag: "0001", discordUsername: "chamsy.", onLeaderboard: true },
+      }),
+    },
+  });
+
+  const hidden = await run(controller.hideRegistration, {
+    params: { puuid: upstreamRow.puuid },
+    body: { reason: " Smurf account under review " },
+    user: { id: ADMIN_ID },
+  });
+  await run(controller.unhideRegistration, {
+    params: { puuid: upstreamRow.puuid },
+    body: { reason: "Cleared after review" },
+    user: { id: ADMIN_ID },
+  });
+
+  assert.equal(hidden.calls.status, 200);
+  assert.deepEqual(audits.map((audit) => audit.action), ["valorant.leaderboard_player.hide", "valorant.leaderboard_player.unhide"]);
+  assert.equal(audits[0].reason, "Smurf account under review");
+  assert.equal(audits[0].afterData.riotId, "Chamsy#0001");
+  assert.equal(audits[0].afterData.hidden, true);
+  assert.equal(audits[1].afterData.hidden, false);
+  assert.equal(JSON.stringify(audits).includes(upstreamRow.puuid), false);
+});
+
+test("hideRegistration records nothing when upstream refuses", async () => {
+  const audits = [];
+  const controller = loadController({
+    audits,
+    service: {
+      hideAdminRegistration: async () => {
+        const refusal = new Error("this player is already hidden");
+        refusal.statusCode = 409;
+        throw refusal;
+      },
+    },
+  });
+
+  const { error } = await run(controller.hideRegistration, {
+    params: { puuid: upstreamRow.puuid },
+    body: { reason: "Again" },
+    user: { id: ADMIN_ID },
+  });
+
+  assert.equal(error.statusCode, 409);
+  assert.equal(audits.length, 0);
 });
 
 test("removeAdminRegistration deletes upstream, then clears the linked player's cached rank", async () => {
@@ -211,8 +389,10 @@ test("listRegistrations trims the query and clamps paging", async () => {
   });
 
   await run(controller.listRegistrations, { query: { q: "  chamsy ", page: "0", per_page: "5000" }, user: { id: ADMIN_ID } });
+  assert.deepEqual(seen, { query: "chamsy", hidden: false, page: 1, perPage: 200, actorUserId: ADMIN_ID });
 
-  assert.deepEqual(seen, { query: "chamsy", page: 1, perPage: 200, actorUserId: ADMIN_ID });
+  await run(controller.listRegistrations, { query: { hidden: "true" }, user: { id: ADMIN_ID } });
+  assert.equal(seen.hidden, true);
 });
 
 const REMOVAL_ID = "0b5c9a8e-2f4d-4b7e-9c1a-3d5e7f9a1b2c";

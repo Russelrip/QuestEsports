@@ -21,6 +21,7 @@ import type {
   ValorantLeaderboardBanPage,
   ValorantLeaderboardBanResult,
   ValorantLeaderboardBanStatus,
+  ValorantLeaderboardHideResult,
   ValorantLeaderboardRegistrationPage,
   ValorantLeaderboardRemoval,
   ValorantLeaderboardRemovalPage,
@@ -214,9 +215,14 @@ export const fetchValorantTeamSeries = (teamId: string) =>
 export const fetchValorantReconciliation = () =>
   valorantAdminRequest<{ report: ReconciliationReport }>("/api/v1/admin/valorant/reconciliation");
 
-export const fetchValorantLeaderboardRegistrations = ({ query = "", page = 1 }: { query?: string; page?: number } = {}) => {
+export const fetchValorantLeaderboardRegistrations = ({
+  query = "",
+  hidden = false,
+  page = 1,
+}: { query?: string; hidden?: boolean; page?: number } = {}) => {
   const params = new URLSearchParams();
   if (query) params.set("q", query);
+  if (hidden) params.set("hidden", "true");
   params.set("page", String(page));
   return valorantAdminRequest<ValorantLeaderboardRegistrationPage>(
     `/api/v1/admin/valorant/leaderboard/players?${params.toString()}`
@@ -226,6 +232,20 @@ export const fetchValorantLeaderboardRegistrations = ({ query = "", page = 1 }: 
 export const removeValorantLeaderboardRegistration = (puuid: string, reason: string) =>
   valorantAdminRequest<ValorantLeaderboardRemoval>(
     `/api/v1/admin/valorant/leaderboard/players/${encodeURIComponent(puuid)}`,
+    { method: "DELETE", json: { reason } }
+  );
+
+// Keep a registered player off the public board. They stay registered and
+// connected, and see the reason on their profile.
+export const hideValorantLeaderboardRegistration = (puuid: string, reason: string) =>
+  valorantAdminRequest<ValorantLeaderboardHideResult>(
+    `/api/v1/admin/valorant/leaderboard/players/${encodeURIComponent(puuid)}/hide`,
+    { method: "POST", json: { reason } }
+  );
+
+export const unhideValorantLeaderboardRegistration = (puuid: string, reason: string) =>
+  valorantAdminRequest<ValorantLeaderboardHideResult>(
+    `/api/v1/admin/valorant/leaderboard/players/${encodeURIComponent(puuid)}/hide`,
     { method: "DELETE", json: { reason } }
   );
 

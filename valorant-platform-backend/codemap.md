@@ -16,6 +16,10 @@ maintained in `Russelrip/valorant-platform-backend`.
   (`app/services/registration_service.py`) and restore refuse either while a ban
   is active; banning removes what either holds. A shared/exclusive advisory lock
   (`LEADERBOARD_BAN_LOCK_KEY`) keeps a ban and a registration from interleaving.
+- Hidden players (0020) stay registered but are left off the public board, its
+  search and its stats (`_LEADERBOARD_FILTERS` / `is_listed` in
+  `app/db/repositories/leaderboard_player_repository.py`). The updater and
+  Discord bot still see them; a removal copy and a repoint carry the hide.
 - `scripts/` contains migration, runtime-access, and release-image validators.
 - `tests/` contains non-live API, database, worker, security, and rating tests.
 - `Dockerfile` builds the single runtime image from this directory.

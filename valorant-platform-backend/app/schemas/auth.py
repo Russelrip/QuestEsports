@@ -68,13 +68,21 @@ class CheckDiscordRequest(BaseModel):
 
 
 class CheckDiscordUser(BaseModel):
-    """The registered player slice for check-discord."""
+    """The registered player slice for check-discord.
+
+    ``hidden`` and ``hidden_reason`` say whether an admin keeps the player off
+    the public board (0020). Quest only asks with the caller's own linked
+    Discord, so this is the player learning about themselves; check-puuid,
+    which anybody can point at any account, does not carry it.
+    """
 
     puuid: str
     name: str
     tag: str
     discord_username: str
     current_rank: str | None = None
+    hidden: bool = False
+    hidden_reason: str | None = None
 
 
 class CheckDiscordResponse(BaseModel):

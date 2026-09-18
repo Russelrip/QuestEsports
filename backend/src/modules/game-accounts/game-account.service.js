@@ -647,6 +647,8 @@ const listGameAccountsForUser = async ({ userId }) => {
 //
 // Never returns the stable identifier, and never answers for a Discord the
 // caller does not hold: the lookup key is the caller's own linked snowflake.
+// That is also why it can say whether staff hid the player from the public
+// board, and why: the player is only ever told about themselves.
 const findLeaderboardRegistration = async ({ userId }) => {
   const discordId = await linkedDiscordId(userId);
   if (!discordId) return { discordConnected: false, unavailable: false, registration: null };
@@ -677,6 +679,8 @@ const findLeaderboardRegistration = async ({ userId }) => {
       linkedToYou: link.linkedToYou,
       linkedElsewhere: link.linkedElsewhere,
       unclaimedRecord: link.unclaimedRecord,
+      hidden: Boolean(registered.hidden),
+      hiddenReason: registered.hidden ? registered.hidden_reason ?? null : null,
     },
   };
 };

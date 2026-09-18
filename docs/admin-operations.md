@@ -661,6 +661,34 @@ Removals made before restoring existed (VALORANT migration `0017`) were not kept
 and cannot be restored from the page. The copy of a removed player is kept
 indefinitely, including when the player asked to be removed.
 
+## Hiding Leaderboard Players
+
+To keep a player off the public board without taking their registration away,
+use **Hide** on their row in **Leaderboard Players**. It takes a reason, and the
+player sees that reason on their Quest profile, so write it for them.
+
+A hidden player:
+
+- is left out of the public leaderboard, its search and its stats;
+- stays registered: their Quest account stays connected, the rank updater keeps
+  their rank current and the Discord bot keeps their rank role;
+- loses the rank shown on their Quest profile ("Sri Lanka #N"), and their profile
+  says staff hid them, with the reason.
+
+Their row shows **Hidden by staff** with who hid them, when and why, and **Show
+only players hidden by staff** lists just those players. **Show** takes a reason
+and puts them straight back; their profile rank returns with the next ranking
+sync. Hide and show are audited (`valorant.leaderboard_player.hide` / `.unhide`)
+and open to admins and to staff with the `valorant_leaderboard` area.
+
+A hide belongs to the player, not the Riot account: an approved account change
+moves it to the new account, and removing then restoring a hidden player brings
+them back hidden. Hiding needs VALORANT migration `0020`.
+
+Hide, remove or ban? Hide when the player may stay registered but should not be
+ranked publicly (under review, a disputed account). Remove when the registration
+should go. Ban when they keep coming back.
+
 ## Banning Leaderboard Players
 
 A removed player can register again straight away. To stop that, ban them:

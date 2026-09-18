@@ -114,6 +114,7 @@ class RegistrationService:
         discord_username: str,
         puuid: str,
         release_puuid: str | None = None,
+        hidden: dict | None = None,
     ) -> RegistrationSubmitResponse:
         """Fetch the current identity and rank, then write the row.
 
@@ -124,7 +125,8 @@ class RegistrationService:
         ``release_puuid`` detaches the row being moved away from. It runs after
         every call that can fail and commits together with the new row, so a
         Henrik outage cannot leave a player detached from one account without
-        being attached to the other.
+        being attached to the other. ``hidden`` is the moved registration's
+        hidden state, written onto the destination row as it is.
         """
         settings = get_settings()
         try:
@@ -165,6 +167,7 @@ class RegistrationService:
             seasonal_ranks=mmr["seasonal_ranks"],
             last_played_match=_parse_last_played(last_played),
             update_source="registration_service",
+            **(hidden or {}),
         )
         await self._session.commit()
         return RegistrationSubmitResponse(
@@ -231,11 +234,18 @@ class RegistrationService:
         # stranger claiming a taken account, and here the destination row may
         # legitimately already exist — the updater writes rows for players who
         # never registered. The guard just above is the one that applies.
+        # A hide (0020) belongs to the player, not the Riot account, so it
+        # moves with them; otherwise changing accounts would undo it.
         return await self._register(
             discord_id=discord_id,
             discord_username=discord_username,
             puuid=puuid,
             release_puuid=current.puuid,
+            hidden={
+                "hidden_at": current.hidden_at,
+                "hidden_by": current.hidden_by,
+                "hidden_reason": current.hidden_reason,
+            },
         )
 
     async def _refuse_banned(self, *, puuid: str, discord_id: str | None) -> None:

@@ -275,6 +275,8 @@ router.post("/admin/game-accounts/change-requests/:requestId/review", requireAut
 const leaderboardStaff = requireStaffPermission("valorant_leaderboard");
 router.get("/admin/valorant/leaderboard/players", requireAuth, leaderboardStaff, valorantLeaderboardController.listRegistrations);
 router.delete("/admin/valorant/leaderboard/players/:puuid", requireAuth, leaderboardStaff, invalidateCache("foundation"), valorantLeaderboardController.removeRegistration);
+router.post("/admin/valorant/leaderboard/players/:puuid/hide", requireAuth, leaderboardStaff, invalidateCache("foundation"), valorantLeaderboardController.hideRegistration);
+router.delete("/admin/valorant/leaderboard/players/:puuid/hide", requireAuth, leaderboardStaff, invalidateCache("foundation"), valorantLeaderboardController.unhideRegistration);
 // Removals are kept upstream so a mistaken one can be undone; restoring puts
 // the player back on the cached public leaderboard straight away.
 router.get("/admin/valorant/leaderboard/removals", requireAuth, leaderboardStaff, valorantLeaderboardController.listRemovals);
