@@ -841,6 +841,21 @@ const cancelRoom = async ({ user, roomId, body, auditContext = {} }) => {
   return getAdminRoom({ user, roomId });
 };
 
+// Live rooms must be cancelled first: cancelling is what hands a linked match
+// back its pre-veto status, and deleting skips that.
+const DELETABLE_ROOM_STATUSES = new Set(["draft", "cancelled", "completed"]);
+
+const deleteRoom = async ({ user, roomId, auditContext = {} }) => {
+  const room = await getRoomRecord({ id: roomId });
+  await requireRoomStaff(user, room);
+  if (!DELETABLE_ROOM_STATUSES.has(room.status)) throw new HttpError(409, "Cancel this veto room before deleting it.");
+  await prisma.$transaction(async (tx) => {
+    await auditRoomMutation(tx, auditContext, "veto.room.deleted", room, { code: room.code, title: room.title, status: room.status, matchId: room.matchId, tournamentId: room.tournamentId }, null);
+    await tx.vetoRoom.delete({ where: { id: room.id } });
+  });
+  return { id: room.id, code: room.code };
+};
+
 const rotateGrant = async ({ user, roomId, role, auditContext = {} }) => {
   const room = await getRoomRecord({ id: roomId });
   await requireRoomStaff(user, room);
@@ -883,5 +898,6 @@ module.exports = {
   rewindRoom,
   resetRoom,
   cancelRoom,
+  deleteRoom,
   rotateGrant,
 };

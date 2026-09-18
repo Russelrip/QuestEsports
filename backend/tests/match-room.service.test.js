@@ -269,3 +269,79 @@ function premierSteps() {
     { kind: "decider", actor: null, seriesIndex: 1 },
   ];
 }
+
+const deletableMatchRoomPrisma = (room, deleted) => ({
+  matchRoom: {
+    findUnique: async () => room,
+    delete: async ({ where }) => { deleted.push(where.id); return room; },
+  },
+});
+
+test("a finished match's room can be deleted with its history", async () => {
+  for (const status of ["completed", "cancelled", "walkover"]) {
+    const deleted = [];
+    const room = { id: "room-1", code: "MR-1", match: { status }, _count: { messages: 12, support: 1 } };
+    const { module: service, restore } = loadService(deletableMatchRoomPrisma(room, deleted));
+    try {
+      const result = await service.deleteMatchRoom({ matchId: "match-1" });
+      assert.deepEqual(deleted, ["room-1"]);
+      assert.deepEqual(result, { id: "room-1", code: "MR-1", matchStatus: status, messageCount: 12, supportCount: 1 });
+    } finally { restore(); }
+  }
+});
+
+test("an active match's room cannot be deleted because it would be rebuilt empty", async () => {
+  const deleted = [];
+  const room = { id: "room-1", code: "MR-1", match: { status: "scheduled" }, _count: { messages: 3, support: 0 } };
+  const { module: service, restore } = loadService(deletableMatchRoomPrisma(room, deleted));
+  try {
+    await assert.rejects(service.deleteMatchRoom({ matchId: "match-1" }), (error) => error.statusCode === 409 && /match is finished/i.test(error.message));
+    assert.deepEqual(deleted, []);
+  } finally { restore(); }
+});
+
+test("deleting a match room that does not exist returns 404", async () => {
+  const { module: service, restore } = loadService(deletableMatchRoomPrisma(null, []));
+  try {
+    await assert.rejects(service.deleteMatchRoom({ matchId: "match-1" }), (error) => error.statusCode === 404);
+  } finally { restore(); }
+});
+
+test("tournament room sync creates eligible rooms and explains every skip", async () => {
+  const registered = [{ slot: 1, displayName: "Alpha", registrationId: "reg-1" }, { slot: 2, displayName: "Bravo", registrationId: "reg-2" }];
+  const matches = [
+    { id: "m-new", identifier: "A1", status: "scheduled", matchRoom: null, participants: registered },
+    { id: "m-has", identifier: "A2", status: "scheduled", matchRoom: { id: "room-has" }, participants: registered },
+    { id: "m-done", identifier: "A3", status: "completed", matchRoom: null, participants: registered },
+    { id: "m-typed", identifier: "A4", status: "scheduled", matchRoom: null, participants: [{ slot: 1, displayName: "Echo", registrationId: null }, { slot: 2, displayName: "Fox", registrationId: null }] },
+  ];
+  const ensured = [];
+  const prisma = {
+    tournament: { findUnique: async () => ({ id: "tournament-1" }) },
+    match: {
+      findMany: async ({ where }) => { assert.equal(where.tournamentId, "tournament-1"); return matches; },
+      // ensureMatchRoom: no captains resolve here, so it declines the brand-new room.
+      findUnique: async ({ where }) => { ensured.push(where.id); return { id: where.id, status: "scheduled", participants: registered.map((entry) => ({ ...entry, registration: null })), tournament: { staffAssignments: [] } }; },
+    },
+    matchRoom: { findUnique: async () => null },
+  };
+  const { module: service, restore } = loadService(prisma);
+  try {
+    const summary = await service.syncTournamentRooms({ tournamentId: "tournament-1" });
+    assert.deepEqual(ensured, ["m-new", "m-has"]);
+    assert.equal(summary.total, 4);
+    assert.deepEqual(summary.skipped.map((entry) => [entry.label, entry.reason]), [
+      ["A1", "Neither team has a captain account"],
+      ["A2", "Neither team has a captain account"],
+      ["A3", "Match is finished"],
+      ["A4", "Needs two registered teams"],
+    ]);
+  } finally { restore(); }
+});
+
+test("tournament room sync returns 404 for an unknown tournament", async () => {
+  const { module: service, restore } = loadService({ tournament: { findUnique: async () => null } });
+  try {
+    await assert.rejects(service.syncTournamentRooms({ tournamentId: "missing" }), (error) => error.statusCode === 404);
+  } finally { restore(); }
+});

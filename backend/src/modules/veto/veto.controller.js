@@ -73,6 +73,13 @@ const rewindRoom = (req, res, next) => runRoomCommand(() => service.rewindRoom({
 const resetRoom = (req, res, next) => runRoomCommand(() => service.resetRoom({ user: req.user, roomId: req.params.roomId, body: req.body, auditContext: requestAuditContext(req) }))(req, res, next);
 const cancelRoom = (req, res, next) => runRoomCommand(() => service.cancelRoom({ user: req.user, roomId: req.params.roomId, body: req.body, auditContext: requestAuditContext(req) }))(req, res, next);
 
+// Audited inside the service transaction, like the other room commands.
+const deleteRoom = asyncHandler(async (req, res) => {
+  const deleted = await service.deleteRoom({ user: req.user, roomId: req.params.roomId, auditContext: requestAuditContext(req) });
+  publishRealtimeEvent(`veto:${deleted.code}`, { roomCode: deleted.code, deleted: true });
+  res.status(200).json({ success: true, data: deleted, meta: meta() });
+});
+
 const readyRoom = asyncHandler(async (req, res) => {
   const room = await service.readyRoom({ code: req.params.code, user: req.user, token: tokenFrom(req), body: req.body, auditContext: requestAuditContext(req) });
   await publish(room);
@@ -102,5 +109,5 @@ module.exports = {
   catalog, createMap, updateMap, createPool, createPreset, createTemplate, tournamentConfig, saveTournamentConfig,
   listRooms, createRoom, getAdminRoom, getRoom, myRooms, openRoom, startRoom, assignTeamA,
   readyRoom, tossRoom, recordManualToss, chooseTeamA, submitAction, rewindRoom, resetRoom,
-  cancelRoom, rotateGrant,
+  cancelRoom, deleteRoom, rotateGrant,
 };

@@ -988,3 +988,64 @@ test("veto catalog writes enforce global super-admin and tournament-admin roles 
     assert.deepEqual(writes.map(([kind]) => kind), ["pool", "preset", "template", "config"]);
   } finally { restore(); }
 });
+
+const deletableRoomPrisma = (room, deleted) => {
+  const prisma = {
+    vetoRoom: {
+      findUnique: async () => room,
+      delete: async ({ where }) => { deleted.push(where.id); return room; },
+    },
+    tournamentStaffAssignment: { findFirst: async () => null },
+    $transaction: async (callback) => callback(prisma),
+  };
+  return prisma;
+};
+
+test("staff can delete draft, cancelled, and completed veto rooms with an audit record", async () => {
+  for (const status of ["draft", "cancelled", "completed"]) {
+    const deleted = [];
+    const audits = [];
+    const room = { id: `room-${status}`, code: `CODE-${status}`, title: "Alpha vs Bravo", status, matchId: "match-1", tournamentId: null };
+    const { module: service, restore } = loadModuleWithMocks(servicePath, {
+      [prismaPath]: { prisma: deletableRoomPrisma(room, deleted) },
+      [auditPath]: { recordAuditInTransaction: async (_tx, entry) => { audits.push(entry); } },
+    });
+    try {
+      const result = await service.deleteRoom({
+        user: { id: "admin-1", role: "admin" },
+        roomId: room.id,
+        auditContext: { actorUserId: "admin-1", requestId: "req-delete" },
+      });
+      assert.deepEqual(result, { id: room.id, code: room.code });
+      assert.deepEqual(deleted, [room.id]);
+      assert.equal(audits[0].action, "veto.room.deleted");
+      assert.equal(audits[0].beforeData.status, status);
+      assert.equal(audits[0].beforeData.matchId, "match-1");
+    } finally { restore(); }
+  }
+});
+
+test("live veto rooms must be cancelled before they can be deleted", async () => {
+  for (const status of ["open", "toss_pending", "toss_complete", "in_progress"]) {
+    const deleted = [];
+    const room = { id: `room-${status}`, code: "LIVE", status, matchId: null, tournamentId: null };
+    const { module: service, restore } = loadModuleWithMocks(servicePath, { [prismaPath]: { prisma: deletableRoomPrisma(room, deleted) } });
+    try {
+      await assert.rejects(
+        service.deleteRoom({ user: { id: "admin-1", role: "admin" }, roomId: room.id }),
+        (error) => error.statusCode === 409 && /cancel this veto room/i.test(error.message),
+      );
+      assert.deepEqual(deleted, []);
+    } finally { restore(); }
+  }
+});
+
+test("veto room deletion requires staff for the room's tournament", async () => {
+  const deleted = [];
+  const room = { id: "room-other", code: "OTHER", status: "completed", matchId: null, tournamentId: "tournament-9" };
+  const { module: service, restore } = loadModuleWithMocks(servicePath, { [prismaPath]: { prisma: deletableRoomPrisma(room, deleted) } });
+  try {
+    await assert.rejects(service.deleteRoom({ user: { id: "user-1", role: "user" }, roomId: room.id }), (error) => error.statusCode === 403);
+    assert.deepEqual(deleted, []);
+  } finally { restore(); }
+});

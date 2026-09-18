@@ -21,6 +21,18 @@ const sync = asyncHandler(async (req, res) => {
   respond(res, room, 201);
 });
 
+const syncTournament = asyncHandler(async (req, res) => {
+  const summary = await service.syncTournamentRooms({ tournamentId: req.params.id });
+  await recordAudit({ ...requestAuditContext(req), action: "match.rooms.bulk_synced", targetType: "Tournament", targetId: req.params.id, afterData: { total: summary.total, created: summary.created, updated: summary.updated, skipped: summary.skipped.length } });
+  respond(res, summary);
+});
+
+const remove = asyncHandler(async (req, res) => {
+  const deleted = await service.deleteMatchRoom({ matchId: req.params.matchId });
+  await recordAudit({ ...requestAuditContext(req), action: "match.room.deleted", targetType: "Match", targetId: req.params.matchId, beforeData: deleted });
+  respond(res, { id: deleted.id, code: deleted.code });
+});
+
 const hide = asyncHandler(async (req, res) => {
   await service.hideMessage({ code: req.params.code, messageId: req.params.messageId, user: req.user, reason: req.body.reason });
   await recordAudit({ ...requestAuditContext(req), action: "match.room.message.hidden", targetType: "MatchRoomMessage", targetId: req.params.messageId, afterData: { reason: req.body.reason } });
@@ -46,6 +58,8 @@ const resolveSupport = asyncHandler(async (req, res) => {
 });
 
 module.exports = {
+  remove,
+  syncTournament,
   mine,
   staffRooms,
   getRoom,

@@ -670,3 +670,52 @@ test("the public VALORANT projection is a query real PostgreSQL accepts", {
     await prisma.$disconnect();
   }
 });
+
+test("match-room bulk sync and delete queries are ones real PostgreSQL accepts", {
+  skip: !runDatabaseTests,
+}, async () => {
+  const { prisma } = require("../src/lib/prisma");
+  const service = require("../src/modules/match-rooms/match-room.service");
+  const suffix = crypto.randomUUID();
+  const tournamentId = crypto.randomUUID();
+
+  // Mocked Prisma accepts any select/include, so the room queries are run once
+  // against the real schema: an unregistered match and a finished one are
+  // skipped with reasons, and a finished match's room can be deleted.
+  try {
+    await prisma.tournament.create({
+      data: {
+        id: tournamentId,
+        slug: `integration-rooms-${suffix}`,
+        title: "Room Integration Tournament",
+        game: "valorant",
+        shortDescription: "Room integration test",
+        fullDescription: "Room integration test",
+        format: "5v5",
+        teamSize: 5,
+        maxTeams: 2,
+        prizePool: "Testing",
+      },
+    });
+    const open = await prisma.match.create({ data: { tournamentId, identifier: "R1", participants: { create: [{ slot: 1, displayName: "Alpha" }, { slot: 2, displayName: "Bravo" }] } } });
+    const finished = await prisma.match.create({ data: { tournamentId, identifier: "R2", status: "completed", participants: { create: [{ slot: 1, displayName: "Charlie" }, { slot: 2, displayName: "Delta" }] } } });
+    const room = await prisma.matchRoom.create({ data: { matchId: finished.id, code: `IT${suffix.slice(0, 8)}` } });
+
+    const summary = await service.syncTournamentRooms({ tournamentId });
+    assert.equal(summary.total, 2);
+    assert.equal(summary.created, 0);
+    assert.deepEqual(summary.skipped.map((entry) => [entry.matchId, entry.reason]).sort(), [
+      [finished.id, "Match is finished"],
+      [open.id, "Needs two registered teams"],
+    ].sort());
+    assert.equal(await prisma.matchRoom.count({ where: { matchId: open.id } }), 0);
+
+    const deleted = await service.deleteMatchRoom({ matchId: finished.id });
+    assert.equal(deleted.id, room.id);
+    assert.equal(await prisma.matchRoom.count({ where: { id: room.id } }), 0);
+  } finally {
+    await prisma.match.deleteMany({ where: { tournamentId } });
+    await prisma.tournament.deleteMany({ where: { id: tournamentId } });
+    await prisma.$disconnect();
+  }
+});
