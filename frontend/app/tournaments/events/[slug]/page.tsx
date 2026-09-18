@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { cache } from "react";
 import { notFound } from "next/navigation";
-import PageLayout from "@/components/PageLayout";
 import { PageTransition } from "@/components/ui/page-transition";
 import EventHero from "@/components/tournaments/event/EventHero";
 import EventTournamentList from "@/components/tournaments/event/EventTournamentList";
@@ -38,11 +37,9 @@ export default async function EventPage({ params }: { params: Promise<{ slug: st
   }
 
   return (
-    <PageLayout title={event.title} description={event.shortDescription || event.description}>
-      <PageTransition>
-        <EventHero event={event} />
-        <EventTournamentList event={event} />
-      </PageTransition>
-    </PageLayout>
+    <PageTransition>
+      <EventHero event={event} />
+      <EventTournamentList event={event} />
+    </PageTransition>
   );
 }
