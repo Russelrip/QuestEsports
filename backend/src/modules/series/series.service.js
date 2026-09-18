@@ -10,8 +10,10 @@ const {
 } = require("../../lib/validation");
 const {
   persistTournamentBannerUpload,
+  sponsorLogoDirectory,
   tournamentBannerDirectory,
 } = require("../../middleware/upload");
+const { mapSponsor } = require("../tournaments/sponsor.service");
 const {
   mapTournament,
   buildRegistrationCountInclude,
@@ -113,6 +115,7 @@ const mapSeries = (series, { aggregate, includeDrafts = false } = {}) => {
     aggregate: mappedAggregate,
     ...mappedAggregate,
     tournaments,
+    sponsors: (series.sponsors || []).map(mapSponsor),
     createdAt: series.createdAt,
     updatedAt: series.updatedAt,
   };
@@ -130,6 +133,8 @@ const buildSeriesTournamentInclude = ({ includeDrafts = false } = {}) => ({
   },
 });
 
+const eventSponsorInclude = { orderBy: [{ displayOrder: "asc" }, { createdAt: "asc" }] };
+
 const mapSeriesWithAggregate = async (series, includeDrafts, aggregate) => mapSeries(series, {
   aggregate: aggregate || await getEventAggregate({ seriesId: series.id, includeDrafts }),
   includeDrafts,
@@ -139,7 +144,7 @@ const listSeries = async ({ includeDrafts = false } = {}) => {
   const series = await prisma.eventSeries.findMany({
     where: includeDrafts ? {} : { isPublished: true },
     orderBy: [{ displayOrder: "asc" }, { createdAt: "desc" }],
-    include: { tournaments: buildSeriesTournamentInclude({ includeDrafts }) },
+    include: { tournaments: buildSeriesTournamentInclude({ includeDrafts }), sponsors: eventSponsorInclude },
   });
   const aggregates = await getEventAggregates({ seriesIds: series.map((item) => item.id), includeDrafts });
   return series.map((item) => mapSeries(item, { aggregate: aggregates.get(item.id), includeDrafts }));
@@ -155,7 +160,7 @@ const getSeriesBySlug = async (slug, { includeDrafts = false } = {}) => {
       slug: normalizedSlug,
       ...(includeDrafts ? {} : { isPublished: true }),
     },
-    include: { tournaments: buildSeriesTournamentInclude({ includeDrafts }) },
+    include: { tournaments: buildSeriesTournamentInclude({ includeDrafts }), sponsors: eventSponsorInclude },
   });
   if (!series) throw new HttpError(404, "Event series not found.");
   return mapSeriesWithAggregate(series, includeDrafts);
@@ -327,7 +332,7 @@ const saveAdminSeriesTournament = async ({ eventId, body = {}, files, auditConte
 const deleteAdminSeries = async (seriesId) => {
   const existing = await prisma.eventSeries.findUnique({
     where: { id: seriesId },
-    include: { tournaments: { select: { id: true } } },
+    include: { tournaments: { select: { id: true } }, sponsors: { select: { logoImageName: true } } },
   });
   if (!existing) throw new HttpError(404, "Event series not found.");
   if (existing.tournaments?.length) {
@@ -336,7 +341,11 @@ const deleteAdminSeries = async (seriesId) => {
   await prisma.eventSeries.delete({ where: { id: seriesId } });
   const uploads = ["heroImageName", "bannerImageName"]
     .filter((field) => existing[field])
-    .map((field) => ({ directory: tournamentBannerDirectory, filename: existing[field] }));
+    .map((field) => ({ directory: tournamentBannerDirectory, filename: existing[field] }))
+    // The sponsor rows cascade with the event, so their logo files go too.
+    .concat((existing.sponsors || [])
+      .filter((sponsor) => sponsor.logoImageName)
+      .map((sponsor) => ({ directory: sponsorLogoDirectory, filename: sponsor.logoImageName })));
   await removeUploadsQuietly(uploads, { operation: "deleteAdminSeries", seriesId });
 };
 

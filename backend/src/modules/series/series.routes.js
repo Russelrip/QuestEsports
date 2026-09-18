@@ -1,10 +1,11 @@
 const express = require("express");
-const { tournamentBannerUpload } = require("../../middleware/upload");
+const { imageUpload, tournamentBannerUpload } = require("../../middleware/upload");
 const { cachePublicData } = require("../../middleware/cache-control");
 const { cacheJson, invalidateCache } = require("../../middleware/response-cache");
 const { env } = require("../../config/env");
 const { requireStaffPermission } = require("../permissions/permission.middleware");
 const controller = require("./series.controller");
+const sponsorController = require("../tournaments/sponsor.controller");
 
 const router = express.Router();
 const publicSeriesCache = cachePublicData({ browserSeconds: 30, sharedSeconds: 60 });
@@ -45,6 +46,11 @@ router.post(
   eventUpload,
   controller.createEventTournament
 );
+
+router.get("/admin/events/:eventId/sponsors", requireStaffPermission("tournaments"), sponsorController.listEventSponsors);
+router.post("/admin/events/:eventId/sponsors", requireStaffPermission("tournaments"), invalidateCache("events", "tournaments", "foundation"), imageUpload.single("logo"), sponsorController.createEventSponsor);
+router.patch("/admin/events/:eventId/sponsors/:sponsorId", requireStaffPermission("tournaments"), invalidateCache("events", "tournaments", "foundation"), imageUpload.single("logo"), sponsorController.updateEventSponsor);
+router.delete("/admin/events/:eventId/sponsors/:sponsorId", requireStaffPermission("tournaments"), invalidateCache("events", "tournaments", "foundation"), sponsorController.deleteEventSponsor);
 
 router.get("/event-series", publicSeriesCache, controller.getPublicSeries);
 router.get("/event-series/:slug", publicSeriesCache, controller.getPublicSeriesDetail);

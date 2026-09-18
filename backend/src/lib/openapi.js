@@ -2154,6 +2154,26 @@ const additionalPaths = {
       parameters: [...idParameter("tournamentId"), ...idParameter("sponsorId")],
     }),
   },
+  "/api/admin/events/{eventId}/sponsors": {
+    get: createOperation("Admin", "List event sponsors", {
+      authenticated: true,
+      parameters: idParameter("eventId"),
+    }),
+    post: createOperation("Admin", "Create an event sponsor", {
+      authenticated: true,
+      parameters: idParameter("eventId"),
+    }),
+  },
+  "/api/admin/events/{eventId}/sponsors/{sponsorId}": {
+    patch: createOperation("Admin", "Update an event sponsor", {
+      authenticated: true,
+      parameters: [...idParameter("eventId"), ...idParameter("sponsorId")],
+    }),
+    delete: createOperation("Admin", "Delete an event sponsor", {
+      authenticated: true,
+      parameters: [...idParameter("eventId"), ...idParameter("sponsorId")],
+    }),
+  },
   "/api/uploads/tournament-banners/{filename}": {
     get: createOperation("Media", "Stream a tournament banner", {
       parameters: idParameter("filename"),

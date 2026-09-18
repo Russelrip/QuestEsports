@@ -17,22 +17,30 @@ const mapSponsor = (sponsor) => ({
   displayOrder: sponsor.displayOrder,
 });
 
-const listTournamentSponsors = async (tournamentId) => {
-  const exists = await prisma.tournament.findUnique({ where: { id: tournamentId }, select: { id: true } });
-  if (!exists) throw new HttpError(404, "Tournament not found.");
-  return (await prisma.tournamentSponsor.findMany({
-    where: { tournamentId },
+// Tournaments and events carry identical sponsor rows; only the owning table,
+// the foreign key and the not-found wording differ.
+const owners = {
+  tournament: { ownerModel: "tournament", sponsorModel: "tournamentSponsor", ownerField: "tournamentId", notFound: "Tournament not found." },
+  event: { ownerModel: "eventSeries", sponsorModel: "eventSponsor", ownerField: "seriesId", notFound: "Event not found." },
+};
+
+const listSponsors = async (owner, ownerId) => {
+  const exists = await prisma[owner.ownerModel].findUnique({ where: { id: ownerId }, select: { id: true } });
+  if (!exists) throw new HttpError(404, owner.notFound);
+  return (await prisma[owner.sponsorModel].findMany({
+    where: { [owner.ownerField]: ownerId },
     orderBy: [{ displayOrder: "asc" }, { createdAt: "asc" }],
   })).map(mapSponsor);
 };
 
-const saveTournamentSponsor = async ({ tournamentId, sponsorId, body, file }) => {
+const saveSponsor = async (owner, { ownerId, sponsorId, body, file }) => {
+  const logContext = { [owner.ownerField]: ownerId, sponsorId };
   if (!sponsorId) {
-    const tournament = await prisma.tournament.findUnique({ where: { id: tournamentId }, select: { id: true } });
-    if (!tournament) throw new HttpError(404, "Tournament not found.");
+    const exists = await prisma[owner.ownerModel].findUnique({ where: { id: ownerId }, select: { id: true } });
+    if (!exists) throw new HttpError(404, owner.notFound);
   }
   const existing = sponsorId
-    ? await prisma.tournamentSponsor.findFirst({ where: { id: sponsorId, tournamentId } })
+    ? await prisma[owner.sponsorModel].findFirst({ where: { id: sponsorId, [owner.ownerField]: ownerId } })
     : null;
   if (sponsorId && !existing) throw new HttpError(404, "Sponsor not found.");
   const name = normalizeText(body.name || existing?.name);
@@ -55,12 +63,12 @@ const saveTournamentSponsor = async ({ tournamentId, sponsorId, body, file }) =>
   };
   try {
     const saved = sponsorId
-      ? await prisma.tournamentSponsor.update({ where: { id: sponsorId }, data })
-      : await prisma.tournamentSponsor.create({ data: { id: crypto.randomUUID(), tournamentId, ...data } });
+      ? await prisma[owner.sponsorModel].update({ where: { id: sponsorId }, data })
+      : await prisma[owner.sponsorModel].create({ data: { id: crypto.randomUUID(), [owner.ownerField]: ownerId, ...data } });
     if (existing?.logoImageName && existing.logoImageName !== saved.logoImageName) {
       await removeUploadsQuietly(
         [{ directory: sponsorLogoDirectory, filename: existing.logoImageName }],
-        { operation: "saveTournamentSponsor", tournamentId, sponsorId }
+        { operation: "saveSponsor", ...logContext }
       );
     }
     return mapSponsor(saved);
@@ -68,23 +76,38 @@ const saveTournamentSponsor = async ({ tournamentId, sponsorId, body, file }) =>
     if (uploaded) {
       await removeUploadsQuietly(
         [{ directory: sponsorLogoDirectory, filename: uploaded.filename }],
-        { operation: "rollbackTournamentSponsorUpload", tournamentId, sponsorId }
+        { operation: "rollbackSponsorUpload", ...logContext }
       );
     }
     throw error;
   }
 };
 
-const deleteTournamentSponsor = async ({ tournamentId, sponsorId }) => {
-  const existing = await prisma.tournamentSponsor.findFirst({ where: { id: sponsorId, tournamentId } });
+const deleteSponsor = async (owner, { ownerId, sponsorId }) => {
+  const existing = await prisma[owner.sponsorModel].findFirst({ where: { id: sponsorId, [owner.ownerField]: ownerId } });
   if (!existing) throw new HttpError(404, "Sponsor not found.");
-  await prisma.tournamentSponsor.delete({ where: { id: sponsorId } });
+  await prisma[owner.sponsorModel].delete({ where: { id: sponsorId } });
   if (existing.logoImageName) {
     await removeUploadsQuietly(
       [{ directory: sponsorLogoDirectory, filename: existing.logoImageName }],
-      { operation: "deleteTournamentSponsor", tournamentId, sponsorId }
+      { operation: "deleteSponsor", [owner.ownerField]: ownerId, sponsorId }
     );
   }
 };
 
-module.exports = { listTournamentSponsors, saveTournamentSponsor, deleteTournamentSponsor };
+const listTournamentSponsors = (tournamentId) => listSponsors(owners.tournament, tournamentId);
+const saveTournamentSponsor = ({ tournamentId, ...rest }) => saveSponsor(owners.tournament, { ownerId: tournamentId, ...rest });
+const deleteTournamentSponsor = ({ tournamentId, sponsorId }) => deleteSponsor(owners.tournament, { ownerId: tournamentId, sponsorId });
+const listEventSponsors = (eventId) => listSponsors(owners.event, eventId);
+const saveEventSponsor = ({ eventId, ...rest }) => saveSponsor(owners.event, { ownerId: eventId, ...rest });
+const deleteEventSponsor = ({ eventId, sponsorId }) => deleteSponsor(owners.event, { ownerId: eventId, sponsorId });
+
+module.exports = {
+  mapSponsor,
+  listTournamentSponsors,
+  saveTournamentSponsor,
+  deleteTournamentSponsor,
+  listEventSponsors,
+  saveEventSponsor,
+  deleteEventSponsor,
+};

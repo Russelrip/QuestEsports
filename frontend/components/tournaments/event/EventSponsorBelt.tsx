@@ -7,13 +7,15 @@ import type { EventSeries, TournamentSponsor } from "@/lib/tournaments";
 const MIN_LOGOS_PER_COPY = 8;
 const SECONDS_PER_LOGO = 4;
 
-// Sponsors live on the child tournaments; the same brand often backs several
-// games, so collapse them to one logo each in first-seen order.
+// Event-wide sponsors lead, then each child tournament's. The same brand often
+// backs the event and several games, so collapse them to one logo each in
+// first-seen order.
 export const collectEventSponsors = (event: EventSeries): TournamentSponsor[] => {
   const seen = new Set<string>();
   const sponsors: TournamentSponsor[] = [];
-  for (const tournament of event.tournaments) {
-    for (const sponsor of tournament.sponsors ?? []) {
+  const sources = [event.sponsors ?? [], ...event.tournaments.map((tournament) => tournament.sponsors ?? [])];
+  for (const list of sources) {
+    for (const sponsor of list) {
       const key = sponsor.name.trim().toLowerCase();
       if (!key || seen.has(key)) continue;
       seen.add(key);

@@ -42,13 +42,16 @@ const seriesRecord = (overrides = {}) => ({
   ...overrides,
 });
 
+const removedUploads = [];
+
 const buildMocks = (prisma, aggregate = { games: 0, teamsRegistered: 0, playersRegistered: 0, availableSlots: 0, registrationState: "closed" }) => loadModuleWithMocks(servicePath, {
   [prismaPath]: { prisma },
   [uploadPath]: {
     persistTournamentBannerUpload: async () => null,
     tournamentBannerDirectory: "banners",
+    sponsorLogoDirectory: "sponsor-logos",
   },
-  [cleanupPath]: { removeUploadsQuietly: async () => undefined },
+  [cleanupPath]: { removeUploadsQuietly: async (uploads) => { removedUploads.push(...uploads); } },
   [tournamentPath]: {
     mapTournament: (tournament, { parentWindow } = {}) => ({ id: tournament.id, title: tournament.title, parentWindow }),
     buildRegistrationCountInclude: () => ({ _count: { select: { teamRegistrations: true } } }),
@@ -133,6 +136,57 @@ test("public event lookup loads each child tournament's sponsors for the hero be
     const childInclude = lookupArgs.include.tournaments.include;
     assert.ok(childInclude._count, "registration counts must still be loaded");
     assert.deepEqual(childInclude.sponsors, { orderBy: [{ displayOrder: "asc" }, { createdAt: "asc" }] });
+  } finally {
+    restore();
+  }
+});
+
+test("public event response carries the event's own sponsors in display order", async () => {
+  let lookupArgs;
+  const prisma = {
+    eventSeries: {
+      findFirst: async (args) => {
+        lookupArgs = args;
+        return seriesRecord({
+          sponsors: [{ id: "s1", name: "Red Bull", partnershipLabel: "Energy Partner", logoImageName: "rb.webp", websiteUrl: null, displayOrder: 10 }],
+        });
+      },
+    },
+  };
+  const { module: service, restore } = buildMocks(prisma);
+  try {
+    const event = await service.getPublicEventBySlug("quest-ascension");
+    assert.deepEqual(lookupArgs.include.sponsors, { orderBy: [{ displayOrder: "asc" }, { createdAt: "asc" }] });
+    assert.deepEqual(event.sponsors, [{
+      id: "s1",
+      name: "Red Bull",
+      partnershipLabel: "Energy Partner",
+      logoUrl: "/api/uploads/sponsor-logos/rb.webp",
+      websiteUrl: null,
+      displayOrder: 10,
+    }]);
+  } finally {
+    restore();
+  }
+});
+
+test("deleting an event also removes its sponsors' logo files", async () => {
+  removedUploads.length = 0;
+  const prisma = {
+    eventSeries: {
+      findUnique: async () => seriesRecord({
+        tournaments: [],
+        sponsors: [{ logoImageName: "rb.webp" }, { logoImageName: null }],
+      }),
+      delete: async () => undefined,
+    },
+  };
+  const { module: service, restore } = buildMocks(prisma);
+  try {
+    await service.deleteAdminSeries("event-1");
+    assert.deepEqual(removedUploads.filter((upload) => upload.directory === "sponsor-logos"), [
+      { directory: "sponsor-logos", filename: "rb.webp" },
+    ]);
   } finally {
     restore();
   }

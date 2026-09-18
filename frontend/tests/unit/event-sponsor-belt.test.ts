@@ -23,6 +23,14 @@ describe("collectEventSponsors", () => {
     expect(collectEventSponsors(event).map((item) => item.id)).toEqual(["a1", "b1", "c1"]);
   });
 
+  it("puts event-wide sponsors ahead of tournament sponsors and drops their repeats", () => {
+    const event = {
+      ...eventWith([sponsor("t1", "HyperX"), sponsor("t2", "Red Bull")]),
+      sponsors: [sponsor("e1", "Red Bull"), sponsor("e2", "Noob Alliance")],
+    } as EventSeries;
+    expect(collectEventSponsors(event).map((item) => item.id)).toEqual(["e1", "e2", "t1"]);
+  });
+
   it("returns nothing when no child tournament has sponsors, so the belt stays hidden", () => {
     const event = { tournaments: [{}, { sponsors: [] }] } as unknown as EventSeries;
     expect(collectEventSponsors(event)).toEqual([]);
