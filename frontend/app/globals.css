@@ -35,7 +35,9 @@
 
 /* Keep animated loading indicators and the veto coin circular so their motion stays legible. */
 .animate-spin,
-.veto-coin,
+.veto-coin *,
+.veto-coin *::before,
+.veto-coin *::after,
 .veto-coin-shadow,
 .veto-live-dot {
   border-radius: 9999px !important;
@@ -461,20 +463,96 @@ legend {
   50% { box-shadow: 0 0 0 5px rgb(251 113 133 / 0); }
 }
 
+.veto-coin-stage {
+  width: 8.5rem;
+  height: 8.5rem;
+  margin-inline: auto;
+  perspective: 800px;
+  filter: drop-shadow(0 0 26px rgb(245 200 90 / .28));
+}
+
 .veto-coin {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transform-style: preserve-3d;
+}
+
+/* Stacked discs between the faces give the coin real thickness mid-spin. */
+.veto-coin__edge {
+  position: absolute;
+  inset: 0;
+  background: repeating-conic-gradient(#7a5514 0 3deg, #c99a36 3deg 6deg);
+}
+
+.veto-coin__face {
+  position: absolute;
+  inset: 0;
   display: grid;
   place-items: center;
-  width: 8rem;
-  height: 8rem;
-  margin-inline: auto;
-  border: 2px solid rgb(233 213 255 / .65);
-  border-radius: 9999px;
-  background: radial-gradient(circle at 32% 25%, #f5d0fe, #a855f7 45%, #3b0764 80%);
-  color: white;
-  font-size: 2.5rem;
-  font-weight: 950;
-  box-shadow: inset 0 0 0 8px rgb(255 255 255 / .08), 0 0 50px rgb(168 85 247 / .28);
-  transform-style: preserve-3d;
+  overflow: hidden;
+  backface-visibility: hidden;
+  background: radial-gradient(circle at 34% 26%, #fff7d6 0%, #f6d77e 16%, #dcab43 42%, #a8781f 72%, #6e4b10 100%);
+  box-shadow: inset 0 0 0 2px #6e4b10, inset 0 0 22px rgb(0 0 0 / .4);
+  transform: translateZ(6px);
+}
+
+.veto-coin__face--tails {
+  background: radial-gradient(circle at 66% 26%, #fff7d6 0%, #f6d77e 16%, #dcab43 42%, #a8781f 72%, #6e4b10 100%);
+  transform: rotateY(180deg) translateZ(6px);
+}
+
+/* Milled rim. */
+.veto-coin__face::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-conic-gradient(#8a6418 0 2deg, #f3d57c 2deg 4deg);
+  mask: radial-gradient(closest-side, transparent 86%, #000 87%);
+}
+
+/* Light sweeping across the metal. */
+.veto-coin__face::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(115deg, transparent 30%, rgb(255 255 255 / .38) 48%, transparent 62%);
+  mix-blend-mode: overlay;
+}
+
+.veto-coin__ring {
+  position: absolute;
+  inset: 15%;
+  border: 1.5px solid rgb(110 75 16 / .6);
+  box-shadow: 0 1px 0 rgb(255 240 190 / .55), inset 0 1px 0 rgb(255 240 190 / .45);
+}
+
+.veto-coin__emblem {
+  width: 46%;
+  height: 46%;
+  margin-top: -8%;
+  background: linear-gradient(160deg, #5c3e0b, #a0741f);
+  mask: url("/images/veto-coin-emblem.webp") center / contain no-repeat;
+}
+
+.veto-coin__mark {
+  margin-top: -8%;
+  color: #8a6418;
+  font-size: 3.1rem;
+  font-weight: 900;
+  line-height: 1;
+  text-shadow: 0 1px 0 rgb(255 240 190 / .85), 0 -1px 0 rgb(60 40 5 / .55);
+}
+
+.veto-coin__legend {
+  position: absolute;
+  bottom: 21%;
+  color: #6e4b10;
+  font-size: .5rem;
+  font-weight: 900;
+  letter-spacing: .32em;
+  text-transform: uppercase;
+  text-shadow: 0 1px 0 rgb(255 240 190 / .7);
 }
 
 .veto-coin-shadow {

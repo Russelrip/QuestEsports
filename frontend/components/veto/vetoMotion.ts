@@ -22,13 +22,16 @@ export function introTimeline(scope: HTMLElement) {
   return tl;
 }
 
-export function coinFlip(coin: Element, onLand?: () => void) {
-  return gsap.timeline({ onComplete: onLand })
-    .set(coin, { transformPerspective: 700 })
-    .to(coin, { y: -90, scale: 1.15, duration: 0.55, ease: "power2.out" })
-    .to(coin, { rotationY: "+=1800", rotationX: 20, duration: 1.1, ease: "power2.inOut" }, 0)
-    .to(coin, { y: 0, scale: 1, rotationX: 0, duration: 0.55, ease: "bounce.out" }, 0.55)
-    .fromTo(coin, { boxShadow: "0 0 0px rgba(168,85,247,0)" }, { boxShadow: "0 0 90px rgba(168,85,247,.75)", duration: 0.3, yoyo: true, repeat: 1 }, 1.05);
+// Tosses the coin up, spins it five times and lands it on the winning face.
+export function coinFlip(coin: Element, shadow: Element | null, restingAngle: number) {
+  const tl = gsap.timeline()
+    .set(coin, { rotationY: 0, rotationX: 0 })
+    .to(coin, { y: -80, duration: 0.6, ease: "power2.out" })
+    .to(coin, { rotationY: 1800 + restingAngle, rotationX: 25, duration: 1.2, ease: "power2.inOut" }, 0)
+    .to(coin, { rotationX: 0, duration: 0.3, ease: "power1.out" }, 0.9)
+    .to(coin, { y: 0, duration: 0.6, ease: "bounce.out" }, 0.6);
+  if (shadow) tl.to(shadow, { scale: 0.45, autoAlpha: 0.35, duration: 0.6, ease: "power2.out" }, 0).to(shadow, { scale: 1, autoAlpha: 1, duration: 0.6, ease: "bounce.out" }, 0.6);
+  return tl;
 }
 
 export function banSlam(card: Element) {
