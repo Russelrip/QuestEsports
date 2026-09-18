@@ -1217,6 +1217,7 @@ const additionalPaths = {
     }),
   },
   "/api/v1/admin/veto-rooms/{roomId}": {
+    delete: createOperation("Veto", "Delete a draft, cancelled, or completed veto room", { authenticated: true, permissionScopes: [PERMISSION_SCOPES.VETO_OPERATIONS], parameters: idParameter("roomId") }),
     get: createOperation("Veto", "Get a veto room for staff operation", {
       authenticated: true,
       permissionScopes: [PERMISSION_SCOPES.TOURNAMENT_READ],
@@ -1343,6 +1344,7 @@ const additionalPaths = {
   },
   "/api/v1/admin/matches/{matchId}/room": {
     post: createOperation("Match Rooms", "Create or resynchronize a match room", { authenticated: true, permissionScopes: [PERMISSION_SCOPES.MATCH_OPERATIONS], parameters: idParameter("matchId") }),
+    delete: createOperation("Match Rooms", "Delete the room of a finished match with its chat and support history", { authenticated: true, permissionScopes: [PERMISSION_SCOPES.MATCH_OPERATIONS], parameters: idParameter("matchId") }),
   },
   "/api/v1/admin/match-rooms": {
     get: createOperation("Match Rooms", "List match rooms visible to tournament staff or directly assigned match staff", {

@@ -64,3 +64,11 @@ describe("caster veto presentation", () => {
     expect(screen.queryByRole("img")).not.toBeInTheDocument();
   });
 });
+
+describe("deleted veto rooms", () => {
+  it("replaces the room with a notice once the room returns 404", async () => {
+    mocks.request.mockRejectedValue(Object.assign(new Error("Veto room not found."), { status: 404 }));
+    render(<VetoRoomView code="ASCENT" />);
+    expect(await screen.findByText("This veto room has been deleted.")).toBeInTheDocument();
+  });
+});

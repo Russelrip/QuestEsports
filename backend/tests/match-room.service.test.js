@@ -269,3 +269,40 @@ function premierSteps() {
     { kind: "decider", actor: null, seriesIndex: 1 },
   ];
 }
+
+const deletableMatchRoomPrisma = (room, deleted) => ({
+  matchRoom: {
+    findUnique: async () => room,
+    delete: async ({ where }) => { deleted.push(where.id); return room; },
+  },
+});
+
+test("a finished match's room can be deleted with its history", async () => {
+  for (const status of ["completed", "cancelled", "walkover"]) {
+    const deleted = [];
+    const room = { id: "room-1", code: "MR-1", match: { status }, _count: { messages: 12, support: 1 } };
+    const { module: service, restore } = loadService(deletableMatchRoomPrisma(room, deleted));
+    try {
+      const result = await service.deleteMatchRoom({ matchId: "match-1" });
+      assert.deepEqual(deleted, ["room-1"]);
+      assert.deepEqual(result, { id: "room-1", code: "MR-1", matchStatus: status, messageCount: 12, supportCount: 1 });
+    } finally { restore(); }
+  }
+});
+
+test("an active match's room cannot be deleted because it would be rebuilt empty", async () => {
+  const deleted = [];
+  const room = { id: "room-1", code: "MR-1", match: { status: "scheduled" }, _count: { messages: 3, support: 0 } };
+  const { module: service, restore } = loadService(deletableMatchRoomPrisma(room, deleted));
+  try {
+    await assert.rejects(service.deleteMatchRoom({ matchId: "match-1" }), (error) => error.statusCode === 409 && /match is finished/i.test(error.message));
+    assert.deepEqual(deleted, []);
+  } finally { restore(); }
+});
+
+test("deleting a match room that does not exist returns 404", async () => {
+  const { module: service, restore } = loadService(deletableMatchRoomPrisma(null, []));
+  try {
+    await assert.rejects(service.deleteMatchRoom({ matchId: "match-1" }), (error) => error.statusCode === 404);
+  } finally { restore(); }
+});

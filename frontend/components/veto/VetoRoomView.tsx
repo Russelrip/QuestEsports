@@ -124,6 +124,8 @@ export default function VetoRoomView({ code, onRoomChange }: { code: string; onR
       applyRoom(next);
       setError("");
     } catch (caught) {
+      // A 404 means staff deleted the room; drop the stale view even on a quiet poll.
+      if ((caught as { status?: number }).status === 404) { setRoom(null); setError("This veto room has been deleted."); return; }
       if (!quiet) setError(caught instanceof Error ? caught.message : "Could not load the veto room.");
     }
   }, [applyRoom, code, token]);
@@ -252,7 +254,7 @@ export default function VetoRoomView({ code, onRoomChange }: { code: string; onR
     dialogIn(backdrop, panel);
   }, { scope: rootRef, dependencies: [pendingDecision] });
 
-  if (!room) return <Card className="p-8 text-center"><div className="mx-auto size-10 animate-spin rounded-full border-2 border-white/10 border-t-purple-300" /><p className="mt-4 text-sm text-slate-400">{error || "Connecting to veto room…"}</p></Card>;
+  if (!room) return <Card className="p-8 text-center">{error ? null : <div className="mx-auto size-10 animate-spin rounded-full border-2 border-white/10 border-t-purple-300" />}<p className={`${error ? "" : "mt-4 "}text-sm text-slate-400`}>{error || "Connecting to veto room…"}</p></Card>;
 
   const myParticipant = room.participants.find((entry) => entry.slot === room.access.slot);
   const isCaster = room.access.kind === "caster";

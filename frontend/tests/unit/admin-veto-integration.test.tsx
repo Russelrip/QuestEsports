@@ -178,3 +178,45 @@ describe("admin veto launch navigation", () => {
     expect(mocks.vetoRequest).toHaveBeenCalledWith("/api/v1/admin/veto-rooms", expect.objectContaining({ method: "POST" }));
   });
 });
+
+describe("deleting rooms", () => {
+  const matchRoom = (status: string) => ({
+    id: "room-9", code: "ROOM9", chatLocked: false, messageCount: 4, openSupportCount: 0,
+    match: { id: "match-9", identifier: "M9", status, scheduledAt: null, tournament: { id: "tournament-1", title: "Valorant Cup", game: "valorant" }, participants: [{ slot: 1, displayName: "Alpha" }, { slot: 2, displayName: "Bravo" }], veto: null },
+  });
+
+  it("deletes a draft veto room after confirmation", async () => {
+    mocks.navigation.query = "roomId=veto-1";
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    mocks.vetoRequest.mockImplementation((path: string) => path === "/api/v1/admin/veto-rooms" ? Promise.resolve([room]) : path.includes("/catalog") ? Promise.resolve(catalog) : Promise.resolve({ id: "veto-1", code: "ROOM1" }));
+    render(<AdminVetoRoomsManager />);
+    await screen.findByRole("link", { name: "Open live room" });
+    await userEvent.setup().click(screen.getByRole("button", { name: "Delete room" }));
+    expect(await screen.findByText("Alpha vs Bravo deleted.")).toBeInTheDocument();
+    expect(mocks.vetoRequest).toHaveBeenCalledWith("/api/v1/admin/veto-rooms/veto-1", { method: "DELETE" });
+  });
+
+  it("asks staff to cancel a live veto room before deleting it", async () => {
+    mocks.navigation.query = "roomId=veto-1";
+    mocks.vetoRequest.mockImplementation((path: string) => path === "/api/v1/admin/veto-rooms" ? Promise.resolve([{ ...room, status: "in_progress" }]) : path.includes("/catalog") ? Promise.resolve(catalog) : Promise.resolve({}));
+    render(<AdminVetoRoomsManager />);
+    await screen.findByRole("link", { name: "Open live room" });
+    expect(screen.queryByRole("button", { name: "Delete room" })).not.toBeInTheDocument();
+    expect(screen.getByText("Cancel the room to delete it")).toBeInTheDocument();
+  });
+
+  it("deletes a finished match's room and leaves active ones alone", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    mocks.roomRequest.mockImplementation((path: string, options?: { method?: string }) => options?.method === "DELETE" ? Promise.resolve({ id: "room-9", code: "ROOM9" }) : Promise.resolve([matchRoom("completed")]));
+    render(<AdminMatchRoomsManager />);
+    await userEvent.setup().click(await screen.findByRole("button", { name: "Delete room" }));
+    expect(mocks.roomRequest).toHaveBeenCalledWith("/api/v1/admin/matches/match-9/room", { method: "DELETE" });
+    expect(await screen.findByText("No match rooms have been created yet.")).toBeInTheDocument();
+
+    cleanup();
+    mocks.roomRequest.mockResolvedValue([matchRoom("scheduled")]);
+    render(<AdminMatchRoomsManager />);
+    await screen.findByText("M9 · ROOM9");
+    expect(screen.queryByRole("button", { name: "Delete room" })).not.toBeInTheDocument();
+  });
+});

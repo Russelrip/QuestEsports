@@ -729,6 +729,20 @@ const setChatLock = async ({ code, user, locked }) => {
   return { chatLocked: Boolean(updated.chatLockedAt) };
 };
 
+// Rooms for active matches are rebuilt on demand (see ensureMatchRoom), so a
+// delete there would only wipe chat and support history. Finished matches only.
+const deleteMatchRoom = async ({ matchId }) => {
+  const room = await prisma.matchRoom.findUnique({
+    where: { matchId },
+    include: { match: { select: { status: true } }, _count: { select: { messages: true, support: true } } },
+  });
+  if (!room) throw new HttpError(404, "Match room not found.");
+  if (!TERMINAL_MATCH_STATUSES.has(room.match.status)) throw new HttpError(409, "Match rooms can only be deleted once the match is finished.");
+  await prisma.matchRoom.delete({ where: { id: room.id } });
+  publishRealtimeEvent(`match-room:${room.code}`, { kind: "deleted" });
+  return { id: room.id, code: room.code, matchStatus: room.match.status, messageCount: room._count.messages, supportCount: room._count.support };
+};
+
 const notifyMatchChange = async ({ matchId, type, eventVersion, title, body }) => {
   let room = await prisma.matchRoom.findUnique({ where: { matchId } });
   if (room) room = await ensureMatchRoom({ matchId, force: true, notify: false });
@@ -794,6 +808,7 @@ const notifyVetoTurn = async (vetoRoom) => {
 
 module.exports = {
   collectRoomMembers,
+  deleteMatchRoom,
   ensureMatchRoom,
   ensureMatchVetoRoom,
   accessRoom,

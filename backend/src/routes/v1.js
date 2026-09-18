@@ -167,6 +167,7 @@ router.post("/admin/veto-rooms/:roomId/manual-toss", requireAuth, requirePermiss
 router.post("/admin/veto-rooms/:roomId/rewind", requireAuth, requirePermission(scopes.VETO_OPERATIONS), vetoController.rewindRoom);
 router.post("/admin/veto-rooms/:roomId/reset", requireAuth, requirePermission(scopes.VETO_OPERATIONS), vetoController.resetRoom);
 router.post("/admin/veto-rooms/:roomId/cancel", requireAuth, requirePermission(scopes.VETO_OPERATIONS), vetoController.cancelRoom);
+router.delete("/admin/veto-rooms/:roomId", requireAuth, requirePermission(scopes.VETO_OPERATIONS), vetoController.deleteRoom);
 router.post("/admin/veto-rooms/:roomId/rotate-link", requireAuth, requirePermission(scopes.VETO_OPERATIONS), vetoController.rotateGrant);
 
 router.get("/valorant/leaderboard", leaderboardPublicCache, leaderboardCache, valorantLeaderboardController.getLeaderboard);
@@ -247,6 +248,7 @@ router.get("/admin/tournaments/:id/matches", requireAuth, tournamentRead, matchC
 router.post("/admin/tournaments/:id/matches", requireAuth, tournamentStaff, invalidateCache("foundation"), matchController.createAdminMatch);
 router.patch("/admin/matches/:matchId", requireAuth, requirePermission(scopes.MATCH_OPERATIONS), invalidateCache("foundation"), matchController.updateAdminMatch);
 router.post("/admin/matches/:matchId/room", requireAuth, requirePermission(scopes.MATCH_OPERATIONS), matchRoomController.sync);
+router.delete("/admin/matches/:matchId/room", requireAuth, requirePermission(scopes.MATCH_OPERATIONS), matchRoomController.remove);
 router.get("/admin/match-rooms", requireAuth, unscopedMatchRoomRead, matchRoomController.staffRooms);
 
 // Assigning tournament staff hands out access, so it stays with admins rather
