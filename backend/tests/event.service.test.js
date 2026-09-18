@@ -117,6 +117,27 @@ test("event service aliases retain the old event-series response model", async (
   }
 });
 
+test("public event lookup loads each child tournament's sponsors for the hero belt", async () => {
+  let lookupArgs;
+  const prisma = {
+    eventSeries: {
+      findFirst: async (args) => {
+        lookupArgs = args;
+        return seriesRecord();
+      },
+    },
+  };
+  const { module: service, restore } = buildMocks(prisma);
+  try {
+    await service.getPublicEventBySlug("quest-ascension");
+    const childInclude = lookupArgs.include.tournaments.include;
+    assert.ok(childInclude._count, "registration counts must still be loaded");
+    assert.deepEqual(childInclude.sponsors, { orderBy: [{ displayOrder: "asc" }, { createdAt: "asc" }] });
+  } finally {
+    restore();
+  }
+});
+
 test("event service archive unpublishes safely even when children exist", async () => {
   let updateArgs;
   let archiveLookupArgs;

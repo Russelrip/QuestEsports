@@ -695,3 +695,30 @@ legend {
     break-inside: avoid;
   }
 }
+
+@keyframes sponsor-belt-scroll {
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(-50%, 0, 0); }
+}
+
+.sponsor-belt-track {
+  animation: sponsor-belt-scroll var(--sponsor-belt-duration, 30s) linear infinite;
+}
+
+.sponsor-belt:hover .sponsor-belt-track,
+.sponsor-belt:focus-within .sponsor-belt-track {
+  animation-play-state: paused;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sponsor-belt-track {
+    animation: none;
+    flex-wrap: wrap;
+    justify-content: center;
+    width: 100%;
+  }
+
+  .sponsor-belt-track [aria-hidden="true"] {
+    display: none;
+  }
+}
