@@ -207,7 +207,7 @@ describe("deleting rooms", () => {
 
   it("deletes a finished match's room and leaves active ones alone", async () => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
-    mocks.roomRequest.mockImplementation((path: string, options?: { method?: string }) => options?.method === "DELETE" ? Promise.resolve({ id: "room-9", code: "ROOM9" }) : Promise.resolve([matchRoom("completed")]));
+    mocks.roomRequest.mockImplementation((_path: string, options?: { method?: string }) => options?.method === "DELETE" ? Promise.resolve({ id: "room-9", code: "ROOM9" }) : Promise.resolve([matchRoom("completed")]));
     render(<AdminMatchRoomsManager />);
     await userEvent.setup().click(await screen.findByRole("button", { name: "Delete room" }));
     expect(mocks.roomRequest).toHaveBeenCalledWith("/api/v1/admin/matches/match-9/room", { method: "DELETE" });
@@ -224,7 +224,7 @@ describe("deleting rooms", () => {
 describe("creating rooms for a whole tournament", () => {
   it("creates rooms for every match and lists why others were skipped", async () => {
     mocks.adminRequest.mockResolvedValue({ tournaments: [{ id: "tournament-1", title: "Valorant Cup", status: "published" }] });
-    mocks.roomRequest.mockImplementation((path: string, options?: { method?: string }) => options?.method === "POST"
+    mocks.roomRequest.mockImplementation((_path: string, options?: { method?: string }) => options?.method === "POST"
       ? Promise.resolve({ total: 3, created: 1, updated: 1, skipped: [{ matchId: "m-3", label: "A3", teams: "Echo vs Fox", reason: "Needs two registered teams" }] })
       : Promise.resolve([]));
     const user = userEvent.setup();
