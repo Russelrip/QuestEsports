@@ -686,6 +686,11 @@ A hide belongs to the player, not the Riot account: an approved account change
 moves it to the new account, and removing then restoring a hidden player brings
 them back hidden. Hiding needs VALORANT migration `0020`.
 
+The public leaderboard page can still show a player for up to a minute after you
+hide, remove or ban them: the site rebuilds that page from the API at most once
+a minute (`revalidate: 60` in `fetchPublicValorantLeaderboard`). The API itself
+drops them at once, so its search and the admin lists are current immediately.
+
 Hide, remove or ban? Hide when the player may stay registered but should not be
 ranked publicly (under review, a disputed account). Remove when the registration
 should go. Ban when they keep coming back.

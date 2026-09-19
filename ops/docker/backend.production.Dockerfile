@@ -6,7 +6,7 @@
 # migrator target retains Prisma CLI, migrations, and operational scripts for
 # one-shot release commands.
 
-FROM node:24-bookworm-slim AS dependencies
+FROM node:24-bookworm-slim@sha256:0e0ff40c39bc087845bfb27465a0df4ea419520094bc35842ff83dd8cbe6f9b6 AS dependencies
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends openssl ca-certificates \
@@ -29,7 +29,7 @@ FROM dependencies AS production-dependencies
 # while avoiding a second install whose postinstall would lack Prisma CLI.
 RUN npm prune --omit=dev
 
-FROM node:24-bookworm-slim AS runtime
+FROM node:24-bookworm-slim@sha256:0e0ff40c39bc087845bfb27465a0df4ea419520094bc35842ff83dd8cbe6f9b6 AS runtime
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends openssl ca-certificates \

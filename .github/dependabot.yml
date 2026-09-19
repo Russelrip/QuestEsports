@@ -1,0 +1,17 @@
+# Keeps the digest-pinned base images current. A pinned digest never picks up a
+# Debian security fix on its own, so Dependabot proposes the new digest weekly
+# and CI (including the container config tests) checks it like any other PR.
+version: 2
+updates:
+  - package-ecosystem: docker
+    directories:
+      - /frontend
+      - /ops/docker
+      - /valorant-platform-backend
+    schedule:
+      interval: weekly
+    groups:
+      base-images:
+        patterns: ["*"]
+    commit-message:
+      prefix: chore(docker)

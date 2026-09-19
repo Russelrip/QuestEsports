@@ -374,12 +374,12 @@ const runtimeStage = stage("runtime");
 const migratorStage = stage("migrator");
 
 test("the production backend image has immutable runtime and migrator targets", () => {
-  assert.match(dependenciesStage, /FROM node:24-bookworm-slim AS dependencies/);
+  assert.match(dependenciesStage, /FROM node:24-bookworm-slim@sha256:[0-9a-f]{64} AS dependencies/);
   assert.match(dependenciesStage, /RUN npm ci/);
   assert.match(dependenciesStage, /npx prisma generate/);
   assert.match(productionDependenciesStage, /FROM dependencies AS production-dependencies/);
   assert.match(productionDependenciesStage, /RUN npm prune --omit=dev/);
-  assert.match(runtimeStage, /FROM node:24-bookworm-slim AS runtime/);
+  assert.match(runtimeStage, /FROM node:24-bookworm-slim@sha256:[0-9a-f]{64} AS runtime/);
   assert.match(runtimeStage, /COPY --from=production-dependencies \/app\/node_modules/);
   assert.match(runtimeStage, /COPY --from=dependencies .*src\/generated/);
   assert.match(migratorStage, /FROM dependencies AS migrator/);
