@@ -56,6 +56,12 @@ const apiRemotePattern = parsedApiUrl
     }
   : null;
 
+// The admin ticket scanner reads QR codes through the camera, so our own origin
+// may ask for it (the browser still prompts); embedded third-party frames may
+// not. It has to be site-wide: the policy is fixed when a document loads, and
+// staff reach /admin/tickets by client-side navigation from other pages.
+const PERMISSIONS_POLICY = "camera=(self), microphone=(), geolocation=()";
+
 const nextConfig: NextConfig = {
   output: "standalone",
   async redirects() {
@@ -100,7 +106,7 @@ const nextConfig: NextConfig = {
       },
       {
         key: "Permissions-Policy",
-        value: "camera=(), microphone=(), geolocation=()",
+        value: PERMISSIONS_POLICY,
       },
       ...(isProduction
         ? [
