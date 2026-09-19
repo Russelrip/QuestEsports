@@ -265,24 +265,26 @@ class LeaderboardPlayerRepository:
     async def set_hidden(
         self, puuid: str, *, hidden_by: str | None, reason: str | None
     ) -> LeaderboardPlayer | None:
-        """Hide a registration from the public board (0020); ``None`` if absent.
+        """Hide a registration from the public board (0020); ``None`` if absent or already hidden.
 
         Only the three hidden columns change, so the updater's concurrent
-        ``refresh_rank`` of the same row cannot undo it. The caller commits.
+        ``refresh_rank`` of the same row cannot undo it. Only a visible row is
+        updated, so of two admins hiding at once the second gets ``None`` rather
+        than replacing the first one's reason. The caller commits.
         """
         return (await self._session.execute(
             update(LeaderboardPlayer)
-            .where(LeaderboardPlayer.puuid == puuid)
+            .where(LeaderboardPlayer.puuid == puuid, LeaderboardPlayer.hidden_at.is_(None))
             .values(hidden_at=func.now(), hidden_by=hidden_by, hidden_reason=reason)
             .returning(LeaderboardPlayer)
             .execution_options(populate_existing=True, synchronize_session=False)
         )).scalar_one_or_none()
 
     async def clear_hidden(self, puuid: str) -> LeaderboardPlayer | None:
-        """Put a hidden registration back on the board; ``None`` if absent. The caller commits."""
+        """Put a hidden registration back on the board; ``None`` if absent or not hidden. The caller commits."""
         return (await self._session.execute(
             update(LeaderboardPlayer)
-            .where(LeaderboardPlayer.puuid == puuid)
+            .where(LeaderboardPlayer.puuid == puuid, LeaderboardPlayer.hidden_at.is_not(None))
             .values(hidden_at=None, hidden_by=None, hidden_reason=None)
             .returning(LeaderboardPlayer)
             .execution_options(populate_existing=True, synchronize_session=False)

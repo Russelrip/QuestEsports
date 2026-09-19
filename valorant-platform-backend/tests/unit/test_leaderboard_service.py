@@ -236,14 +236,16 @@ class FakeAdminRepo:
 
     async def set_hidden(self, puuid: str, *, hidden_by: str | None, reason: str | None) -> LeaderboardPlayer | None:
         row = await self.get_by_puuid(puuid)
-        if row is not None:
-            row.hidden_at, row.hidden_by, row.hidden_reason = NOW, hidden_by, reason
+        if row is None or row.hidden_at is not None:
+            return None
+        row.hidden_at, row.hidden_by, row.hidden_reason = NOW, hidden_by, reason
         return row
 
     async def clear_hidden(self, puuid: str) -> LeaderboardPlayer | None:
         row = await self.get_by_puuid(puuid)
-        if row is not None:
-            row.hidden_at, row.hidden_by, row.hidden_reason = None, None, None
+        if row is None or row.hidden_at is None:
+            return None
+        row.hidden_at, row.hidden_by, row.hidden_reason = None, None, None
         return row
 
     async def remove(self, puuid: str, *, removed_by: str | None) -> LeaderboardPlayerRemoval | None:
@@ -262,9 +264,13 @@ class FakeAdminRepo:
 class FakeSession:
     def __init__(self) -> None:
         self.commits = 0
+        self.rolled_back = 0
 
     async def commit(self) -> None:
         self.commits += 1
+
+    async def rollback(self) -> None:
+        self.rolled_back += 1
 
 
 async def test_registrations_flag_rows_the_public_board_hides() -> None:
@@ -317,6 +323,49 @@ async def test_hide_refuses_a_hidden_player_and_unhide_a_visible_one() -> None:
     assert (again.value.code, again.value.status) == ("LEADERBOARD_PLAYER_ALREADY_HIDDEN", 409)
     assert (not_hidden.value.code, not_hidden.value.status) == ("LEADERBOARD_PLAYER_NOT_HIDDEN", 409)
     assert (missing.value.code, missing.value.status) == ("LEADERBOARD_PLAYER_NOT_FOUND", 404)
+
+
+class _RacingRepo(FakeAdminRepo):
+    """The row looks one way to the service's read and another to its update."""
+
+    def __init__(self, read: LeaderboardPlayer, now: LeaderboardPlayer | None) -> None:
+        super().__init__([read])
+        self._reads = [read, now]
+
+    async def get_by_puuid(self, puuid: str) -> LeaderboardPlayer | None:
+        return self._reads.pop(0) if len(self._reads) > 1 else self._reads[0]
+
+    async def set_hidden(self, puuid: str, *, hidden_by: str | None, reason: str | None) -> LeaderboardPlayer | None:
+        return None
+
+    async def clear_hidden(self, puuid: str) -> LeaderboardPlayer | None:
+        return None
+
+
+@pytest.mark.parametrize(
+    ("action", "read", "now", "expected"),
+    [
+        # Another admin hid them first: their reason stands, this one gets a 409.
+        ("hide", {}, {"hidden_at": NOW, "hidden_reason": "first"}, ("LEADERBOARD_PLAYER_ALREADY_HIDDEN", 409)),
+        ("unhide", {"hidden_at": NOW}, {}, ("LEADERBOARD_PLAYER_NOT_HIDDEN", 409)),
+        # Removed in between.
+        ("hide", {}, None, ("LEADERBOARD_PLAYER_NOT_FOUND", 404)),
+        ("unhide", {"hidden_at": NOW}, None, ("LEADERBOARD_PLAYER_NOT_FOUND", 404)),
+    ],
+)
+async def test_hide_and_unhide_lose_a_race_cleanly(action, read, now, expected) -> None:
+    repo = _RacingRepo(_row(puuid="p1", **read), None if now is None else _row(puuid="p1", **now))
+    session = FakeSession()
+    service = LeaderboardService(session=session, repo=repo)  # type: ignore[arg-type]
+
+    with pytest.raises(AppError) as lost:
+        if action == "hide":
+            await service.hide("p1", "second", "admin-2")
+        else:
+            await service.unhide("p1")
+
+    assert (lost.value.code, lost.value.status) == expected
+    assert session.rolled_back == 1
 
 
 async def test_search_does_not_find_a_hidden_player() -> None:
