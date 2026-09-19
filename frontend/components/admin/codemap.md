@@ -23,7 +23,10 @@ paths in a shell.
   attaches child tournaments, and displays aggregate counts.
 - `AdminRegistrationsManager.tsx` accepts an optional event ID and uses the
   event-scoped API with search, tournament, game, and status filters while
-  reusing full registration detail/correction controls.
+  reusing full registration detail/correction controls. Those controls live in
+  `registrations/RegistrationDetail.tsx`, with its types and invitation
+  constants in `registration-model.ts` and the small display pieces in
+  `registration-ui.tsx`.
 - `TournamentEditor.tsx` remains the source of truth for child game,
   capacity, waitlist, roster, payment, schedule, and publication settings.
   A blank max teams is the form's way of saying "unlimited", so it is the one
