@@ -19,10 +19,14 @@ const migration = fs.readFileSync(
   path.join(__dirname, "../prisma/migrations/20260823140000_add_roster_identity_snapshots/migration.sql"),
   "utf8",
 );
-const adminService = fs.readFileSync(
-  path.join(__dirname, "../src/modules/admin/admin.service.js"),
-  "utf8",
-);
+// The admin module's code is spread over several files, so every one of them
+// is read: an approval path added in any of them must still snapshot.
+const adminModuleDirectory = path.join(__dirname, "../src/modules/admin");
+const adminService = fs
+  .readdirSync(adminModuleDirectory)
+  .filter((entry) => entry.endsWith(".js"))
+  .map((entry) => fs.readFileSync(path.join(adminModuleDirectory, entry), "utf8"))
+  .join("\n");
 
 const ACCOUNT = {
   id: "account-1",
