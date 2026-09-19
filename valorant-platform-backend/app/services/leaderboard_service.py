@@ -61,6 +61,14 @@ def _player_not_found() -> AppError:
     return AppError("LEADERBOARD_PLAYER_NOT_FOUND", 404, "leaderboard player not found")
 
 
+def _already_hidden() -> AppError:
+    return AppError("LEADERBOARD_PLAYER_ALREADY_HIDDEN", 409, "this player is already hidden")
+
+
+def _not_hidden() -> AppError:
+    return AppError("LEADERBOARD_PLAYER_NOT_HIDDEN", 409, "this player is not hidden")
+
+
 def _removal_not_found() -> AppError:
     return AppError("LEADERBOARD_REMOVAL_NOT_FOUND", 404, "leaderboard removal not found")
 
@@ -156,12 +164,14 @@ class LeaderboardService:
         if player is None:
             raise _player_not_found()
         if player.hidden_at is not None:
-            raise AppError("LEADERBOARD_PLAYER_ALREADY_HIDDEN", 409, "this player is already hidden")
+            raise _already_hidden()
         hidden = await self._repo.set_hidden(puuid, hidden_by=actor_id, reason=(reason or "").strip() or None)
         if hidden is None:
-            # Removed between the read and the update.
+            # Hidden by another admin, or removed, between the read and the update.
             await self._session.rollback()
-            raise _player_not_found()
+            if await self._repo.get_by_puuid(puuid) is None:
+                raise _player_not_found()
+            raise _already_hidden()
         await self._session.commit()
         return self._to_registration(hidden, datetime.now(UTC))
 
@@ -171,11 +181,14 @@ class LeaderboardService:
         if player is None:
             raise _player_not_found()
         if player.hidden_at is None:
-            raise AppError("LEADERBOARD_PLAYER_NOT_HIDDEN", 409, "this player is not hidden")
+            raise _not_hidden()
         shown = await self._repo.clear_hidden(puuid)
         if shown is None:
+            # Shown by another admin, or removed, between the read and the update.
             await self._session.rollback()
-            raise _player_not_found()
+            if await self._repo.get_by_puuid(puuid) is None:
+                raise _player_not_found()
+            raise _not_hidden()
         await self._session.commit()
         return self._to_registration(shown, datetime.now(UTC))
 

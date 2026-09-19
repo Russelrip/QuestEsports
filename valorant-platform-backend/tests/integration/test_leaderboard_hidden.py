@@ -222,6 +222,47 @@ async def test_a_repoint_moves_the_hide_to_the_new_account(session_factory, monk
     assert board.entries == []
 
 
+async def test_a_second_hide_in_flight_does_not_replace_the_first(session_factory) -> None:
+    # Both admins read the player as visible; the update itself is what decides.
+    player = _player()
+    await _seed(session_factory, player)
+    async with session_factory() as session:
+        first = await LeaderboardPlayerRepository(session).set_hidden(player.puuid, hidden_by=ADMIN, reason="first")
+        await session.commit()
+    async with session_factory() as session:
+        second = await LeaderboardPlayerRepository(session).set_hidden(player.puuid, hidden_by=None, reason="second")
+        await session.commit()
+    async with session_factory() as session:
+        row = await session.get(LeaderboardPlayer, player.puuid)
+
+    assert first is not None
+    assert second is None
+    assert (row.hidden_reason, row.hidden_by) == ("first", ADMIN)
+
+
+async def test_a_visible_player_moving_onto_a_hidden_account_does_not_clear_it(session_factory, monkeypatch) -> None:
+    player = _player()
+    # A row the updater wrote for a Riot account nobody has registered yet,
+    # hidden by staff.
+    destination = _player(discord_id="", discord_username=f"unclaimed-{uuid.uuid4().hex[:8]}", hidden_at=RECENT, hidden_by=ADMIN, hidden_reason="alt")
+    await _seed(session_factory, player, destination)
+
+    monkeypatch.setattr(
+        registration_service, "get_settings", lambda: Settings(app_env="test", leaderboard_affinity="ap")
+    )
+    async with session_factory() as session:
+        await RegistrationService(
+            session=session,
+            henrik=_Henrik(),  # type: ignore[arg-type]
+            repo=LeaderboardPlayerRepository(session),
+            bans=LeaderboardBanRepository(session),
+        ).repoint(discord_id=player.discord_id, discord_username=player.discord_username, puuid=destination.puuid)
+
+    async with session_factory() as session:
+        moved = await session.get(LeaderboardPlayer, destination.puuid)
+    assert (moved.discord_id, moved.hidden_reason, moved.hidden_by) == (player.discord_id, "alt", ADMIN)
+
+
 async def test_a_reason_without_a_hide_is_rejected_by_the_database(session_factory) -> None:
     with pytest.raises(IntegrityError):
         await _seed(session_factory, _player(hidden_reason="orphaned"))

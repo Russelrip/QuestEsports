@@ -444,8 +444,9 @@ async def test_repoint_moves_the_discord_to_the_new_account(
     # One commit: the detach and the new row land together, so a failure cannot
     # leave a player attached to neither.
     assert session.committed == 1
-    # A registration that was never hidden moves as a visible one.
-    assert repo.upserted["hidden_at"] is None
+    # A registration that was never hidden passes no hide, so the upsert leaves
+    # whatever the destination row already has.
+    assert not {"hidden_at", "hidden_by", "hidden_reason"} & repo.upserted.keys()
 
 
 async def test_repoint_carries_a_hide_to_the_new_account(

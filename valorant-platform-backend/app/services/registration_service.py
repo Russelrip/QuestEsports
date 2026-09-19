@@ -235,7 +235,9 @@ class RegistrationService:
         # legitimately already exist — the updater writes rows for players who
         # never registered. The guard just above is the one that applies.
         # A hide (0020) belongs to the player, not the Riot account, so it
-        # moves with them; otherwise changing accounts would undo it.
+        # moves with them; otherwise changing accounts would undo it. A visible
+        # player passes nothing, so a hide already on the destination row stays:
+        # a move must not be a way to clear a hide either.
         return await self._register(
             discord_id=discord_id,
             discord_username=discord_username,
@@ -245,7 +247,7 @@ class RegistrationService:
                 "hidden_at": current.hidden_at,
                 "hidden_by": current.hidden_by,
                 "hidden_reason": current.hidden_reason,
-            },
+            } if current.hidden_at is not None else None,
         )
 
     async def _refuse_banned(self, *, puuid: str, discord_id: str | None) -> None:
