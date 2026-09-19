@@ -6,7 +6,7 @@
 # backup, restore, and secret-recovery controls.
 
 # Matches backend/package.json engines ("node": "24.x") and .nvmrc.
-FROM node:24-bookworm-slim
+FROM node:25-bookworm-slim
 
 # openssl is required by Prisma's query engine.
 RUN apt-get update \
