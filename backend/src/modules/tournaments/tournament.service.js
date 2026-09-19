@@ -1,3 +1,4 @@
+// Public surface; codemap.md lists the files the code lives in.
 const { buildRegistrationCountInclude, parseOptionalDateValue } = require("./tournament-shared");
 const {
   normalizeChallongeUrl,
