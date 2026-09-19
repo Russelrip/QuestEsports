@@ -86,3 +86,13 @@ records are loaded only in the existing admin detail workflow.
   queue contract explicit and `SupportAssignmentControl.tsx` supports
   self-assigning or unassigning a conversation. Staff replies use the shared
   private screenshot attachment picker and renderer.
+
+## Tickets
+
+- `AdminTicketsManager.tsx` renders `/admin/tickets`: loading ticket events,
+  selecting one, and creating or saving it.
+- `tickets/` holds the rest: `ticket-model.ts` (types, the blank form and
+  event-to-form mapping), `EventGrid.tsx`, `EventWorkspace.tsx` (the tabbed
+  view of one event), one file per tab (`Overview`, `OrdersPanel`,
+  `TicketsPanel`, `CheckInPanel` with the camera scanner, `ReportsPanel`),
+  `EventEditor.tsx`, and `ticket-ui.tsx` (metric cards and the pager).
