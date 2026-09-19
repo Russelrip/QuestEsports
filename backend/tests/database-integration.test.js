@@ -719,3 +719,47 @@ test("match-room bulk sync and delete queries are ones real PostgreSQL accepts",
     await prisma.$disconnect();
   }
 });
+
+test("real PostgreSQL readiness fails when a column the client queries is missing", {
+  skip: !runDatabaseTests,
+}, async () => {
+  const { prisma } = require("../src/lib/prisma");
+  const { checkDatabaseReadiness } = require("../src/lib/database");
+
+  try {
+    await checkDatabaseReadiness({ schemaProbeMaxAgeMs: 0 });
+    // The shape of the #128 outage: code that queries a column whose migration
+    // never ran. Readiness must say so rather than answer SELECT 1.
+    await prisma.$executeRawUnsafe('ALTER TABLE "tournaments" RENAME COLUMN "auto_approve_registrations" TO "readiness_probe_hidden"');
+    try {
+      await assert.rejects(
+        checkDatabaseReadiness({ schemaProbeMaxAgeMs: 0 }),
+        /auto_approve_registrations/,
+      );
+    } finally {
+      await prisma.$executeRawUnsafe('ALTER TABLE "tournaments" RENAME COLUMN "readiness_probe_hidden" TO "auto_approve_registrations"');
+    }
+    await checkDatabaseReadiness({ schemaProbeMaxAgeMs: 0 });
+  } finally {
+    await prisma.$disconnect();
+  }
+});
+
+test("real PostgreSQL lets the runtime role run the readiness schema probe", {
+  skip: !runDatabaseTests,
+}, async () => {
+  const { prisma } = require("../src/lib/prisma");
+  const { Prisma } = require("../src/generated/prisma");
+  const { buildSchemaProbeSql } = require("../src/lib/database");
+
+  // Production connects as quest_runtime. A table it cannot SELECT would fail
+  // readiness on every deploy, so the probe runs with the migrations' grants.
+  try {
+    await prisma.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe("SET LOCAL ROLE quest_runtime");
+      await tx.$queryRawUnsafe(buildSchemaProbeSql(Prisma.dmmf.datamodel.models, "public"));
+    });
+  } finally {
+    await prisma.$disconnect();
+  }
+});

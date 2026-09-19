@@ -41,7 +41,7 @@ Do not set the approval secret broadly or permanently. Set it only after reviewi
 
 ## Release verification
 
-The deployment first requires `/api/health/live` to return `200`, proving that the restarted Node process can answer. Liveness alone is never sufficient. During normal operation, the database-and-storage-backed `/api/health/ready` endpoint must also return `200`, followed by public API smoke reads. During an approved full-site maintenance window, readiness may instead return `503` only when `X-Maintenance-Mode: active` is present; CD then skips public reads that are intentionally protected. Any other `503` remains a deployment failure.
+The deployment first requires `/api/health/live` to return `200`, proving that the restarted Node process can answer. Liveness alone is never sufficient. During normal operation, the database-and-storage-backed `/api/health/ready` endpoint must also return `200`, followed by public API smoke reads. Its database check also resolves every table and column the generated Prisma client can query, reading no rows, so a release whose migration has not run reports `503` instead of passing `SELECT 1`; a pass is reused for five minutes. During an approved full-site maintenance window, readiness may instead return `503` only when `X-Maintenance-Mode: active` is present; CD then skips public reads that are intentionally protected. Any other `503` remains a deployment failure.
 
 Maintenance mode is not a migration write freeze because background jobs and the PayHere notification callback continue. Stop the relevant Compose writer services before any restore or operation that requires zero writes, following the [Production Operations Runbook](./production-runbook.md#full-stop-and-write-freeze-warning).
 
