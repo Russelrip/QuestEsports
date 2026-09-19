@@ -270,12 +270,20 @@ function premierSteps() {
   ];
 }
 
-const deletableMatchRoomPrisma = (room, deleted) => ({
-  matchRoom: {
+const deletableMatchRoomPrisma = (room, deleted, audits = [], { failAudit = false } = {}) => {
+  const matchRoom = {
     findUnique: async () => room,
     delete: async ({ where }) => { deleted.push(where.id); return room; },
-  },
-});
+  };
+  const auditLog = {
+    create: async ({ data }) => {
+      if (failAudit) throw new Error("audit write failed");
+      audits.push(data);
+      return data;
+    },
+  };
+  return { matchRoom, auditLog, $transaction: async (work) => work({ matchRoom, auditLog }) };
+};
 
 test("a finished match's room can be deleted with its history", async () => {
   for (const status of ["completed", "cancelled", "walkover"]) {
@@ -288,6 +296,31 @@ test("a finished match's room can be deleted with its history", async () => {
       assert.deepEqual(result, { id: "room-1", code: "MR-1", matchStatus: status, messageCount: 12, supportCount: 1 });
     } finally { restore(); }
   }
+});
+
+test("a room delete is audited in the same transaction, and nothing is deleted when the audit fails", async () => {
+  const room = { id: "room-1", code: "MR-1", match: { status: "completed" }, _count: { messages: 12, support: 1 } };
+  const deleted = [];
+  const audits = [];
+  let loaded = loadService(deletableMatchRoomPrisma(room, deleted, audits));
+  try {
+    await loaded.module.deleteMatchRoom({ matchId: "match-1", auditContext: { actorUserId: "6f1c2d3e-4b5a-4c6d-8e7f-9a0b1c2d3e4f", source: "admin" } });
+    assert.equal(audits.length, 1);
+    assert.equal(audits[0].action, "match.room.deleted");
+    assert.equal(audits[0].targetType, "Match");
+    assert.equal(audits[0].targetId, "match-1");
+    assert.equal(audits[0].actorUserId, "6f1c2d3e-4b5a-4c6d-8e7f-9a0b1c2d3e4f");
+    assert.deepEqual(audits[0].beforeData, { id: "room-1", code: "MR-1", matchStatus: "completed", messageCount: 12, supportCount: 1 });
+  } finally { loaded.restore(); }
+
+  // The mock runs the work without real rollback, so the delete must come after
+  // the audit write: a failed audit then stops the delete from ever running.
+  const kept = [];
+  loaded = loadService(deletableMatchRoomPrisma(room, kept, [], { failAudit: true }));
+  try {
+    await assert.rejects(loaded.module.deleteMatchRoom({ matchId: "match-1" }), /audit write failed/);
+    assert.deepEqual(kept, []);
+  } finally { loaded.restore(); }
 });
 
 test("an active match's room cannot be deleted because it would be rebuilt empty", async () => {

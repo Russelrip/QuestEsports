@@ -28,8 +28,8 @@ const syncTournament = asyncHandler(async (req, res) => {
 });
 
 const remove = asyncHandler(async (req, res) => {
-  const deleted = await service.deleteMatchRoom({ matchId: req.params.matchId });
-  await recordAudit({ ...requestAuditContext(req), action: "match.room.deleted", targetType: "Match", targetId: req.params.matchId, beforeData: deleted });
+  // Audited inside the service transaction, together with the delete.
+  const deleted = await service.deleteMatchRoom({ matchId: req.params.matchId, auditContext: requestAuditContext(req) });
   respond(res, { id: deleted.id, code: deleted.code });
 });
 

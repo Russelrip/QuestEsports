@@ -128,3 +128,52 @@ test("migration is additive and leaves history honestly NULL", () => {
   assert.doesNotMatch(sql, /UPDATE "audit_logs"/i);
   assert.doesNotMatch(sql, /ADD COLUMN IF NOT EXISTS "source" "AuditSource" (NOT NULL|DEFAULT)/i);
 });
+
+test("recordAuditAfterCommit logs the sanitized row for re-entry instead of failing the request", async () => {
+  const loggerModulePath = path.join(__dirname, "../src/lib/logger.js");
+  const errors = [];
+  const prisma = { auditLog: { create: async () => { throw new Error("connection lost"); } } };
+  const { module: audit, restore } = loadModuleWithMocks(auditPath, {
+    [prismaModulePath]: { prisma },
+    [loggerModulePath]: { logger: { error: (message, meta) => errors.push({ message, meta }) }, redact: (value) => value },
+  });
+  try {
+    const result = await audit.recordAuditAfterCommit({
+      actorUserId: "6f1c2d3e-4b5a-4c6d-8e7f-9a0b1c2d3e4f",
+      action: "valorant.leaderboard_player.hide",
+      targetType: "valorant_leaderboard_player",
+      beforeData: { hidden: false },
+      afterData: { riotId: "Chamsy#0001", puuid: "fe6c5224-dc61-5c3e-95eb-c29ad4f4acea" },
+      source: "admin",
+      reason: "  Under review  ",
+    });
+
+    assert.equal(result, null);
+    assert.equal(errors.length, 1);
+    assert.equal(errors[0].meta.auditRecoveryRequired, true);
+    assert.deepEqual(errors[0].meta.audit, {
+      actorUserId: "6f1c2d3e-4b5a-4c6d-8e7f-9a0b1c2d3e4f",
+      action: "valorant.leaderboard_player.hide",
+      targetType: "valorant_leaderboard_player",
+      targetId: null,
+      beforeData: { hidden: false },
+      afterData: { riotId: "Chamsy#0001", puuid: "[REDACTED]" },
+      requestId: null,
+      source: "admin",
+      reason: "Under review",
+    });
+  } finally {
+    restore();
+  }
+});
+
+test("recordAuditAfterCommit writes the row like recordAudit when the database is up", async () => {
+  const { audit, created, restore } = loadAudit();
+  try {
+    await audit.recordAuditAfterCommit({ action: "valorant.leaderboard_player.unhide", targetType: "valorant_leaderboard_player", source: "admin", reason: "Cleared" });
+    assert.equal(created[0].action, "valorant.leaderboard_player.unhide");
+    assert.equal(created[0].reason, "Cleared");
+  } finally {
+    restore();
+  }
+});
