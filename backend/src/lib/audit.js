@@ -88,6 +88,35 @@ const recordAudit = async (data) => {
   }
 };
 
+// For a change that is already final somewhere this database cannot roll back,
+// such as the VALORANT platform. Failing the request then would tell the admin
+// their action did not happen when it did, and a retry meets a 409. So a failed
+// write is logged with the whole sanitized row, flagged for re-entry, and the
+// caller carries on. Changes to Quest's own tables belong in a transaction with
+// recordAuditInTransaction instead.
+const recordAuditAfterCommit = async (data) => {
+  try {
+    return await persistAudit(prisma, data);
+  } catch (error) {
+    logger.error("Audit log persistence failed after a committed change", {
+      auditRecoveryRequired: true,
+      audit: {
+        actorUserId: data.actorUserId || null,
+        action: data.action,
+        targetType: data.targetType,
+        targetId: data.targetId || null,
+        beforeData: sanitizeAuditData(data.beforeData),
+        afterData: sanitizeAuditData(data.afterData),
+        requestId: data.requestId || null,
+        source: normalizeAuditSource(data.source),
+        reason: normalizeAuditReason(data.reason),
+      },
+      error,
+    });
+    return null;
+  }
+};
+
 const recordAuditInTransaction = (database, data) => persistAudit(database, data);
 
 // Derive only what the request actually proves.
@@ -112,6 +141,7 @@ const requestAuditContext = (req) => ({
 
 module.exports = {
   recordAudit,
+  recordAuditAfterCommit,
   recordAuditInTransaction,
   requestAuditContext,
   requestAuditSource,

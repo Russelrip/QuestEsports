@@ -53,7 +53,7 @@ const loadController = ({ service, audits = [] }) =>
   loadModuleWithMocks(controllerPath, {
     [servicePath]: service,
     [auditPath]: {
-      recordAudit: async (entry) => { audits.push(entry); },
+      recordAuditAfterCommit: async (entry) => { audits.push(entry); },
       requestAuditContext: (req) => ({ actorUserId: req.user?.id ?? null, requestId: null, ipAddress: null, source: "web" }),
     },
   }).module;

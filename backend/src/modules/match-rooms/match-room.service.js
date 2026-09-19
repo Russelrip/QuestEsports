@@ -2,6 +2,7 @@ const crypto = require("crypto");
 const { HttpError } = require("../../lib/http-error");
 const { prisma } = require("../../lib/prisma");
 const { normalizeText } = require("../../lib/validation");
+const { recordAuditInTransaction } = require("../../lib/audit");
 const { publishRealtimeEvent } = require("../realtime/realtime.service");
 const { createNotification } = require("../notifications/notification.service");
 const { getBuiltInSteps, validateSteps } = require("../veto/veto.service");
@@ -761,16 +762,22 @@ const syncTournamentRooms = async ({ tournamentId }) => {
 
 // Rooms for active matches are rebuilt on demand (see ensureMatchRoom), so a
 // delete there would only wipe chat and support history. Finished matches only.
-const deleteMatchRoom = async ({ matchId }) => {
+// The delete takes the room's chat and support history with it, so the audit
+// row is written in the same transaction: no history is lost without a record.
+const deleteMatchRoom = async ({ matchId, auditContext = {} }) => {
   const room = await prisma.matchRoom.findUnique({
     where: { matchId },
     include: { match: { select: { status: true } }, _count: { select: { messages: true, support: true } } },
   });
   if (!room) throw new HttpError(404, "Match room not found.");
   if (!TERMINAL_MATCH_STATUSES.has(room.match.status)) throw new HttpError(409, "Match rooms can only be deleted once the match is finished.");
-  await prisma.matchRoom.delete({ where: { id: room.id } });
+  const deleted = { id: room.id, code: room.code, matchStatus: room.match.status, messageCount: room._count.messages, supportCount: room._count.support };
+  await prisma.$transaction(async (tx) => {
+    await recordAuditInTransaction(tx, { ...auditContext, action: "match.room.deleted", targetType: "Match", targetId: matchId, beforeData: deleted });
+    await tx.matchRoom.delete({ where: { id: room.id } });
+  });
   publishRealtimeEvent(`match-room:${room.code}`, { kind: "deleted" });
-  return { id: room.id, code: room.code, matchStatus: room.match.status, messageCount: room._count.messages, supportCount: room._count.support };
+  return deleted;
 };
 
 const notifyMatchChange = async ({ matchId, type, eventVersion, title, body }) => {

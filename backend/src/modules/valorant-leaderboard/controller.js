@@ -1,6 +1,6 @@
 const { asyncHandler } = require("../../lib/async-handler");
 const { HttpError } = require("../../lib/http-error");
-const { recordAudit, requestAuditContext } = require("../../lib/audit");
+const { recordAuditAfterCommit, requestAuditContext } = require("../../lib/audit");
 const {
   listAdminRegistrations,
   removeAdminRegistration,
@@ -103,7 +103,7 @@ const removeRegistration = asyncHandler(async (req, res) => {
   const { removed } = data;
   // The audit policy keeps PUUIDs out of audit rows, so the Riot ID and Discord
   // handle are what identify the removed registration.
-  await recordAudit({
+  await recordAuditAfterCommit({
     ...requestAuditContext(req),
     action: "valorant.leaderboard_player.remove",
     targetType: "valorant_leaderboard_player",
@@ -144,7 +144,7 @@ const restoreRemoval = asyncHandler(async (req, res) => {
 
   const data = await restoreAdminRemoval({ removalId: req.params.removalId, actorUserId: req.user.id });
   const { restored } = data;
-  await recordAudit({
+  await recordAuditAfterCommit({
     ...requestAuditContext(req),
     action: "valorant.leaderboard_player.restore",
     targetType: "valorant_leaderboard_player",
@@ -193,7 +193,7 @@ const hideAuditData = (player) => ({
 const hideRegistration = asyncHandler(async (req, res) => {
   const reason = readReason(req, "Give a reason for hiding this player. They will see it on their profile.");
   const data = await hideAdminRegistration({ puuid: req.params.puuid, reason, actorUserId: req.user.id });
-  await recordAudit({
+  await recordAuditAfterCommit({
     ...requestAuditContext(req),
     action: "valorant.leaderboard_player.hide",
     targetType: "valorant_leaderboard_player",
@@ -214,7 +214,7 @@ const hideRegistration = asyncHandler(async (req, res) => {
 const unhideRegistration = asyncHandler(async (req, res) => {
   const reason = readReason(req, "Give a reason for showing this player on the leaderboard again.");
   const data = await unhideAdminRegistration({ puuid: req.params.puuid, actorUserId: req.user.id });
-  await recordAudit({
+  await recordAuditAfterCommit({
     ...requestAuditContext(req),
     action: "valorant.leaderboard_player.unhide",
     targetType: "valorant_leaderboard_player",
@@ -243,7 +243,7 @@ const listBans = asyncHandler(async (req, res) => {
 // every registration the ban removed.
 const auditBan = async (req, data, reason) => {
   const { ban, removed } = data;
-  await recordAudit({
+  await recordAuditAfterCommit({
     ...requestAuditContext(req),
     action: "valorant.leaderboard_player.ban",
     targetType: "valorant_leaderboard_player",
@@ -287,7 +287,7 @@ const banRemoval = asyncHandler(async (req, res) => {
 const liftBan = asyncHandler(async (req, res) => {
   const reason = readReason(req, "Give a reason for lifting this ban.");
   const ban = await liftAdminBan({ banId: req.params.banId, actorUserId: req.user.id });
-  await recordAudit({
+  await recordAuditAfterCommit({
     ...requestAuditContext(req),
     action: "valorant.leaderboard_player.unban",
     targetType: "valorant_leaderboard_player",
@@ -330,7 +330,7 @@ const listServerChecks = asyncHandler(async (req, res) => {
 const clearServerCheck = asyncHandler(async (req, res) => {
   const reason = readReason(req, "Give a reason for keeping this player on the leaderboard.");
   const data = await clearAdminServerCheck({ puuid: req.params.puuid, actorUserId: req.user.id });
-  await recordAudit({
+  await recordAuditAfterCommit({
     ...requestAuditContext(req),
     action: "valorant.leaderboard_player.server_check_clear",
     targetType: "valorant_leaderboard_player",
@@ -346,7 +346,7 @@ const clearServerCheck = asyncHandler(async (req, res) => {
 const reopenServerCheck = asyncHandler(async (req, res) => {
   const reason = readReason(req, "Give a reason for reopening this player's server check.");
   const data = await reopenAdminServerCheck({ puuid: req.params.puuid, actorUserId: req.user.id });
-  await recordAudit({
+  await recordAuditAfterCommit({
     ...requestAuditContext(req),
     action: "valorant.leaderboard_player.server_check_reopen",
     targetType: "valorant_leaderboard_player",

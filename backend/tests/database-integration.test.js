@@ -713,6 +713,9 @@ test("match-room bulk sync and delete queries are ones real PostgreSQL accepts",
     const deleted = await service.deleteMatchRoom({ matchId: finished.id });
     assert.equal(deleted.id, room.id);
     assert.equal(await prisma.matchRoom.count({ where: { id: room.id } }), 0);
+    const audit = await prisma.auditLog.findFirst({ where: { action: "match.room.deleted", targetId: finished.id } });
+    assert.equal(audit?.beforeData?.code, room.code);
+    await prisma.auditLog.deleteMany({ where: { id: audit.id } });
   } finally {
     await prisma.match.deleteMany({ where: { tournamentId } });
     await prisma.tournament.deleteMany({ where: { id: tournamentId } });
