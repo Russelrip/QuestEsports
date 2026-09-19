@@ -38,7 +38,7 @@ test("getLeaderboard wraps the mapped page in the Quest envelope", async () => {
   assert.equal(calls.json.data.perPage, 25);
 });
 
-test("getLeaderboard clamps per_page to the upstream max of 200", async () => {
+test("getLeaderboard clamps per_page to the public page size of 50", async () => {
   let seenPerPage;
   const serviceMock = {
     listLeaderboard: async ({ perPage }) => { seenPerPage = perPage; return { entries: [], total: 0, page: 1, perPage, totalPages: 1 }; },
@@ -47,7 +47,22 @@ test("getLeaderboard clamps per_page to the upstream max of 200", async () => {
   const { module: controller } = loadController(serviceMock);
   const { res } = makeRes();
   await controller.getLeaderboard({ query: { page: "1", per_page: "9999" } }, res);
-  assert.equal(seenPerPage, 200);
+  assert.equal(seenPerPage, 50);
+});
+
+test("getLeaderboard keeps PUUIDs off the public entries", async () => {
+  const serviceMock = {
+    listLeaderboard: async () => ({
+      entries: [{ puuid: "p-1", name: "Sahan", tag: "LKA", discordUsername: "sahan" }],
+      total: 1, page: 1, perPage: 50, totalPages: 1,
+    }),
+    searchLeaderboardPlayers: async () => [],
+  };
+  const { module: controller } = loadController(serviceMock);
+  const { res, calls } = makeRes();
+  await controller.getLeaderboard({ query: {} }, res);
+  assert.deepEqual(calls.json.data.entries, [{ name: "Sahan", tag: "LKA", discordUsername: "sahan" }]);
+  assert.equal(calls.json.data.total, 1);
 });
 
 test("searchLeaderboard returns { entry: null } for a blank query", async () => {
@@ -76,7 +91,9 @@ test("searchLeaderboard returns the ranked entries plus the legacy entry field",
   assert.equal(seen.query, "sahan");
   assert.equal(seen.options.limit, 25);
   assert.equal(calls.json.data.entries.length, 2);
-  assert.equal(calls.json.data.entry.puuid, "p-1");
+  assert.equal(calls.json.data.entry.name, "Sahan");
+  assert.equal(calls.json.data.entry.rank, 3);
+  assert.ok(calls.json.data.entries.every((entry) => !("puuid" in entry)), "search must not expose PUUIDs");
 });
 
 test("searchLeaderboard clamps the result limit", async () => {

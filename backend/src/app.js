@@ -132,7 +132,12 @@ app.get("/api/capabilities", (req, res) =>
   res.status(200).json({ success: true, ...getApiCapabilities() }),
 );
 app.use(requireSiteAvailable);
-app.get("/api/openapi.json", (req, res) => res.status(200).json(openApiDocument));
+// The contract lists every admin route, which in production only hands
+// scanners a map (they fetched it and walked it in September 2026). Keep it
+// for local and test use; production answers 404 like any unknown route.
+if (env.NODE_ENV !== "production") {
+  app.get("/api/openapi.json", (req, res) => res.status(200).json(openApiDocument));
+}
 
 app.use("/api/v1", v1Router);
 app.use("/api", apiRouter);

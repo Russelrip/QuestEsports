@@ -220,8 +220,8 @@ export const formatEloDelta = (before: string, after: string): string => {
   return delta > 0 ? `+${delta}` : `${delta}`;
 };
 
+// The public API leaves the PUUID out; rows are keyed by Riot ID instead.
 export type ValorantPlayerLeaderboardEntry = {
-  puuid: string;
   name: string;
   tag: string;
   discordUsername: string;

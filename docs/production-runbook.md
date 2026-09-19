@@ -982,8 +982,8 @@ next release starts the service again regardless.
 Health endpoint semantics are fixed: `/api/health/live` is liveness only;
 `/api/health` and `/api/health/ready` are readiness aliases that check the
 database and storage, plus clustered realtime when enabled, and may return
-`503` during maintenance or dependency failure. `/api/openapi.json` is the API
-schema endpoint. During maintenance,
+`503` during maintenance or dependency failure. `/api/openapi.json` is not
+served in production (it answers `404`). During maintenance,
 liveness remains available while both readiness aliases intentionally return
 the maintenance `503`.
 

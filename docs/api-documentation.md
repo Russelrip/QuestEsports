@@ -148,7 +148,7 @@ Returns a minimal public health response. The readiness variants additionally re
 
 ### `GET /api/openapi.json`
 
-Returns the lightweight OpenAPI contract maintained in `backend/src/lib/openapi.js`.
+Returns the lightweight OpenAPI contract maintained in `backend/src/lib/openapi.js`. Served only outside production (`NODE_ENV=production` answers `404`), because the contract lists every admin route. Read it locally or from the source file.
 
 ## Auth Endpoints
 
