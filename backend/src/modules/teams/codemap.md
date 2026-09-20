@@ -7,6 +7,16 @@ roster and a standalone saved team are the same thing here: every team
 registration is mirrored into a `SavedTeam` by `syncSavedTeamFromRegistration`,
 so `SavedTeamMember` is the one surface an invitation lives on.
 
+`team.service.js` is the module's public surface and re-exports from:
+
+- `team-shared.js` — role order, invitation timings, the retrying roster-sync
+  transaction, and the saved-team mappers.
+- `team-profile.service.js` — the profile's saved teams: list, create, edit,
+  delete, and `attachRosterReadiness`.
+- `team-invites.service.js` — nudging, resending and reopening invitations.
+- `team-registration-sync.service.js` — `syncSavedTeamFromRegistration` and
+  activating a paid registration's team.
+
 ## What lives here, and what does not
 
 A saved team is who is on it: role, name, email, and where each invitation
