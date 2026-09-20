@@ -64,6 +64,9 @@ const PERMISSIONS_POLICY = "camera=(self), microphone=(), geolocation=()";
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  // Next.js names itself in an X-Powered-By header by default, which only
+  // ever helps someone fingerprinting the stack.
+  poweredByHeader: false,
   async redirects() {
     return [
       // /events folded into /tournaments: keep existing links and search results

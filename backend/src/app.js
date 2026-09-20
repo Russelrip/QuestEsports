@@ -24,12 +24,17 @@ const {
   logRequestLifecycle,
 } = require("./middleware/observability");
 const {
+  isInternalRequest,
   protectAgainstCsrf,
   requireAllowedApiOrigin,
   setSecurityHeaders,
 } = require("./middleware/security");
 
 const app = express();
+
+// Express advertises itself on every response by default. It tells a caller
+// nothing they need and tells a scanner which stack to look up.
+app.disable("x-powered-by");
 
 const buildHealthPayload = () => ({
   success: true,
@@ -68,16 +73,25 @@ app.use(express.json({ limit: "1mb" }));
 app.use(express.urlencoded({ extended: true, limit: "100kb", parameterLimit: 100 }));
 app.use(protectAgainstCsrf);
 
-app.get("/api/health/live", (req, res) =>
-  res.status(200).json({
+app.get("/api/health/live", (req, res) => {
+  const payload = {
     success: true,
     message: "Quest E-sports API is live.",
     timestamp: new Date().toISOString(),
     maintenance: { enabled: env.SITE_MAINTENANCE_MODE },
-    realtime: { enabled: env.REALTIME_SSE_ENABLED, ...getRealtimeStatus() },
-    observability: getObservabilityTransportStatus(),
-  })
-);
+    // The browser reads realtime.enabled before opening an EventSource, so
+    // the flag stays public. Worker identity, connection and client counts,
+    // published-event totals, and transport state do not.
+    realtime: { enabled: env.REALTIME_SSE_ENABLED },
+  };
+
+  if (isInternalRequest(req)) {
+    Object.assign(payload.realtime, getRealtimeStatus());
+    payload.observability = getObservabilityTransportStatus();
+  }
+
+  return res.status(200).json(payload);
+});
 app.get("/.well-known/assetlinks.json", (req, res) => {
   if (!env.MOBILE_ADMIN_ANDROID_CERT_SHA256) {
     return res.status(404).json({ success: false, message: "App link configuration is unavailable." });
@@ -110,9 +124,16 @@ const readinessHandler = async (req, res) => {
       }));
     }
     await Promise.all(readinessChecks);
+    // The release gate and the container healthcheck read per-dependency
+    // state; a public caller gets the verdict the status code already
+    // carries, so uptime monitoring is unaffected.
+    if (!isInternalRequest(req)) {
+      return res.status(200).json(buildHealthPayload());
+    }
+
     const readiness = { database: "ready", storage: "ready" };
     if (realtimeReadinessRequired) readiness.realtime = "ready";
-    res.status(200).json({
+    return res.status(200).json({
       ...buildHealthPayload(),
       readiness,
     });

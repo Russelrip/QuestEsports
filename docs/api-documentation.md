@@ -142,9 +142,11 @@ When site maintenance is enabled, normal API routes return `503 Service Unavaila
 
 ### `GET /api/health`
 
-Returns a minimal public health response. The readiness variants additionally report only whether required dependency classes are ready; detailed operational metrics remain in structured logs and monitoring systems.
+Returns a minimal public health response: `success`, `message`, and `timestamp`. Detailed operational metrics remain in structured logs and monitoring systems.
 
-`GET /api/health/live` reports process liveness and includes `maintenance.enabled`. During maintenance, readiness returns `503` with the maintenance response described above.
+`GET /api/health/live` reports process liveness and includes `maintenance.enabled` and `realtime.enabled`, which the site reads before opening an event stream.
+
+The response body depends on how the caller arrived. Nginx sets `X-Forwarded-For` on everything it proxies, so a public caller never sees the per-dependency `readiness` object, `realtime.workerId`, connection or client counts, or the `observability` queue and circuit-breaker counters. Callers without that header — the release gate, the container healthcheck, anyone on the host — get the full payload. Status codes are identical either way, so uptime monitoring is unaffected. During maintenance, readiness returns `503` with the maintenance response described above.
 
 ### `GET /api/openapi.json`
 

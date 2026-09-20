@@ -135,8 +135,12 @@ run a multi-worker deployment with the memory cache or with a missing shared
 transport credential.
 
 `GET /api/health/live` returns the non-secret effective value at
-`realtime.workerId`. Configuration shows only the configured base; deployment
-verification must compare the live health values from both workers.
+`realtime.workerId`, but only to a caller that did not come through the public
+edge: nginx sets `X-Forwarded-For`, and the payload drops worker identity,
+connection counts, and transport state whenever it is present. Query the
+loopback publication (`http://127.0.0.1:5001`) or run the check on the host.
+Configuration shows only the configured base; deployment verification must
+compare the live health values from both workers.
 
 The shared transport uses these exact Upstash REST requests:
 

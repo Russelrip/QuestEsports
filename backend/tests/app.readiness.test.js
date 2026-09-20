@@ -22,6 +22,14 @@ const securityPath = path.join(backendRoot, "src/middleware/security.js");
 
 const passthrough = (req, res, next) => next();
 
+const realtimeStatusFixture = {
+  workerId: "worker-a:123:uuid",
+  activeConnections: 7,
+  activeClients: 3,
+  publishedEvents: 42,
+  lastErrorAt: null,
+};
+
 const loadApp = ({ realtimeEnabled, sharedTransportRequired, transportReady }) => loadModuleWithMocks(appPath, {
   [envPath]: {
     env: {
@@ -42,7 +50,7 @@ const loadApp = ({ realtimeEnabled, sharedTransportRequired, transportReady }) =
   },
   [loggerPath]: { logger: { warn() {} } },
   [realtimePath]: {
-    getRealtimeStatus: () => ({ sharedTransportRequired }),
+    getRealtimeStatus: () => ({ ...realtimeStatusFixture, sharedTransportRequired }),
     isRealtimeTransportReady: () => transportReady,
   },
   [maintenancePath]: {
@@ -58,19 +66,22 @@ const loadApp = ({ realtimeEnabled, sharedTransportRequired, transportReady }) =
     logRequestLifecycle: passthrough,
   },
   [securityPath]: {
+    // Mirrors the real predicate, which security.test.js covers directly.
+    isInternalRequest: (req) => !req.headers["x-forwarded-for"],
     protectAgainstCsrf: passthrough,
     requireAllowedApiOrigin: passthrough,
     setSecurityHeaders: passthrough,
   },
 });
 
-const requestReadiness = (app) => new Promise((resolve, reject) => {
+const requestJson = (app, { path = "/api/health/ready", headers = {} } = {}) => new Promise((resolve, reject) => {
   const server = app.listen(0, "127.0.0.1", () => {
     const address = server.address();
     const request = http.get({
       host: "127.0.0.1",
       port: address.port,
-      path: "/api/health/ready",
+      path,
+      headers,
     }, (response) => {
       let body = "";
       response.setEncoding("utf8");
@@ -78,13 +89,23 @@ const requestReadiness = (app) => new Promise((resolve, reject) => {
         body += chunk;
       });
       response.on("end", () => {
-        server.close(() => resolve({ statusCode: response.statusCode, body: JSON.parse(body) }));
+        server.close(() => resolve({
+          statusCode: response.statusCode,
+          headers: response.headers,
+          body: JSON.parse(body),
+        }));
       });
     });
     request.on("error", (error) => server.close(() => reject(error)));
   });
   server.on("error", reject);
 });
+
+// Nginx appends this on every request it proxies to the API, so it is what
+// separates a caller at the public edge from the release gate on the host.
+const publicCaller = { headers: { "x-forwarded-for": "203.0.113.10" } };
+
+const requestReadiness = (app) => requestJson(app);
 
 test("clustered SSE readiness fails while the shared realtime transport is disconnected", async () => {
   const loaded = loadApp({
@@ -116,6 +137,85 @@ test("non-clustered readiness remains database/storage-only", async () => {
       database: "ready",
       storage: "ready",
     });
+  } finally {
+    loaded.restore();
+  }
+});
+
+test("public readiness reports the verdict without naming each dependency", async () => {
+  const loaded = loadApp({
+    realtimeEnabled: true,
+    sharedTransportRequired: false,
+    transportReady: false,
+  });
+
+  try {
+    const result = await requestJson(loaded.module, {
+      path: "/api/health/ready",
+      ...publicCaller,
+    });
+    assert.equal(result.statusCode, 200);
+    assert.equal(result.body.success, true);
+    assert.equal(result.body.readiness, undefined);
+  } finally {
+    loaded.restore();
+  }
+});
+
+test("public liveness keeps the realtime flag and drops worker and transport detail", async () => {
+  const loaded = loadApp({
+    realtimeEnabled: true,
+    sharedTransportRequired: true,
+    transportReady: true,
+  });
+
+  try {
+    const result = await requestJson(loaded.module, {
+      path: "/api/health/live",
+      ...publicCaller,
+    });
+    assert.equal(result.statusCode, 200);
+    // The browser still needs this to decide whether to open an EventSource.
+    assert.deepEqual(result.body.realtime, { enabled: true });
+    assert.equal(result.body.observability, undefined);
+    assert.equal(result.body.maintenance.enabled, false);
+  } finally {
+    loaded.restore();
+  }
+});
+
+test("internal liveness still carries worker identity and transport counters", async () => {
+  const loaded = loadApp({
+    realtimeEnabled: true,
+    sharedTransportRequired: true,
+    transportReady: true,
+  });
+
+  try {
+    const result = await requestJson(loaded.module, { path: "/api/health/live" });
+    assert.equal(result.statusCode, 200);
+    assert.equal(result.body.realtime.enabled, true);
+    assert.equal(result.body.realtime.workerId, realtimeStatusFixture.workerId);
+    assert.equal(result.body.realtime.activeConnections, 7);
+    assert.equal(typeof result.body.observability, "object");
+  } finally {
+    loaded.restore();
+  }
+});
+
+test("health responses do not advertise the application framework", async () => {
+  const loaded = loadApp({
+    realtimeEnabled: false,
+    sharedTransportRequired: false,
+    transportReady: false,
+  });
+
+  try {
+    const result = await requestJson(loaded.module, {
+      path: "/api/health/live",
+      ...publicCaller,
+    });
+    assert.equal(result.headers["x-powered-by"], undefined);
   } finally {
     loaded.restore();
   }
