@@ -6,6 +6,29 @@ Owns tournament identity, public/admin mapping, child configuration, team
 registration, capacity, payment reservations, roster rules, and brackets.
 Each tournament remains independently operable when linked to an event.
 
+## Files
+
+`tournament.service.js` and `registration.service.js` are the public surfaces;
+the code lives in siblings:
+
+- `tournament-shared.js` — status and mode constants, date parsing, slugs, and
+  the registration-count and asset selects.
+- `tournament-mapping.js` — public and admin tournament mappers, Challonge embed
+  URLs, public ordering.
+- `tournament-schedule.js` — parsing an uploaded or edited schedule sheet.
+- `tournament-input.js` — validating an admin's tournament form.
+- `tournament-public.service.js` — the public list, a tournament's page, and a
+  user's registration status.
+- `tournament-admin.service.js` — admin list, create, update, delete, and
+  attaching a tournament to an event.
+- `registration-shared.js` — the serializable-transaction retry and the helpers
+  both registration paths use.
+- `registration-validation.js` — configured fields, game identities, coaches,
+  connected Discord handles, and the team logo requirement.
+- `registration-create.service.js` — `createConfiguredRegistration`.
+- `registration-payment.service.js` — checkout, slot holds, resuming and
+  cancelling an unpaid registration.
+
 ## Event boundary
 
 `Tournament.seriesId` is nullable and `Tournament.series` uses `SetNull` on
