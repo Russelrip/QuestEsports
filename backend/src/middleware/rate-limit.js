@@ -107,6 +107,11 @@ const createRateLimiter = ({
         windowMs,
       });
 
+      // Remember the bucket this request consumed so a handler that later
+      // decides the request was legitimate can clear it via clearRateLimit.
+      req.rateLimitBuckets = req.rateLimitBuckets || {};
+      req.rateLimitBuckets[name] = key;
+
       const now = Date.now();
       const retryAfterSeconds = Math.max(
         Math.ceil((bucket.resetAt.getTime() - now) / 1000),
@@ -138,7 +143,36 @@ const createRateLimiter = ({
   };
 };
 
+// Drops the bucket a limiter consumed earlier in this request. Callers use it
+// once a request turns out to be legitimate, so an honest client is not held to
+// a budget that only exists to slow down abuse. Never throws: a request that has
+// already succeeded must not fail because the bucket could not be cleared.
+const clearRateLimit = async (req, name) => {
+  const key = req?.rateLimitBuckets?.[name];
+
+  if (!key) {
+    return false;
+  }
+
+  try {
+    const { count } = await prisma.rateLimitBucket.deleteMany({
+      where: { name, key },
+    });
+
+    delete req.rateLimitBuckets[name];
+
+    return count > 0;
+  } catch (error) {
+    logger.warn("Failed to clear a rate-limit bucket after a successful request.", {
+      error,
+      name,
+    });
+    return false;
+  }
+};
+
 module.exports = {
   createRateLimiter,
+  clearRateLimit,
   getClientIp,
 };

@@ -46,11 +46,43 @@ Only the SHA-256 token hash is stored in PostgreSQL. Native bearer requests must
 6. The backend sends the session cookie.
 7. The frontend stores the returned user object in `AuthProvider`.
 
+## Login Throttling
+
+`POST /api/login` and `POST /api/mobile/auth/login` sit behind two database-backed
+limiters, both over a 15-minute window:
+
+| Limiter | Key | Budget |
+| --- | --- | --- |
+| `auth-login-password-ip` | client IP | 50 |
+| `auth-login-password-identity` | client IP **and** submitted identity | 5 |
+
+The identity limiter is keyed by IP *and* identity together, never by identity
+alone. That is deliberate: a limiter keyed on the username would let anyone lock
+a known account out of the site by guessing at it from anywhere.
+
+A successful login clears its own identity bucket, so the budget of 5 counts
+*consecutive* failures rather than every attempt a person makes in a quarter of
+an hour. Someone who mistypes a password three times and then gets it right
+starts from zero again. The IP limiter is never cleared on success, because an
+attacker holding one valid account could otherwise reset their own budget at will.
+
+Both limiters run as middleware, ahead of the credential check. A client that
+exhausts the identity budget is rejected with `429` for the rest of the window
+even if the next password it submits is correct.
+
+Client IPs are only trustworthy when `TRUST_PROXY` matches the reverse-proxy hop
+count; the backend refuses to boot in production when it is unset, because every
+visitor would otherwise share the Nginx hop's bucket.
+
 ## Account Lockout
 
-- Failed password attempts increment `failedLoginCount`.
-- After `LOGIN_LOCKOUT_THRESHOLD` consecutive failures, the account is locked for `LOGIN_LOCKOUT_MINUTES`.
-- Successful login clears the failure counters and lockout timestamp.
+- Failed password attempts increment `failedLoginCount` and stamp `lastFailedLoginAt`.
+- Successful login clears the failure counters.
+- There is **no** durable per-account lock. `lockedUntil` is only ever cleared,
+  never set, and the counters exist for audit and alerting rather than
+  enforcement. Throttling is handled entirely by the limiters described above,
+  which stay keyed to the caller's IP so that one account cannot be denied
+  service by a third party.
 
 ## Session Rehydration
 
