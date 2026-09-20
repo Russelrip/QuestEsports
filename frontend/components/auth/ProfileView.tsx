@@ -1,7 +1,7 @@
 "use client";
 
 import { formatSriLankaDate, formatSriLankaDateTime } from "@/lib/date-time";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -35,6 +35,13 @@ import { type VetoRoom, vetoRequest } from "@/lib/veto";
 import { type MatchRoomSummary, roomRequest } from "@/lib/match-rooms";
 import { adminHomeFor } from "@/lib/staff-permissions";
 import { getMyGameAccounts, summarizeValorantConnection, type GameAccountList } from "@/lib/game-accounts";
+
+// How long the deep-linked jump keeps correcting itself while the page is
+// still growing under it. Long enough to cover the panel's own requests on a
+// slow connection, short enough that nobody meets a page that moves on its own.
+const GAME_ACCOUNTS_SETTLE_MS = 1500;
+// Any of these means a reader is driving now, so the jump stops correcting.
+const TAKEOVER_EVENTS = ["wheel", "touchstart", "keydown"] as const;
 
 const profileSchema = z.object({
   firstName: z.string().min(1, "First name is required."),
@@ -113,6 +120,9 @@ export default function ProfileView() {
   // tab; the panel reports each reload back so the two never disagree.
   const [gameAccounts, setGameAccounts] = useState<GameAccountList | null>(null);
   const [gameAccountsSettled, setGameAccountsSettled] = useState(false);
+  // Kept in a ref, not state: clearing a state flag here would re-run the
+  // effect and tear down the settling observer on its own first alignment.
+  const alignedGameAccountsRef = useRef(false);
   const [scrollToGameAccounts, setScrollToGameAccounts] = useState(false);
   const { data: teamsData, setData: setTeamsData, loading: teamsLoading, error: teamsError } = useTeams(Boolean(user));
   const showToast = useToastStore((state) => state.showToast);
@@ -201,14 +211,39 @@ export default function ProfileView() {
     // and would push it back out of view after the scroll; and for the panel
     // itself, which is not rendered until the signed-in view is.
     if (!scrollToGameAccounts || activeTab !== "account" || !gameAccountsSettled) return;
+    if (alignedGameAccountsRef.current) return;
     const panel = document.getElementById(GAME_ACCOUNTS_ANCHOR);
     if (!panel) return;
+    alignedGameAccountsRef.current = true;
+
     // Instant, not smooth: this is arriving at a link, not moving within the
     // page. The site sets `scroll-behavior: smooth` on the whole document, so
     // leaving it unsaid animates too. An animated jump only advances as frames
     // are drawn, and on a busy device it could leave the panel out of view.
-    panel.scrollIntoView({ behavior: "instant", block: "start" });
-    setScrollToGameAccounts(false);
+    const align = () => panel.scrollIntoView({ behavior: "instant", block: "start" });
+    align();
+
+    // One measurement is not enough. The header row above the panel and the
+    // panel's own two requests each land after this first jump and move the
+    // panel under it, so a slow load lands short of the target -- far enough
+    // to leave the heading off the top of the screen. Keep re-aligning while
+    // the page is still growing, then stop: after this the scroll belongs to
+    // whoever is reading.
+    const observer = new ResizeObserver(align);
+    observer.observe(document.body);
+    let settleTimer = 0;
+    const release = () => {
+      observer.disconnect();
+      window.clearTimeout(settleTimer);
+      for (const event of TAKEOVER_EVENTS) window.removeEventListener(event, release);
+    };
+    settleTimer = window.setTimeout(release, GAME_ACCOUNTS_SETTLE_MS);
+    // A reader who scrolls, or reaches for the keyboard, has taken over.
+    for (const event of TAKEOVER_EVENTS) {
+      window.addEventListener(event, release, { passive: true, once: true });
+    }
+
+    return release;
   }, [activeTab, scrollToGameAccounts, gameAccountsSettled, user]);
 
   if (isLoading) {
