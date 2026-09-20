@@ -11,8 +11,13 @@ caches what it needs.
 - `valorant.auth.js` — signed service tokens (HS256, `kid`/`iss`/`aud`/
   `operation_id`).
 - `valorant.mapper.js` — snake_case upstream → camelCase Quest projections.
-- `valorant.service.js` — bindings, discovery, import, series, finalize,
-  reconcile, and the operation ledger.
+- `valorant.service.js` — the admin service's public surface, re-exporting:
+  - `valorant-operations.js` — the operation ledger;
+  - `valorant-teams.service.js` — team bindings and discovery;
+  - `valorant-matches.service.js` — importing a match and its projection;
+  - `valorant-series.service.js` — series: create, games, preview, finalize;
+  - `valorant-reconcile.service.js` — reconciling a series and the report;
+  - `valorant-rankings.service.js` — rankings, rating history, team series.
 - `valorant.controller.js` — the admin surface under `/api/v1/admin/valorant/*`.
 - `valorant-public.service.js` / `valorant-public.controller.js` — the public
   read path.
