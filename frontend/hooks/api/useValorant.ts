@@ -6,14 +6,12 @@ import {
   fetchValorantLeaderboardBans,
   fetchValorantLeaderboardRegistrations,
   fetchValorantLeaderboardRemovals,
-  fetchValorantMatches,
   fetchValorantPreview,
   fetchValorantRankings,
   fetchValorantRatingHistory,
   fetchValorantReconciliation,
   fetchValorantSeries,
   fetchValorantSeriesList,
-  fetchValorantSeriesMatches,
   fetchValorantServerChecks,
   fetchValorantTeamSeries,
 } from "@/lib/valorant-api";
@@ -69,18 +67,6 @@ export function useValorantSeriesDetail(seriesId: string) {
 
 export function useValorantPreview(seriesId: string, enabled: boolean) {
   return useApiQuery(["valorant-preview", seriesId], () => fetchValorantPreview(seriesId), {
-    enabled: enabled && Boolean(seriesId),
-  });
-}
-
-export function useValorantMatches(cursor: string | null, enabled: boolean) {
-  return useApiQuery(["valorant-matches", cursor ?? ""], () => fetchValorantMatches({ cursor: cursor ?? undefined, limit: 20 }), {
-    enabled,
-  });
-}
-
-export function useValorantSeriesMatches(seriesId: string, enabled: boolean) {
-  return useApiQuery(["valorant-series-matches", seriesId], () => fetchValorantSeriesMatches(seriesId), {
     enabled: enabled && Boolean(seriesId),
   });
 }

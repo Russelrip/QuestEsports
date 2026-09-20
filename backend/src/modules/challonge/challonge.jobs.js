@@ -2,22 +2,12 @@ const { env } = require("../../config/env");
 const { logger } = require("../../lib/logger");
 const { enqueueJob, CHALLONGE_SYNC_JOB_NAME } = require("../../lib/jobs");
 const {
-  syncChallongeIntegration,
   claimDueIntegrationsForQueue,
   recordChallongeSkippedAttempt,
 } = require("./challonge.service");
 
 let schedulerInterval = null;
 let schedulerRunning = false;
-
-const processChallongeSyncJob = async (payload = {}) => {
-  if (!payload.integrationId) throw new Error("Challonge sync job is missing integrationId.");
-  return syncChallongeIntegration({
-    integrationId: payload.integrationId,
-    trigger: "scheduled",
-    requestId: payload.requestId || null,
-  });
-};
 
 const runChallongeSchedulerTick = async () => {
   if (schedulerRunning || !env.CHALLONGE_ENABLED || !env.CHALLONGE_AUTOMATIC_SYNC_ENABLED) return;
@@ -61,7 +51,6 @@ const stopChallongeScheduler = async () => {
 
 module.exports = {
   CHALLONGE_SYNC_JOB_NAME,
-  processChallongeSyncJob,
   runChallongeSchedulerTick,
   startChallongeScheduler,
   stopChallongeScheduler,

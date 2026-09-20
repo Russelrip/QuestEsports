@@ -115,15 +115,6 @@ const invalidateTags = async (tags) => {
   }));
 };
 
-const cacheStatus = () => ({
-  driver: env.CACHE_DRIVER,
-  entries: env.CACHE_DRIVER === "memory" ? memory.size : undefined,
-  ...metrics,
-  hitRate: metrics.hits + metrics.misses
-    ? Number((metrics.hits / (metrics.hits + metrics.misses)).toFixed(4))
-    : 0,
-});
-
 module.exports = {
   resolveKey,
   getResolved,
@@ -131,5 +122,4 @@ module.exports = {
   get,
   set,
   invalidateTags,
-  cacheStatus,
 };

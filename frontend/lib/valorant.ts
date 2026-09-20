@@ -156,17 +156,6 @@ export const buildValorantTrackerProfileUrl = (name: string, tag: string): strin
   return `https://tracker.gg/valorant/profile/riot/${encodeURIComponent(`${trimmedName}#${trimmedTag}`)}/overview`;
 };
 
-export const teamValuesFromSide = <T>(
-  anchorASide: ValorantSide | null | undefined,
-  onRed: T,
-  onBlue: T,
-): { teamA: T; teamB: T } | null =>
-  anchorASide === "red"
-    ? { teamA: onRed, teamB: onBlue }
-    : anchorASide === "blue"
-      ? { teamA: onBlue, teamB: onRed }
-      : null;
-
 export const mapMatchSummary = (raw: {
   id: string; henrik_match_id: string; affinity: string; platform: string; map_name: string;
   mode?: string | null; queue?: string | null; started_at: string; is_completed: boolean;

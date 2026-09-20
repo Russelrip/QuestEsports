@@ -92,11 +92,6 @@ export const importValorantMatch = (henrikMatchId: string, affinity = "eu") =>
     json: { henrikMatchId, affinity },
   });
 
-export const fetchValorantMatchByHenrikId = (henrikMatchId: string) =>
-  valorantAdminRequest<{ match: MatchDetail }>(
-    `/api/v1/admin/valorant/matches/by-henrik-id/${encodeURIComponent(henrikMatchId)}`
-  );
-
 export const fetchValorantMatches = async (filters: { cursor?: string; limit?: number } = {}) => {
   const params = new URLSearchParams();
   if (filters.cursor) params.set("cursor", filters.cursor);
