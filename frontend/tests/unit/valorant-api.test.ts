@@ -193,14 +193,14 @@ describe("VALORANT public leaderboard API client", () => {
       success: true,
       data: {
         entries: [
-          { puuid: "p-1", name: "Sahan", tag: "QST", rank: 4 },
-          { puuid: "p-2", name: "Sahani", tag: "LKA", rank: 12 },
+          { name: "Sahan", tag: "QST", rank: 4 },
+          { name: "Sahani", tag: "LKA", rank: 12 },
         ],
       },
     } as never);
     const { searchPublicValorantLeaderboard } = await import("../../lib/valorant-api");
     const result = await searchPublicValorantLeaderboard("sahan", 10);
-    expect(result.map((entry) => entry.puuid)).toEqual(["p-1", "p-2"]);
+    expect(result.map((entry) => `${entry.name}#${entry.tag}`)).toEqual(["Sahan#QST", "Sahani#LKA"]);
     expect(result[0].rank).toBe(4);
     expect(mockedFetchApiJson).toHaveBeenCalledWith(
       "/api/v1/valorant/leaderboard/search?q=sahan&limit=10",

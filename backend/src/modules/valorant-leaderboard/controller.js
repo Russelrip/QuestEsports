@@ -32,11 +32,19 @@ const parsePositiveInt = (value, fallback) => {
 const respond = (res, data) =>
   res.status(200).json({ success: true, data, meta: { serverNow: new Date().toISOString() } });
 
+// The public board shows Riot ID and Discord handle; the PUUID is an internal
+// key the page never renders, so it stays off the anonymous responses.
+const toPublicEntry = ({ puuid: _puuid, ...entry }) => entry;
+
+// Matches the page size the site renders. A larger cap only made it easier to
+// pull the whole board in one or two requests.
+const PUBLIC_PER_PAGE_MAX = 50;
+
 const getLeaderboard = asyncHandler(async (req, res) => {
   const page = Math.max(1, parsePositiveInt(req.query.page, 1));
-  const perPage = clamp(parsePositiveInt(req.query.per_page, 50), 1, 200);
+  const perPage = clamp(parsePositiveInt(req.query.per_page, 50), 1, PUBLIC_PER_PAGE_MAX);
   const data = await listLeaderboard({ page, perPage });
-  respond(res, data);
+  respond(res, { ...data, entries: data.entries.map(toPublicEntry) });
 });
 
 const SEARCH_LIMIT_MAX = 50;
@@ -45,7 +53,7 @@ const SEARCH_LIMIT_DEFAULT = 25;
 const searchLeaderboard = asyncHandler(async (req, res) => {
   const query = String(req.query.q || "").trim();
   const limit = clamp(parsePositiveInt(req.query.limit, SEARCH_LIMIT_DEFAULT), 1, SEARCH_LIMIT_MAX);
-  const entries = query ? await searchLeaderboardPlayers(query, { limit }) : [];
+  const entries = query ? (await searchLeaderboardPlayers(query, { limit })).map(toPublicEntry) : [];
   // `entry` is the legacy single-result field, kept so older clients keep working.
   respond(res, { entries, entry: entries[0] ?? null });
 });

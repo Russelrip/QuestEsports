@@ -213,8 +213,18 @@ async def _request_validation_error_handler(request: Request, exc: RequestValida
 
 
 def create_app() -> FastAPI:
-    setup_logging(get_settings().log_level)
-    app = FastAPI(title="VALORANT Platform Backend", version="0.1.0")
+    settings = get_settings()
+    setup_logging(settings.log_level)
+    # api.valorantsl.com is public, so interactive docs and the schema would
+    # hand anyone a full route map. Only non-production environments serve them.
+    docs_enabled = settings.app_env != "production"
+    app = FastAPI(
+        title="VALORANT Platform Backend",
+        version="0.1.0",
+        docs_url="/docs" if docs_enabled else None,
+        redoc_url="/redoc" if docs_enabled else None,
+        openapi_url="/openapi.json" if docs_enabled else None,
+    )
     app.add_middleware(WriteFreezeMiddleware)
     # add_middleware prepends, so the last registration is outermost:
     # request-id runs first, logging records both normal and frozen requests,

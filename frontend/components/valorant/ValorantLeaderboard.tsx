@@ -248,7 +248,7 @@ export default function ValorantLeaderboard({
                   <LeaderboardTableHeader />
                   <tbody>
                     {searchResults.map((entry) => (
-                      <LeaderboardRow key={entry.puuid} entry={entry} rank={entry.rank} term={term} />
+                      <LeaderboardRow key={`${entry.name}#${entry.tag}`} entry={entry} rank={entry.rank} term={term} />
                     ))}
                   </tbody>
                 </table>
@@ -283,7 +283,7 @@ export default function ValorantLeaderboard({
                   <tbody>
                     {entries.map((entry, index) => (
                       <LeaderboardRow
-                        key={entry.puuid}
+                        key={`${entry.name}#${entry.tag}`}
                         entry={entry}
                         rank={(page - 1) * perPage + index + 1}
                       />
