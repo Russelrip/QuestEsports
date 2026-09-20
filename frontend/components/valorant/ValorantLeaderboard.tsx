@@ -248,7 +248,10 @@ export default function ValorantLeaderboard({
                   <LeaderboardTableHeader />
                   <tbody>
                     {searchResults.map((entry) => (
-                      <LeaderboardRow key={`${entry.name}#${entry.tag}`} entry={entry} rank={entry.rank} term={term} />
+                      // Riot ID identifies a row now that the public API leaves
+                      // the PUUID out, and the rank keeps the key unique while a
+                      // rename has two rows briefly claiming the same Riot ID.
+                      <LeaderboardRow key={`${entry.rank}:${entry.name}#${entry.tag}`} entry={entry} rank={entry.rank} term={term} />
                     ))}
                   </tbody>
                 </table>
@@ -283,7 +286,7 @@ export default function ValorantLeaderboard({
                   <tbody>
                     {entries.map((entry, index) => (
                       <LeaderboardRow
-                        key={`${entry.name}#${entry.tag}`}
+                        key={`${(page - 1) * perPage + index + 1}:${entry.name}#${entry.tag}`}
                         entry={entry}
                         rank={(page - 1) * perPage + index + 1}
                       />
