@@ -10,6 +10,7 @@ const rateLimitPath = path.join(__dirname, "../src/middleware/rate-limit.js");
 const prismaModulePath = path.join(__dirname, "../src/lib/prisma.js");
 const generatedPrismaPath = path.join(__dirname, "../src/generated/prisma/index.js");
 const loggerModulePath = path.join(__dirname, "../src/lib/logger.js");
+const httpErrorModulePath = path.join(__dirname, "../src/lib/http-error.js");
 
 const createPrismaMock = () => {
   const buckets = new Map();
@@ -19,6 +20,14 @@ const createPrismaMock = () => {
   const rateLimitBucket = {
     deleteMany: async ({ where }) => {
         let count = 0;
+
+        if (where.name && where.key) {
+          if (buckets.delete(getCompositeKey(where.name, where.key))) {
+            count += 1;
+          }
+          return { count };
+        }
+
         for (const [key, bucket] of buckets.entries()) {
           if (bucket.resetAt < where.resetAt.lt) {
             buckets.delete(key);
@@ -89,16 +98,21 @@ const createReqResNext = (ip = "203.0.113.42") => {
   };
 };
 
-test("createRateLimiter persists hashed keys and blocks after the configured threshold", async () => {
-  const prismaMock = createPrismaMock();
-  const { module: rateLimit, restore } = loadModuleWithMocks(rateLimitPath, {
+// The loader evicts the module under test and its children from the require
+// cache, so http-error is pinned to this file's copy of HttpError. Without it,
+// whichever test happens to run second gets a fresh class and `instanceof`
+// silently stops matching.
+const loadRateLimit = (prismaMock, { PrismaClientKnownRequestError } = {}) =>
+  loadModuleWithMocks(rateLimitPath, {
     [prismaModulePath]: { prisma: prismaMock.prisma },
     [generatedPrismaPath]: {
       Prisma: {
         TransactionIsolationLevel: {
           Serializable: "Serializable",
         },
-        PrismaClientKnownRequestError: class PrismaClientKnownRequestError extends Error {},
+        PrismaClientKnownRequestError:
+          PrismaClientKnownRequestError ||
+          class PrismaClientKnownRequestError extends Error {},
       },
     },
     [loggerModulePath]: {
@@ -108,7 +122,118 @@ test("createRateLimiter persists hashed keys and blocks after the configured thr
         error: () => {},
       },
     },
+    [httpErrorModulePath]: { HttpError },
   });
+
+test("clearRateLimit drops the bucket a request consumed so the next one starts fresh", async () => {
+  const prismaMock = createPrismaMock();
+  const { module: rateLimit, restore } = loadRateLimit(prismaMock);
+
+  try {
+    const middleware = rateLimit.createRateLimiter({
+      name: "auth-login-password-identity",
+      windowMs: 60_000,
+      maxRequests: 3,
+      message: "Too many login attempts.",
+    });
+
+    // Two wrong guesses, both inside the budget.
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const { req, res, next } = createReqResNext();
+      await middleware(req, res, next);
+      assert.equal(req._nextError, null);
+    }
+
+    // The third attempt is the one that succeeds, and clears its own bucket.
+    const success = createReqResNext();
+    await middleware(success.req, success.res, success.next);
+    assert.equal(success.req._nextError, null);
+    assert.equal(
+      await rateLimit.clearRateLimit(success.req, "auth-login-password-identity"),
+      true
+    );
+    assert.equal(prismaMock.buckets.size, 0);
+
+    // Without the clear, the next two requests would be the fourth and fifth in
+    // the window and the second of them would be rejected. They now start over.
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const { req, res, next } = createReqResNext();
+      await middleware(req, res, next);
+      assert.equal(req._nextError, null);
+    }
+    assert.equal(Array.from(prismaMock.buckets.values())[0].count, 2);
+  } finally {
+    restore();
+  }
+});
+
+test("clearRateLimit leaves other limiters' buckets alone", async () => {
+  const prismaMock = createPrismaMock();
+  const { module: rateLimit, restore } = loadRateLimit(prismaMock);
+
+  try {
+    const ipMiddleware = rateLimit.createRateLimiter({
+      name: "auth-login-password-ip",
+      windowMs: 60_000,
+      maxRequests: 50,
+      message: "Too many login attempts from this network.",
+    });
+    const identityMiddleware = rateLimit.createRateLimiter({
+      name: "auth-login-password-identity",
+      windowMs: 60_000,
+      maxRequests: 5,
+      message: "Too many login attempts.",
+    });
+
+    const { req, res, next } = createReqResNext();
+    await ipMiddleware(req, res, next);
+    await identityMiddleware(req, res, next);
+    assert.equal(prismaMock.buckets.size, 2);
+
+    await rateLimit.clearRateLimit(req, "auth-login-password-identity");
+
+    const remaining = Array.from(prismaMock.buckets.values());
+    assert.equal(remaining.length, 1);
+    assert.equal(remaining[0].name, "auth-login-password-ip");
+  } finally {
+    restore();
+  }
+});
+
+test("clearRateLimit is a no-op when the limiter never ran, and survives database failures", async () => {
+  const prismaMock = createPrismaMock();
+  const { module: rateLimit, restore } = loadRateLimit(prismaMock);
+
+  try {
+    const middleware = rateLimit.createRateLimiter({
+      name: "auth-login-password-identity",
+      windowMs: 60_000,
+      maxRequests: 5,
+      message: "Too many login attempts.",
+    });
+
+    assert.equal(await rateLimit.clearRateLimit({}, "auth-login-password-identity"), false);
+
+    const { req, res, next } = createReqResNext();
+    await middleware(req, res, next);
+
+    prismaMock.prisma.rateLimitBucket.deleteMany = async () => {
+      throw new Error("connection lost");
+    };
+
+    // A login that already succeeded must not fail because of the cleanup.
+    assert.equal(
+      await rateLimit.clearRateLimit(req, "auth-login-password-identity"),
+      false
+    );
+  } finally {
+    restore();
+  }
+});
+
+test("createRateLimiter persists hashed keys and blocks after the configured threshold", async () => {
+  const prismaMock = createPrismaMock();
+  const { module: rateLimit, restore } = loadRateLimit(prismaMock);
 
   try {
     const middleware = rateLimit.createRateLimiter({
@@ -145,24 +270,7 @@ test("createRateLimiter persists hashed keys and blocks after the configured thr
 
 test("createRateLimiter resets counts after the window expires", async () => {
   const prismaMock = createPrismaMock();
-  const { module: rateLimit, restore } = loadModuleWithMocks(rateLimitPath, {
-    [prismaModulePath]: { prisma: prismaMock.prisma },
-    [generatedPrismaPath]: {
-      Prisma: {
-        TransactionIsolationLevel: {
-          Serializable: "Serializable",
-        },
-        PrismaClientKnownRequestError: class PrismaClientKnownRequestError extends Error {},
-      },
-    },
-    [loggerModulePath]: {
-      logger: {
-        warn: () => {},
-        info: () => {},
-        error: () => {},
-      },
-    },
-  });
+  const { module: rateLimit, restore } = loadRateLimit(prismaMock);
 
   try {
     const middleware = rateLimit.createRateLimiter({
@@ -212,23 +320,8 @@ test("createRateLimiter retries transient atomic-operation timeouts", async () =
     return baseQueryRaw(...args);
   };
 
-  const { module: rateLimit, restore } = loadModuleWithMocks(rateLimitPath, {
-    [prismaModulePath]: { prisma: prismaMock.prisma },
-    [generatedPrismaPath]: {
-      Prisma: {
-        TransactionIsolationLevel: {
-          Serializable: "Serializable",
-        },
-        PrismaClientKnownRequestError,
-      },
-    },
-    [loggerModulePath]: {
-      logger: {
-        warn: () => {},
-        info: () => {},
-        error: () => {},
-      },
-    },
+  const { module: rateLimit, restore } = loadRateLimit(prismaMock, {
+    PrismaClientKnownRequestError,
   });
 
   try {

@@ -4,6 +4,8 @@ const { HttpError } = require("../../lib/http-error");
 const { logger } = require("../../lib/logger");
 const { recordAudit, requestAuditContext } = require("../../lib/audit");
 const { normalizeSafeRedirectPath } = require("../../lib/validation");
+const { clearRateLimit } = require("../../middleware/rate-limit");
+const { PASSWORD_LOGIN_IDENTITY_LIMIT } = require("./auth.rate-limits");
 const { listEffectivePermissions } = require("../permissions/staff-permission.service");
 const {
   buildExpiredOAuthFlowCookie,
@@ -192,6 +194,8 @@ const login = asyncHandler(async (req, res) => {
     },
   });
 
+  await clearRateLimit(req, PASSWORD_LOGIN_IDENTITY_LIMIT);
+
   const { userId, rememberMe } = authResult;
   const user = await completeAuthenticatedLogin({
     userId,
@@ -216,6 +220,8 @@ const mobileLogin = asyncHandler(async (req, res) => {
       client: "quest-admin-android",
     },
   });
+
+  await clearRateLimit(req, PASSWORD_LOGIN_IDENTITY_LIMIT);
 
   assertMobileAdmin(authResult.user);
 
