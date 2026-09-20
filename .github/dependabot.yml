@@ -15,3 +15,13 @@ updates:
         patterns: ["*"]
     commit-message:
       prefix: chore(docker)
+    # Digest and minor refreshes are the point of this config; a major jump is
+    # not. Node's odd-numbered lines (25, 27) are Current releases that never
+    # become LTS, and CI pins NODE_VERSION separately in ci.yml -- so taking a
+    # major here would ship containers on a runtime nothing in CI tested, on a
+    # line with no long-term security support. Bump the major deliberately
+    # instead, when the next even line goes LTS, changing the Dockerfiles and
+    # ci.yml together. Node 26 is the next one to move to.
+    ignore:
+      - dependency-name: "node"
+        update-types: ["version-update:semver-major"]
