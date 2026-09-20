@@ -478,9 +478,13 @@ channel must agree; never infer this from the number of healthy HTTP responses
 alone. Configuration reports only the configured base ID, not the effective ID
 — verify the actual effective IDs exposed by each worker's live health endpoint:
 
+Run this on the host against each worker's loopback publication. The public
+hostnames answer with `realtime.enabled` alone, because worker identity and
+connection counts are withheld from anything arriving through nginx.
+
 ```bash
-WORKER_A_HEALTH_URL=https://api-a.example.com/api/health/live
-WORKER_B_HEALTH_URL=https://api-b.example.com/api/health/live
+WORKER_A_HEALTH_URL=http://127.0.0.1:5001/api/health/live
+WORKER_B_HEALTH_URL=http://127.0.0.1:5002/api/health/live
 A_ID="$(curl --fail --silent --show-error "$WORKER_A_HEALTH_URL" | node -e '
   const body = JSON.parse(require("fs").readFileSync(0, "utf8"));
   const id = body?.realtime?.workerId;
@@ -982,7 +986,13 @@ next release starts the service again regardless.
 Health endpoint semantics are fixed: `/api/health/live` is liveness only;
 `/api/health` and `/api/health/ready` are readiness aliases that check the
 database and storage, plus clustered realtime when enabled, and may return
-`503` during maintenance or dependency failure. `/api/openapi.json` is not
+`503` during maintenance or dependency failure. Status codes are the same for
+every caller, so external uptime monitoring is unaffected; the response *body*
+is not. Worker identity, connection and client counts, observability queue and
+circuit-breaker counters, and the per-dependency `readiness` object go only to
+callers without an `X-Forwarded-For` header — the release gate, the container
+healthcheck, and anyone on the host. Diagnose from the loopback publication,
+never from `https://api.questesports.lk`. `/api/openapi.json` is not
 served in production (it answers `404`). During maintenance,
 liveness remains available while both readiness aliases intentionally return
 the maintenance `503`.

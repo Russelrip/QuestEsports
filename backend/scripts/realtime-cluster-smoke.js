@@ -38,6 +38,9 @@ const responseText = async (response) => {
   }
 };
 
+// Point the worker URLs at the loopback publications, not the public
+// hostnames: /api/health/live withholds realtime.workerId from any caller that
+// arrives with an X-Forwarded-For header, which nginx always sets.
 const fetchEffectiveWorkerId = async (label, workerUrl) => {
   const response = await fetch(withApiPath(workerUrl, "/api/health/live"), {
     headers: { Accept: "application/json" },

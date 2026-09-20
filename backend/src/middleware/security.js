@@ -161,7 +161,16 @@ const protectAgainstCsrf = (req, res, next) => {
   next();
 };
 
+// Health answers are split by how the caller reached us. Nginx sets
+// X-Forwarded-For on every location that proxies to the API, and Compose
+// publishes the API on 127.0.0.1 only, so a request without that header did
+// not come through the public edge: it is the release gate, the container
+// healthcheck, or someone already on the host. Detail is safe for them and
+// is a deployment map for anyone else.
+const isInternalRequest = (req) => !req.headers["x-forwarded-for"];
+
 module.exports = {
+  isInternalRequest,
   protectAgainstCsrf,
   requireAllowedApiOrigin,
   setSecurityHeaders,

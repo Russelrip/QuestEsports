@@ -71,7 +71,10 @@ both `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` on every worker.
 The memory cache is valid only for a single API process.
 
 `GET /api/health/live` exposes the non-secret effective
-`realtime.workerId` value. Use that live payload, rather than `pm2 env`, to
+`realtime.workerId` value to internal callers only — a request carrying
+`X-Forwarded-For`, which nginx adds to everything it proxies, gets
+`realtime.enabled` and nothing else. Query the loopback publication
+(`http://127.0.0.1:5001`) and use that live payload, rather than `pm2 env`, to
 verify the process PID/UUID suffix and confirm that two workers report distinct
 effective identities.
 

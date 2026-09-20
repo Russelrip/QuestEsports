@@ -329,3 +329,39 @@ test("security headers include API CSP and production transport protection", () 
     productionLoad.restore();
   }
 });
+
+test("internal callers are only those that did not arrive through the public edge", async () => {
+  const { module: security, restore } = loadSecurityMiddleware();
+
+  try {
+    // The release gate and the container healthcheck reach the loopback
+    // publication directly, so nothing has appended a forwarding chain.
+    assert.equal(
+      security.isInternalRequest(buildRequest({ path: "/api/health/ready" })),
+      true,
+    );
+    // Nginx sets this on every location that proxies to the API.
+    assert.equal(
+      security.isInternalRequest(
+        buildRequest({
+          path: "/api/health/ready",
+          headers: { "x-forwarded-for": "203.0.113.10" },
+        }),
+      ),
+      false,
+    );
+    // A spoofed chain from outside still reaches us with nginx's own append,
+    // so a caller cannot talk its way back into the detailed payload.
+    assert.equal(
+      security.isInternalRequest(
+        buildRequest({
+          path: "/api/health/live",
+          headers: { "x-forwarded-for": "127.0.0.1, 203.0.113.10" },
+        }),
+      ),
+      false,
+    );
+  } finally {
+    restore();
+  }
+});
