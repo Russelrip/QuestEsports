@@ -12,6 +12,7 @@ const observabilityMiddlewarePath = path.join(
 );
 const envPath = path.join(__dirname, "../src/config/env.js");
 const transportPath = path.join(__dirname, "../src/lib/observability-transport.js");
+const { redactRemote } = require("../src/lib/logger");
 
 test("request observability middleware assigns and returns a request id", async () => {
   const { module: middleware, restore } = loadModuleWithMocks(
@@ -164,10 +165,12 @@ test("monitoring capture ships webhook events with request context", async () =>
     },
     [loggerPath]: {
       redact: (value) => value,
+      sanitizeRemotePayload: redactRemote,
       logger: {
         error: (message, metadata) => loggedErrors.push({ message, metadata }),
         warn: (message, metadata) => loggedWarnings.push({ message, metadata }),
       },
+      localWarn: (message, metadata) => loggedWarnings.push({ message, metadata }),
     },
     [transportPath]: {
       schedulePostJson: (options) => {
@@ -178,7 +181,11 @@ test("monitoring capture ships webhook events with request context", async () =>
   });
 
   try {
-    monitoring.captureException(new Error("boom"), {
+    const error = new Error("boom");
+    error.code = "UPSTREAM_FAILURE";
+    error.response = { body: "raw upstream response" };
+    error.body = "raw upstream body";
+    monitoring.captureException(error, {
       requestId: "req-123",
       path: "/api/test",
       sourceErrorCode: "P2024",
@@ -191,6 +198,12 @@ test("monitoring capture ships webhook events with request context", async () =>
     assert.equal(shippedPayloads[0].token, "secret");
     assert.equal(shippedPayloads[0].payload.context.requestId, "req-123");
     assert.equal(shippedPayloads[0].payload.type, "exception");
+    assert.equal(loggedErrors[0].metadata.error.stack, error.stack);
+    assert.equal(shippedPayloads[0].payload.error.name, "Error");
+    assert.equal(shippedPayloads[0].payload.error.code, "UPSTREAM_FAILURE");
+    assert.equal(shippedPayloads[0].payload.error.stack, undefined);
+    assert.equal(shippedPayloads[0].payload.error.response, undefined);
+    assert.equal(shippedPayloads[0].payload.error.body, undefined);
     assert.equal(shippedPayloads[1].url, "https://discord.com/api/webhooks/123/secret");
     assert.equal(shippedPayloads[1].payload.allowed_mentions.parse.length, 0);
     assert.equal(shippedPayloads[1].payload.embeds[0].title, "Backend exception");
@@ -198,6 +211,9 @@ test("monitoring capture ships webhook events with request context", async () =>
     assert.ok(shippedPayloads[1].payload.embeds[0].fields.some(
       (field) => field.name === "Source code" && field.value === "P2024"
     ));
+    shippedPayloads.forEach(({ onError }) => onError(new Error("collector unavailable")));
+    assert.equal(shippedPayloads.length, 2);
+    assert.equal(loggedWarnings.length, 2);
   } finally {
     restore();
   }
@@ -205,6 +221,7 @@ test("monitoring capture ships webhook events with request context", async () =>
 
 test("logger redacts sensitive fields before writing log payloads", async () => {
   const consoleMessages = [];
+  const shippedPayloads = [];
   const originalConsoleLog = console.log;
   const originalConsoleError = console.error;
 
@@ -221,11 +238,21 @@ test("logger redacts sensitive fields before writing log payloads", async () => 
       },
     },
     [transportPath]: {
-      schedulePostJson: () => false,
+      schedulePostJson: (options) => {
+        shippedPayloads.push(options);
+        return true;
+      },
     },
   });
 
   try {
+    const upstreamError = new Error(
+      "Request failed at /verify-email?token=verification-token",
+    );
+    upstreamError.code = "UPSTREAM_FAILURE";
+    upstreamError.response = { body: "raw upstream body" };
+    upstreamError.body = "raw upstream body";
+
     loggerModule.logger.info("Sensitive log", {
       password: "secret-password",
       code: "oauth-code",
@@ -237,9 +264,7 @@ test("logger redacts sensitive fields before writing log payloads", async () => 
       nested: {
         authToken: "abc123",
       },
-      error: new Error(
-        "Request failed at /verify-email?token=verification-token"
-      ),
+      error: upstreamError,
     });
 
     assert.equal(consoleMessages.length, 1);
@@ -259,6 +284,21 @@ test("logger redacts sensitive fields before writing log payloads", async () => 
     );
     assert.doesNotMatch(payload.error.message, /verification-token/);
     assert.doesNotMatch(payload.error.stack, /verification-token/);
+    assert.equal(payload.error.stack, upstreamError.stack.replace(
+      /verification-token/g,
+      "[REDACTED]",
+    ));
+    assert.equal(shippedPayloads.length, 1);
+    const remotePayload = shippedPayloads[0].payload;
+    assert.equal(remotePayload.error.name, "Error");
+    assert.equal(remotePayload.error.message, payload.error.message);
+    assert.equal(remotePayload.error.code, "UPSTREAM_FAILURE");
+    assert.equal(remotePayload.error.stack, undefined);
+    assert.equal(remotePayload.error.response, undefined);
+    assert.equal(remotePayload.error.body, undefined);
+
+    shippedPayloads[0].onError(new Error("collector unavailable"));
+    assert.equal(shippedPayloads.length, 1);
   } finally {
     console.log = originalConsoleLog;
     console.error = originalConsoleError;
@@ -266,15 +306,60 @@ test("logger redacts sensitive fields before writing log payloads", async () => 
   }
 });
 
+test("remote sanitizer strips diagnostics only from error-like objects", () => {
+  const errorLike = {
+    name: "UpstreamError",
+    message: "Request failed?token=message-token",
+    stack: "stack?token=stack-token",
+    response: { status: 502 },
+    body: { token: "body-token" },
+    code: "oauth-code?token=code-token",
+  };
+
+  const sanitizedError = redactRemote(errorLike);
+  assert.equal(sanitizedError.message, "Request failed?token=[REDACTED]");
+  assert.equal(sanitizedError.code, "oauth-code?token=[REDACTED]");
+  assert.equal(sanitizedError.stack, undefined);
+  assert.equal(sanitizedError.response, undefined);
+  assert.equal(sanitizedError.body, undefined);
+
+  const sanitizedMetadata = redactRemote({
+    stack: "structured stack",
+    response: { status: 200 },
+    body: { result: "ok" },
+  });
+  assert.equal(sanitizedMetadata.stack, "structured stack");
+  assert.deepEqual(sanitizedMetadata.response, { status: 200 });
+  assert.deepEqual(sanitizedMetadata.body, { result: "ok" });
+
+  const nestedCode = redactRemote({
+    name: "UpstreamError",
+    message: "failed",
+    code: { token: "nested-token", details: { code: "oauth?token=secret" } },
+  });
+  assert.deepEqual(nestedCode.code, {
+    token: "[REDACTED]",
+    details: { code: "[REDACTED]" },
+  });
+});
+
 test("observability transport drains bounded work and opens its failure circuit", async () => {
   const originalFetch = global.fetch;
-  const { module: transport, restore } = loadModuleWithMocks(transportPath, {});
+  const { module: transport, restore } = loadModuleWithMocks(transportPath, {
+    [envPath]: {
+      env: {
+        OBSERVABILITY_ALLOWED_HOSTS: ["monitoring.example.com"],
+      },
+    },
+  });
   let requests = 0;
   let reportedErrors = 0;
+  const fetchOptions = [];
 
   try {
-    global.fetch = async () => {
+    global.fetch = async (_url, options) => {
       requests += 1;
+      fetchOptions.push(options);
       throw new Error("collector unavailable");
     };
 
@@ -290,12 +375,74 @@ test("observability transport drains bounded work and opens its failure circuit"
 
     assert.equal(await transport.flushObservabilityTransport({ timeoutMs: 1000 }), true);
     assert.equal(requests, 5);
+    assert.equal(fetchOptions[0].redirect, "error");
     assert.equal(reportedErrors, 5);
     assert.equal(transport.getObservabilityTransportStatus().circuitOpen, true);
     assert.equal(transport.schedulePostJson({
       url: "https://monitoring.example.com/events",
       payload: { afterCircuit: true },
     }), false);
+    assert.equal(transport.getObservabilityTransportStatus().dropped, 1);
+    assert.equal(
+      transport.isAllowedObservabilityUrl(
+        "https://monitoring.example.com/events",
+        ["monitoring.example.com"],
+      ),
+      true,
+    );
+    assert.equal(
+      transport.isAllowedObservabilityUrl(
+        "http://monitoring.example.com/events",
+        ["monitoring.example.com"],
+      ),
+      false,
+    );
+    assert.equal(
+      transport.isAllowedObservabilityUrl(
+        "https://user:pass@monitoring.example.com/events",
+        ["monitoring.example.com"],
+      ),
+      false,
+    );
+    assert.equal(
+      transport.isAllowedObservabilityUrl(
+        "https://monitoring.example.com.evil.example/events",
+        ["monitoring.example.com"],
+      ),
+      false,
+    );
+  } finally {
+    global.fetch = originalFetch;
+    restore();
+  }
+});
+
+test("observability transport rejects invalid scheduling on a closed transport", () => {
+  const originalFetch = global.fetch;
+  const { module: transport, restore } = loadModuleWithMocks(transportPath, {
+    [envPath]: {
+      env: {
+        OBSERVABILITY_ALLOWED_HOSTS: ["monitoring.example.com"],
+      },
+    },
+  });
+  let requests = 0;
+
+  try {
+    global.fetch = async () => {
+      requests += 1;
+      return { ok: true };
+    };
+
+    assert.equal(
+      transport.schedulePostJson({
+        url: "https://monitoring.example.com.evil.example/events",
+        payload: { invalid: true },
+      }),
+      false,
+    );
+    assert.equal(requests, 0);
+    assert.equal(transport.getObservabilityTransportStatus().queued, 0);
     assert.equal(transport.getObservabilityTransportStatus().dropped, 1);
   } finally {
     global.fetch = originalFetch;

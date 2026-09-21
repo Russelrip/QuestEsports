@@ -1,5 +1,10 @@
 const { env } = require("../config/env");
-const { logger, redact } = require("./logger");
+const {
+  logger,
+  redact,
+  sanitizeRemotePayload = redact,
+  localWarn,
+} = require("./logger");
 const { schedulePostJson } = require("./observability-transport");
 
 const summarizeError = (error) => {
@@ -44,6 +49,22 @@ const buildDiscordPayload = (payload) => {
   };
 };
 
+const reportTransportFailure = (message, metadata) => {
+  if (typeof localWarn === "function") {
+    localWarn(message, metadata);
+    return;
+  }
+
+  console.warn(
+    JSON.stringify({
+      level: "warn",
+      message,
+      timestamp: new Date().toISOString(),
+      ...redact(metadata),
+    }),
+  );
+};
+
 const captureException = (error, context = {}) => {
   const payload = {
     type: "exception",
@@ -54,15 +75,16 @@ const captureException = (error, context = {}) => {
     context: redact(context),
     error: summarizeError(error),
   };
+  const remotePayload = sanitizeRemotePayload(payload);
 
   logger.error("Monitoring capture", payload);
 
   schedulePostJson({
     url: env.MONITORING_WEBHOOK_URL,
     token: env.MONITORING_WEBHOOK_TOKEN,
-    payload,
+    payload: remotePayload,
     onError: (transportError) => {
-      logger.warn("Failed to ship monitoring event.", {
+      reportTransportFailure("Failed to ship monitoring event.", {
         error: transportError,
         originalError: error,
       });
@@ -71,9 +93,9 @@ const captureException = (error, context = {}) => {
 
   schedulePostJson({
     url: env.DISCORD_ALERT_WEBHOOK_URL,
-    payload: buildDiscordPayload(payload),
+    payload: sanitizeRemotePayload(buildDiscordPayload(payload)),
     onError: (transportError) => {
-      logger.warn("Failed to ship Discord exception alert.", {
+      reportTransportFailure("Failed to ship Discord exception alert.", {
         error: transportError,
         originalError: error,
       });

@@ -28,11 +28,18 @@ const redactString = (value) => {
 
 const redact = (value) => {
   if (value instanceof Error) {
+    const redactedCode =
+      value.code === undefined || value.code === null
+        ? undefined
+        : typeof value.code === "string"
+          ? redactString(value.code)
+          : redact(value.code);
+
     return {
       name: value.name,
       message: redactString(value.message),
       stack: redactString(value.stack),
-      ...(value.code ? { code: value.code } : {}),
+      ...(redactedCode !== undefined ? { code: redactedCode } : {}),
     };
   }
 
@@ -69,6 +76,88 @@ const redact = (value) => {
   }, {});
 };
 
+const isRemoteDiagnosticField = (key) => {
+  const normalizedKey = key.toLowerCase().replace(/[_-]/g, "");
+  return [
+    "stack",
+    "response",
+    "body",
+    "rawresponse",
+    "rawbody",
+    "responsebody",
+    "rawresponsebody",
+  ].includes(normalizedKey);
+};
+
+const isErrorLike = (value) =>
+  value instanceof Error ||
+  (value &&
+    typeof value === "object" &&
+    typeof value.message === "string" &&
+    ("name" in value || "stack" in value || "code" in value));
+
+const redactRemote = (value) => {
+  if (isErrorLike(value)) {
+    const result = {};
+    if (value.name !== undefined) result.name = redactString(value.name);
+    if (value.message !== undefined) {
+      result.message = redactString(value.message);
+    }
+    if (value.code !== undefined && value.code !== null) {
+      result.code =
+        typeof value.code === "string"
+          ? redactString(value.code)
+          : redactRemote(value.code);
+    }
+
+    for (const [key, nestedValue] of Object.entries(value)) {
+      const normalizedKey = key.toLowerCase();
+      if (
+        normalizedKey === "name" ||
+        normalizedKey === "message" ||
+        normalizedKey === "code" ||
+        isRemoteDiagnosticField(key)
+      ) {
+        continue;
+      }
+      result[key] = redactRemote(nestedValue);
+    }
+    return result;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map(redactRemote);
+  }
+
+  if (typeof value === "string") {
+    return redactString(value);
+  }
+
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+
+  return Object.entries(value).reduce((result, [key, nestedValue]) => {
+    const normalizedKey = key.toLowerCase();
+
+    if (
+      normalizedKey.includes("password") ||
+      normalizedKey.includes("secret") ||
+      normalizedKey.includes("token") ||
+      normalizedKey.includes("authorization") ||
+      normalizedKey.includes("cookie") ||
+      normalizedKey === "state" ||
+      (normalizedKey.includes("code") && typeof nestedValue === "string")
+    ) {
+      result[key] = REDACTED_VALUE;
+      return result;
+    }
+
+    result[key] = redactRemote(nestedValue);
+    return result;
+  }, {});
+};
+
 const shouldLog = (level) =>
   LOG_LEVEL_ORDER[level] >= LOG_LEVEL_ORDER[env.LOG_LEVEL];
 
@@ -79,6 +168,18 @@ const writeConsole = (level, serialized) => {
   }
 
   console.log(serialized);
+};
+
+const localWarn = (message, metadata = {}) => {
+  writeConsole(
+    "warn",
+    JSON.stringify({
+      level: "warn",
+      message,
+      timestamp: new Date().toISOString(),
+      ...redact(metadata),
+    }),
+  );
 };
 
 const buildPayload = (level, message, metadata = {}) => ({
@@ -96,16 +197,10 @@ const shipLog = (payload) => {
     token: env.LOG_DRAIN_TOKEN,
     payload: {
       type: "log",
-      ...payload,
+      ...redactRemote(payload),
     },
     onError: (error) => {
-      const fallback = JSON.stringify({
-        level: "warn",
-        message: "Failed to ship log entry to remote drain.",
-        timestamp: new Date().toISOString(),
-        error: redact(error),
-      });
-      console.warn(fallback);
+      localWarn("Failed to ship log entry to remote drain.", { error });
     },
   });
 };
@@ -132,5 +227,8 @@ const logger = {
 module.exports = {
   LOG_LEVEL_ORDER,
   redact,
+  redactRemote,
+  sanitizeRemotePayload: redactRemote,
+  localWarn,
   logger,
 };

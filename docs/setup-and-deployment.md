@@ -85,6 +85,8 @@ LOG_DRAIN_TOKEN=
 MONITORING_WEBHOOK_URL=
 MONITORING_WEBHOOK_TOKEN=
 DISCORD_ALERT_WEBHOOK_URL=
+# Comma-separated hostnames only; every configured observability destination must be listed here in production.
+OBSERVABILITY_ALLOWED_HOSTS=
 MAIL_PROVIDER=resend
 RESEND_API_KEY=
 MAIL_FROM=
@@ -588,6 +590,7 @@ LOG_DRAIN_URL=https://logs.example.com/ingest
 LOG_DRAIN_TOKEN=replace_with_log_ingest_token
 MONITORING_WEBHOOK_URL=https://monitoring.example.com/events
 MONITORING_WEBHOOK_TOKEN=replace_with_monitoring_token
+OBSERVABILITY_ALLOWED_HOSTS=logs.example.com,monitoring.example.com
 MAIL_PROVIDER=resend
 RESEND_API_KEY=re_your_resend_api_key
 MAIL_FROM="Quest Esports <no-reply@mail.questesports.lk>"
@@ -625,6 +628,7 @@ Notes:
 - Payment evidence accepts PNG, JPEG, and WebP screenshots; image receipts are decoded and re-encoded before storage.
 - `CORS_ORIGIN` can be a comma-separated allowlist.
 - `REQUIRE_API_ORIGIN=true` blocks API requests without an allowed `Origin` or `Referer`; use `CORS_ORIGIN=https://questesports.lk` for the public site domain.
+- `OBSERVABILITY_ALLOWED_HOSTS` is a comma-separated hostname-only allowlist, such as `logs.example.com,monitoring.example.com`; do not put URLs, paths, tokens, or credentials in it. Production requires every configured observability destination host to be listed.
 - The live production database is VPS PostgreSQL 17.11 in `quest-postgres`; `npm run prisma:security:verify` confirms all public tables use RLS and unneeded external Data API roles have no table privileges. Any Supabase Data API setting belongs to isolated test or historical context, not production rollback.
 - Install and verify the encrypted off-site backup timer before approving any production migration. Follow [Backup and Disaster Recovery](./backup-and-disaster-recovery.md) and the [Production Operations Runbook](./production-runbook.md#automated-encrypted-off-site-backups).
 - The full archive excludes the backend `.env`, OAuth/rclone material, Supabase-managed settings, and infrastructure credentials. Maintain and test a separate encrypted, access-controlled recovery process for those values.
@@ -670,6 +674,7 @@ Recommended production setup:
 
 - send stdout to your platform log collector even if you also configure `LOG_DRAIN_URL`
 - wire `MONITORING_WEBHOOK_URL` to your incident or error-ingestion pipeline
+- set `OBSERVABILITY_ALLOWED_HOSTS` to the hostname-only allowlist for every configured observability destination
 - include `requestId` when debugging user-reported failures
 
 ## Background Jobs
