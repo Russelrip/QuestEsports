@@ -6,7 +6,7 @@
 
 ## 1. Overview
 
-The VALORANT integration lets Quest admins run standalone competitive VALORANT series (BO1/BO3/BO5) with Riot-sourced results and ELO ratings. Quest Esports is the authenticated admin/BFF layer: the browser talks **only** to Quest Express, which proxies to a sibling FastAPI service (`valorant-platform-backend`) over a private internal API using a signed HMAC service token. FastAPI owns the canonical match data, series correctness/finalization, rating events, and rankings (it is the only component that talks to HenrikDev); Quest owns admin identity, permissions, UX, durable `SavedTeam`→VAL team bindings, and read projections. In production both services use the live VPS PostgreSQL 17.11 service (`quest-postgres` at `127.0.0.1:5433`) with **two owned schemas** (`public` for Quest Prisma, `valorant` for FastAPI) and separate runtime roles. Isolated local testing uses a dedicated Supabase test project instead.
+The VALORANT integration lets Quest admins run standalone competitive VALORANT series (BO1/BO3/BO5) with Riot-sourced results and ELO ratings. Quest Esports is the authenticated admin/BFF layer: the browser talks **only** to Quest Express, which proxies to a sibling FastAPI service (`valorant-platform-backend`) over a private internal API using a signed HMAC service token. FastAPI owns the canonical match data, series correctness/finalization, rating events, and rankings (it is the only component that talks to HenrikDev); Quest owns admin identity, permissions, UX, durable `SavedTeam`→VAL team bindings, and read projections. In production both services use the live VPS PostgreSQL 17.11 service (`quest-postgres:5432` on the private `quest-shared` network) with **two owned schemas** (`public` for Quest Prisma, `valorant` for FastAPI) and separate runtime roles. Isolated local testing uses a dedicated Supabase test project instead.
 
 ---
 
@@ -29,7 +29,7 @@ HenrikDev API   (only FastAPI speaks Henrik)
 ```
 
 - Quest Express is the **only** caller of FastAPI; FastAPI binds to a private interface / internal ingress, has no browser-facing CORS surface, and `GET /api/v1/health` is its only unauthenticated route (asserted by the route-inventory test, `2389a69`).
-- Production topology: browser → CDN/Next.js (Vercel) → Quest Express (private VPC / internal LB) → FastAPI (private network, IP allowlist, mTLS deferred) → VPS PostgreSQL 17.11 (`quest-postgres`, `127.0.0.1:5433`).
+- Production topology: browser → host Nginx → Next.js (VPS Compose) → Quest Express (private VPC / internal LB) → FastAPI (private network, IP allowlist, mTLS deferred) → VPS PostgreSQL 17.11 (`quest-postgres:5432`, private `quest-shared` network).
 
 ### 2.2 Two schemas, four roles
 

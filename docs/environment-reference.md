@@ -20,8 +20,9 @@ For runtime changes and incidents, see [Production Operations Runbook](./product
 ## Production database status
 
 The database cutover completed on **2026-08-31**. Quest and VALORANT currently
-use PostgreSQL **17.11** in VPS container `quest-postgres` at
-`127.0.0.1:5433`. Supabase is intact but stale and is not a rollback target.
+use PostgreSQL **17.11** in the VPS Compose container `quest-prod-postgres-1`,
+reached privately as `quest-postgres:5432` on the `quest-shared` network with
+no published host port. Supabase is intact but stale and is not a rollback target.
 No rehearsal was performed; the rehearsal gate was skipped and cannot be
 satisfied retroactively.
 

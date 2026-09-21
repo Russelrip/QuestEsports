@@ -17,8 +17,8 @@ Confirm current plan support against GitHub's [deployment environments documenta
 
 ## Current production database boundary
 
-Production is the VPS PostgreSQL **17.11** container `quest-postgres`, reached
-by the services at `127.0.0.1:5433`. The separate isolated staging Supabase
+Production is the VPS PostgreSQL **17.11** Compose container `quest-prod-postgres-1`,
+reached by the services privately as `quest-postgres:5432` on `quest-shared`. The separate isolated staging Supabase
 project is for contributor and test data only. The former production Supabase
 project is a different, stale project retained only as recovery material; it is
 not the staging project, is not a production rollback target, and is not used

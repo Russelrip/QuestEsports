@@ -107,6 +107,22 @@ jobs:
           chmod +x gradlew
           ./gradlew --no-daemon assembleRelease
 
+      # A replaced keystore secret still produces an APK that installs, but as a
+      # different app that cannot update the real one. Pin the certificate so a
+      # release is only published when it is signed by the expected key.
+      - name: Verify APK signing certificate
+        env:
+          EXPECTED_CERT_SHA256: ${{ vars.ANDROID_SIGNING_CERT_SHA256 }}
+        run: |
+          test -n "$EXPECTED_CERT_SHA256" || { echo "::error::Set ANDROID_SIGNING_CERT_SHA256 on the android-release environment."; exit 1; }
+          build_tools="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
+          "$build_tools/apksigner" verify --print-certs android/app/build/outputs/apk/release/app-release.apk > apksigner.txt
+          signers="$(grep -c '^Signer #[0-9]* certificate SHA-256 digest:' apksigner.txt || true)"
+          test "$signers" -eq 1 || { echo "::error::Expected exactly one APK signer, found $signers."; exit 1; }
+          actual="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' apksigner.txt | tr -d ':[:space:]' | tr 'A-F' 'a-f')"
+          expected="$(printf '%s' "$EXPECTED_CERT_SHA256" | tr -d ':[:space:]' | tr 'A-F' 'a-f')"
+          test "$actual" = "$expected" || { echo "::error::The APK signing certificate does not match the pinned fingerprint."; exit 1; }
+
       - name: Prepare release files
         run: |
           version="${GITHUB_REF_NAME#admin-v}"

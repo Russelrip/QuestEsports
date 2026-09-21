@@ -5,8 +5,9 @@ This guide covers local setup, environment configuration, and a practical produc
 ## Current production status
 
 The database cutover completed on **2026-08-31**. Quest and VALORANT currently
-use PostgreSQL **17.11** in VPS container `quest-postgres` at
-`127.0.0.1:5433`. Supabase is intact but stale and is not a rollback target.
+use PostgreSQL **17.11** in the VPS Compose container `quest-prod-postgres-1`,
+reached privately as `quest-postgres:5432` on the `quest-shared` network with
+no published host port. Supabase is intact but stale and is not a rollback target.
 No rehearsal was performed, and that gate cannot be satisfied retroactively.
 
 The current database container is an ad-hoc host deployment, not the target
@@ -343,8 +344,8 @@ Production requirement:
 - back up PostgreSQL and both storage roots as one consistency set
 
 The production PostgreSQL URLs must use `sslmode=verify-full` and the
-provisioned private CA. The current loopback `127.0.0.1:5433` ad-hoc runtime
-does not yet have that TLS material, so it is not the Compose-adoption state.
+provisioned private CA. The Compose `postgres` service mounts that server certificate and
+CA, so services reach `quest-postgres:5432` with full verification.
 
 Do not deploy this backend on fully ephemeral disk unless you replace the upload strategy with object storage.
 
@@ -616,7 +617,7 @@ DISCORD_CALLBACK_URL=https://api.questesports.lk/api/auth/discord/callback
 Notes:
 
 - `DATABASE_URL`, `DIRECT_URL`, and `SESSION_COOKIE_NAME` are required.
-- The cutover completed on 2026-08-31; Supabase is stale recovery material and is not a rollback target. The current PostgreSQL 17 service uses `quest-postgres` at `127.0.0.1:5433`; the target Compose alias and host-run staging tools use only loopback `127.0.0.1:55432`. Verify the live host, target, and URL authority with the owner; checked-in documentation cannot prove current infrastructure state.
+- The cutover completed on 2026-08-31; Supabase is stale recovery material and is not a rollback target. The PostgreSQL 17 service is the Compose `postgres` service, reached privately as `quest-postgres:5432` on `quest-shared` with no published host port; only host-run restore tools use the explicitly applied loopback staging overlay at `127.0.0.1:55432`. Verify the live host, target, and URL authority with the owner; checked-in documentation cannot prove current infrastructure state.
 - `APP_URL` must point to the frontend origin because email links are generated from it.
 - Mobile administrator OAuth requires the verified API-origin App Link and the colon-separated SHA-256 fingerprint of the release signing certificate.
 - `AUTH_ENCRYPTION_KEY` must be exactly 64 hexadecimal characters; do not rotate an existing key without a data migration plan.
