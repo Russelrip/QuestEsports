@@ -360,10 +360,23 @@ const processPayHereNotification = async (body) => {
           },
         },
         merchandiseOrder: true,
-        ticketOrder: { include: { event: { select: { status: true } } } },
+        ticketOrder: {
+          include: { event: { select: { status: true, capacity: true } } },
+        },
       },
     });
     const now = new Date();
+    const previouslyProcessed = await tx.paymentNotificationAudit.findFirst({
+      where: {
+        transactionId: current.id,
+        notificationDigest: digest,
+      },
+      select: { id: true },
+    });
+    if (previouslyProcessed) {
+      return markTournamentProjectionChange(current, false);
+    }
+
     let appliedStatus = status;
     let appliedStatusMessage = null;
     if (current.notificationDigest === digest) appliedStatus = current.status;

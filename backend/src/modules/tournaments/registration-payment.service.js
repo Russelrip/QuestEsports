@@ -241,37 +241,53 @@ const startExistingRegistrationPayment = async ({
 
 const cancelUnpaidRegistration = async ({ slug, user }) => {
   const tournamentSlug = normalizeText(slug).toLowerCase();
-  const registration = await prisma.teamRegistration.findFirst({
-    where: {
-      tournament: { slug: tournamentSlug },
-      OR: [{ userId: user.id }, { captainEmail: normalizeEmail(user.email) }],
-    },
-    select: {
-      id: true,
-      paymentStatus: true,
-      teamLogoName: true,
-      payments: {
-        orderBy: { createdAt: "desc" },
-        take: 1,
-        select: { status: true },
+  const registration = await runSerializable(async (tx) => {
+    const current = await tx.teamRegistration.findFirst({
+      where: {
+        tournament: { slug: tournamentSlug },
+        OR: [
+          { userId: user.id },
+          { userId: null, captainEmail: normalizeEmail(user.email) },
+        ],
       },
-    },
+      select: {
+        id: true,
+        paymentStatus: true,
+        teamLogoName: true,
+        payments: {
+          orderBy: { createdAt: "desc" },
+          take: 1,
+          select: { status: true },
+        },
+      },
+    });
+    if (!current) throw new HttpError(404, "Tournament registration not found.");
+    if (current.payments?.[0]?.status === "expired") {
+      throw new HttpError(
+        409,
+        "This expired registration must be reviewed by an administrator."
+      );
+    }
+    if (current.paymentStatus !== "unpaid") {
+      throw new HttpError(
+        409,
+        "This registration cannot be cancelled after payment or a payment reservation has started. Contact an administrator for help."
+      );
+    }
+    const deleted = await tx.teamRegistration.deleteMany({
+      where: {
+        id: current.id,
+        paymentStatus: "unpaid",
+      },
+    });
+    if (!deleted.count) {
+      throw new HttpError(
+        409,
+        "This registration cannot be cancelled after payment or a payment reservation has started. Contact an administrator for help."
+      );
+    }
+    return current;
   });
-  if (!registration) throw new HttpError(404, "Tournament registration not found.");
-  if (registration.payments?.[0]?.status === "expired") {
-    throw new HttpError(
-      409,
-      "This expired registration must be reviewed by an administrator."
-    );
-  }
-  if (registration.paymentStatus !== "unpaid") {
-    throw new HttpError(
-      409,
-      "This registration cannot be cancelled after payment or a payment reservation has started. Contact an administrator for help."
-    );
-  }
-
-  await prisma.teamRegistration.delete({ where: { id: registration.id } });
   if (registration.teamLogoName) {
     await removeTeamLogoIfUnreferenced({
       prisma,
