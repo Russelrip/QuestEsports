@@ -5,8 +5,10 @@ No Discord connection is made; identity write-back uses a fake repository.
 
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import AsyncMock, Mock
 
+from workers import discord_bot
 from workers.discord_bot import (
     ALPHA_RANKS,
     OMEGA_RANKS,
@@ -75,6 +77,36 @@ class FakeRepo:
     async def update_discord_identity(self, puuid: str, discord_id: str, discord_username: str) -> bool:
         self.calls.append((puuid, discord_id, discord_username))
         return self.result
+
+
+class _FakeLoopTask:
+    def __init__(self) -> None:
+        self.finished = False
+
+    def done(self) -> bool:
+        return self.finished
+
+
+class _FakeLoop:
+    def __init__(self) -> None:
+        self.created = 0
+        self.task = _FakeLoopTask()
+
+    def create_task(self, coroutine):
+        self.created += 1
+        coroutine.close()
+        return self.task
+
+
+class _FakeBot:
+    def __init__(self) -> None:
+        self.loop = _FakeLoop()
+        self.user = "bot-user"
+        self.on_ready = None
+
+    def event(self, handler):
+        self.on_ready = handler
+        return handler
 
 
 # ---------------------------------------------------------------- rank tier
@@ -330,3 +362,74 @@ async def test_bot_member_is_skipped_even_when_called_directly():
     member.remove_roles.assert_not_awaited()
     member.add_roles.assert_not_awaited()
     assert member.roles == [everyone, manual, unverified, unrelated]
+
+
+async def test_repeated_ready_events_keep_one_reconciliation_loop():
+    runner = object.__new__(DiscordBotRunner)
+    runner.bot_id = 2
+    runner.bot = _FakeBot()
+    runner.logger = Mock()
+    runner._main_loop_task = None
+    runner._register_events()
+
+    await runner.bot.on_ready()
+    await runner.bot.on_ready()
+    assert runner.bot.loop.created == 1
+
+    runner.bot.loop.task.finished = True
+    await runner.bot.on_ready()
+    assert runner.bot.loop.created == 2
+
+
+async def test_close_cancels_reconciliation_loop_before_closing_bot():
+    runner = object.__new__(DiscordBotRunner)
+    task = asyncio.create_task(asyncio.sleep(60))
+    runner._main_loop_task = task
+    runner.bot = Mock()
+    runner.bot.close = AsyncMock()
+
+    await runner.close()
+
+    assert task.cancelled()
+    runner.bot.close.assert_awaited_once()
+
+
+async def test_close_does_not_wait_for_interval_after_active_iteration_cancellation(monkeypatch):
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    class BlockingRepo:
+        def __init__(self, session) -> None:
+            self.session = session
+
+        async def list_all(self):
+            started.set()
+            await release.wait()
+            return []
+
+    monkeypatch.setattr(discord_bot, "LeaderboardPlayerRepository", BlockingRepo)
+    session = Mock()
+    session.close = AsyncMock()
+    guild = Mock(members=[])
+    runner = object.__new__(DiscordBotRunner)
+    runner.bot_id = 2
+    runner.config = {"discord_guild_id": 123}
+    runner.interval_minutes = 60
+    runner.rate_limit_delay = 0
+    runner.logger = Mock()
+    runner.repo_factory = lambda: session
+    runner.bot = Mock()
+    runner.bot.wait_until_ready = AsyncMock()
+    runner.bot.is_closed = Mock(return_value=False)
+    runner.bot.get_guild = Mock(return_value=guild)
+    runner.bot.close = AsyncMock()
+
+    task = asyncio.create_task(runner.main_loop())
+    runner._main_loop_task = task
+    await asyncio.wait_for(started.wait(), timeout=1)
+
+    await asyncio.wait_for(runner.close(), timeout=0.5)
+
+    assert task.cancelled()
+    session.close.assert_awaited_once()
+    runner.bot.close.assert_awaited_once()

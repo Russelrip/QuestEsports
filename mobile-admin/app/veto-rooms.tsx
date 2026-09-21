@@ -4,6 +4,7 @@ import { useRouter } from "expo-router";
 import { apiRequest, jsonBody } from "@/api";
 import { Button, Card, Field, PageHeader, Screen, StatusBadge } from "@/components/ui";
 import { colors, radius, spacing } from "@/theme";
+import { positiveNumber, requiredTrimmed } from "@/input-validation";
 import type { TournamentSummary, VetoCatalog, VetoRoom } from "@/types";
 
 type MatchOption = { id: string; identifier: string; participants: Array<{ displayName: string }> };
@@ -61,9 +62,26 @@ export default function VetoRoomsScreen() {
   };
 
   const create = async () => {
+    let mapPoolId: string;
+    let rulePresetId: string;
+    let team1 = "";
+    let team2 = "";
+    let turnSeconds: string | null = null;
+    try {
+      mapPoolId = requiredTrimmed(form.mapPoolId, "Map pool");
+      rulePresetId = requiredTrimmed(form.rulePresetId, "Rule preset");
+      if (!form.matchId) {
+        team1 = requiredTrimmed(form.team1, "Team 1");
+        team2 = requiredTrimmed(form.team2, "Team 2");
+      }
+      if (form.turnSeconds.trim()) turnSeconds = positiveNumber(form.turnSeconds, "Turn timer");
+    } catch (caught) {
+      Alert.alert("Missing room details", caught instanceof Error ? caught.message : "Enter all required room fields.");
+      return;
+    }
     setBusy(true);
     try {
-      const response = await apiRequest<{ success: boolean; data: { room: VetoRoom } }>("/api/v1/admin/veto-rooms", { method: "POST", ...jsonBody({ ...form, tournamentId: form.tournamentId || null, matchId: form.matchId || null, turnSeconds: form.turnSeconds ? Number(form.turnSeconds) : null, tossCallerSlot: 2, viewerEnabled: true, publishResult: true, participants: form.matchId ? undefined : [{ displayName: form.team1, seed: 1, accentColor: "#22d3ee" }, { displayName: form.team2, seed: 2, accentColor: "#fb7185" }] }) });
+      const response = await apiRequest<{ success: boolean; data: { room: VetoRoom } }>("/api/v1/admin/veto-rooms", { method: "POST", ...jsonBody({ format: form.format, templateId: form.templateId || null, mapPoolId, rulePresetId, title: form.title.trim() || undefined, controlMode: form.controlMode, teamOrderMethod: form.teamOrderMethod, tossMethod: form.tossMethod, tournamentId: form.tournamentId || null, matchId: form.matchId || null, turnSeconds: turnSeconds ? Number(turnSeconds) : null, tossCallerSlot: 2, viewerEnabled: true, publishResult: true, participants: form.matchId ? undefined : [{ displayName: team1, seed: 1, accentColor: "#22d3ee" }, { displayName: team2, seed: 2, accentColor: "#fb7185" }] }) });
       setCreating(false); setStep(1); await load();
       router.push({ pathname: "/veto-room/[id]", params: { id: response.data.room.id } });
     } catch (error) { Alert.alert("Unable to create room", error instanceof Error ? error.message : "Request failed."); }
@@ -71,15 +89,26 @@ export default function VetoRoomsScreen() {
   };
 
   const saveTemplate = async () => {
+    let mapPoolId: string;
+    let rulePresetId: string;
+    let turnSeconds: string | null = null;
+    try {
+      mapPoolId = requiredTrimmed(form.mapPoolId, "Map pool");
+      rulePresetId = requiredTrimmed(form.rulePresetId, "Rule preset");
+      if (form.turnSeconds.trim()) turnSeconds = positiveNumber(form.turnSeconds, "Turn timer");
+    } catch (caught) {
+      Alert.alert("Missing template details", caught instanceof Error ? caught.message : "Enter all required template fields.");
+      return;
+    }
     setBusy(true);
     try {
       await apiRequest("/api/v1/admin/veto/templates", { method: "POST", ...jsonBody({
         name: form.title.trim() || `${form.format.toUpperCase()} LAN setup`,
         format: form.format,
         tournamentId: form.tournamentId || null,
-        mapPoolId: form.mapPoolId,
-        rulePresetId: form.rulePresetId,
-        settings: { controlMode: form.controlMode, teamOrderMethod: form.teamOrderMethod, tossMethod: form.tossMethod, tossCallerSlot: 2, turnSeconds: form.turnSeconds ? Number(form.turnSeconds) : null, viewerEnabled: true, publishResult: true },
+        mapPoolId,
+        rulePresetId,
+        settings: { controlMode: form.controlMode, teamOrderMethod: form.teamOrderMethod, tossMethod: form.tossMethod, tossCallerSlot: 2, turnSeconds: turnSeconds ? Number(turnSeconds) : null, viewerEnabled: true, publishResult: true },
       }) });
       Alert.alert("Template saved", "This setup is ready to reuse in future match rooms.");
       await load();

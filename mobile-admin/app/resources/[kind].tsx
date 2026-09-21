@@ -40,7 +40,7 @@ const configs: Record<string, ResourceConfig<Identified>> = {
     },
     actions: (raw) => {
       const item = raw as RecruitmentApplication;
-      return ["reviewed", "accepted", "rejected"].filter((status) => status !== item.status).map((status) => ({ label: humanize(status), tone: status === "rejected" ? "danger" : "primary", method: "PATCH", path: `/api/admin/recruitment-applications/${item.id}/status`, body: { status } })) as RecordAction[];
+      return ["reviewed", "accepted", "rejected"].filter((status) => status !== item.status).map((status) => ({ label: humanize(status), tone: status === "rejected" ? "danger" : "primary", method: "PATCH", path: `/api/admin/recruitment-applications/${item.id}/status`, confirm: `Change this application to ${status}?`, body: { status } })) as RecordAction[];
     },
   },
   messages: {
@@ -79,7 +79,7 @@ const configs: Record<string, ResourceConfig<Identified>> = {
       const item = { ...(raw as AdminUser), ...detail } as AdminUser;
       const nextRole = item.role === "admin" ? "user" : "admin";
       return [
-        { label: nextRole === "admin" ? "Promote to admin" : "Remove admin", tone: nextRole === "admin" ? "primary" : "danger", method: "PATCH", path: `/api/admin/users/${item.id}`, confirm: `Change this account to ${nextRole}?`, body: { ...item, role: nextRole, password: "", confirmPassword: "" } },
+        { label: nextRole === "admin" ? "Promote to admin" : "Remove admin", tone: nextRole === "admin" ? "primary" : "danger", method: "PATCH", path: `/api/admin/users/${item.id}`, confirm: `Change this account to ${nextRole}?`, body: { role: nextRole } },
         deleteAction("user", `/api/admin/users/${item.id}`),
       ];
     },
@@ -132,7 +132,7 @@ const configs: Record<string, ResourceConfig<Identified>> = {
     },
     actions: (raw, detail) => {
       const item = { ...raw, ...detail };
-      return ["draft", "active", "archived"].filter((status) => status !== item.status).map((status) => ({ label: `Set ${status}`, tone: status === "archived" ? "danger" : "primary", method: "PATCH", path: `/api/admin/products/${item.id}`, body: { ...item, status } })) as RecordAction[];
+      return ["draft", "active", "archived"].filter((status) => status !== item.status).map((status) => ({ label: `Set ${status}`, tone: status === "archived" ? "danger" : "primary", method: "PATCH", path: `/api/admin/products/${item.id}`, confirm: `Set this product to ${status}?`, body: { status } })) as RecordAction[];
     },
   },
   series: {

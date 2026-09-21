@@ -808,24 +808,27 @@ const eventInput = (over = {}) => ({
 // A save that would succeed: series exists, slug is free, nothing reserved.
 const savePrisma = ({ existing = null, reserved = 0 } = {}) => {
   const writes = [];
+  const tx = {
+    ticketEvent: {
+      findUnique: async () => existing,
+      findFirst: async () => null,
+      create: async ({ data }) => { writes.push(data); return { id: "event-1", ...data }; },
+      update: async ({ data }) => { writes.push(data); return { id: "event-1", ...data }; },
+    },
+    eventSeries: { findUnique: async () => ({ id: "series-1" }) },
+    ticketOrder: {
+      aggregate: async () => ({ _sum: { quantity: reserved, total: 0 } }),
+      groupBy: async () => [],
+    },
+    ticket: { groupBy: async () => [] },
+  };
   return {
     writes,
     prisma: {
-      ticketEvent: {
-        findUnique: async () => existing,
-        findFirst: async () => null,
-        create: async ({ data }) => { writes.push(data); return { id: "event-1", ...data }; },
-        update: async ({ data }) => { writes.push(data); return { id: "event-1", ...data }; },
-      },
-      eventSeries: { findUnique: async () => ({ id: "series-1" }) },
-      ticketOrder: {
-        aggregate: async () => ({ _sum: { quantity: reserved, total: 0 } }),
-        groupBy: async () => [],
-      },
-      ticket: { groupBy: async () => [] },
+      ...tx,
       // getEventStats passes an ARRAY of promises; saveAdminEvent passes a
-      // callback only when there is audit context.
-      $transaction: async (work) => (typeof work === "function" ? work({}) : Promise.all(work)),
+      // callback for its serializable write transaction.
+      $transaction: async (work) => (typeof work === "function" ? work(tx) : Promise.all(work)),
     },
   };
 };

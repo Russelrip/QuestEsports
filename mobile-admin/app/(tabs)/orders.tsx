@@ -26,13 +26,13 @@ export default function OrdersScreen() {
       })}
       actions={(item) => [
         ...(["paid", "processing"].includes(item.status) && item.status !== "processing"
-          ? [{ label: "Start processing", tone: "primary" as const, method: "PATCH" as const, path: `/api/admin/orders/${item.id}`, body: { status: "processing" } }]
+          ? [{ label: "Start processing", tone: "primary" as const, method: "PATCH" as const, path: `/api/admin/orders/${item.id}`, confirm: "Start fulfilment for this order?", body: { status: "processing" } }]
           : []),
         ...(item.status === "processing"
-          ? [{ label: "Mark fulfilled", tone: "primary" as const, method: "PATCH" as const, path: `/api/admin/orders/${item.id}`, body: { status: "fulfilled" } }]
+          ? [{ label: "Mark fulfilled", tone: "primary" as const, method: "PATCH" as const, path: `/api/admin/orders/${item.id}`, confirm: "Mark this order fulfilled?", body: { status: "fulfilled" } }]
           : []),
         ...(item.status === "pending_payment"
-          ? [{ label: "Cancel order", tone: "danger" as const, method: "PATCH" as const, path: `/api/admin/orders/${item.id}`, body: { status: "cancelled" } }]
+          ? [{ label: "Cancel order", tone: "danger" as const, method: "PATCH" as const, path: `/api/admin/orders/${item.id}`, confirm: "Cancel this order? This may notify the customer and cannot be undone.", body: { status: "cancelled" } }]
           : []),
       ]}
     />

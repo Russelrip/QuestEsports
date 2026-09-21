@@ -27,9 +27,9 @@ export default function RegistrationsScreen() {
       detailPath={(item) => `/api/admin/team-registrations/${item.id}`}
       detailKey="registration"
       actions={(item) => [
-        ...(item.status !== "approved" ? [{ label: "Approve", tone: "primary" as const, method: "PATCH" as const, path: `/api/admin/team-registrations/${item.id}/status`, body: { status: "approved" } }] : []),
-        ...(item.status !== "pending" ? [{ label: "Mark pending", tone: "secondary" as const, method: "PATCH" as const, path: `/api/admin/team-registrations/${item.id}/status`, body: { status: "pending" } }] : []),
-        ...(item.status !== "rejected" ? [{ label: "Reject", tone: "danger" as const, method: "PATCH" as const, path: `/api/admin/team-registrations/${item.id}/status`, body: { status: "rejected" } }] : []),
+        ...(item.status !== "approved" ? [{ label: "Approve", tone: "primary" as const, method: "PATCH" as const, path: `/api/admin/team-registrations/${item.id}/status`, confirm: "Approve this registration?", body: { status: "approved" } }] : []),
+        ...(item.status !== "pending" ? [{ label: "Mark pending", tone: "secondary" as const, method: "PATCH" as const, path: `/api/admin/team-registrations/${item.id}/status`, confirm: "Move this registration back to pending?", body: { status: "pending" } }] : []),
+        ...(item.status !== "rejected" ? [{ label: "Reject", tone: "danger" as const, method: "PATCH" as const, path: `/api/admin/team-registrations/${item.id}/status`, confirm: "Reject this registration?", body: { status: "rejected" } }] : []),
         { label: "Delete", tone: "danger" as const, method: "DELETE" as const, path: `/api/admin/team-registrations/${item.id}`, confirm: "Permanently delete this registration? This cannot be undone." },
       ]}
     />

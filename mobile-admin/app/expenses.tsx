@@ -3,6 +3,7 @@ import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-nati
 import { apiRequest, jsonBody } from "@/api";
 import { Button, Card, EmptyState, ErrorNotice, Field, FilterPills, PageHeader, Screen, StatusBadge } from "@/components/ui";
 import { colors, formatMoney, humanize, radius, spacing } from "@/theme";
+import { positiveNumber, requiredTrimmed } from "@/input-validation";
 
 type ExpenseTarget = {
   type: "tournament" | "event";
@@ -92,11 +93,24 @@ export default function ExpensesScreen() {
 
   const save = async () => {
     if (!selected) return;
+    let description: string;
+    let amount: string;
+    let currency: string;
+    let expenseDate: string;
+    try {
+      description = requiredTrimmed(form.description, "Description");
+      amount = positiveNumber(form.amount, "Amount");
+      currency = requiredTrimmed(form.currency, "Currency").toUpperCase();
+      expenseDate = requiredTrimmed(form.expenseDate, "Expense date");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Enter all required expense fields.");
+      return;
+    }
     setSaving(true);
     try {
       await apiRequest(editingId ? `/api/admin/expenses/${editingId}` : "/api/admin/expenses", {
         method: editingId ? "PATCH" : "POST",
-        ...jsonBody({ ...form, targetType: selected.type, targetId: selected.id }),
+        ...jsonBody({ description, category: form.category, vendor: form.vendor.trim() || null, amount, currency, status: form.status, expenseDate, notes: form.notes.trim() || null, targetType: selected.type, targetId: selected.id }),
       });
       reset();
       await loadExpenses();
@@ -112,12 +126,17 @@ export default function ExpensesScreen() {
     setForm({ description: item.description, category: item.category, vendor: item.vendor || "", amount: String(item.amount), currency: item.currency, status: item.status, expenseDate: item.expenseDate, notes: item.notes || "" });
   };
 
-  const updateStatus = async (item: Expense) => {
+  const updateStatus = (item: Expense) => Alert.alert("Mark expense paid", `Mark “${item.description}” as paid?`, [
+    { text: "Cancel", style: "cancel" },
+    { text: "Mark paid", onPress: () => void markPaid(item) },
+  ]);
+
+  const markPaid = async (item: Expense) => {
     if (!selected) return;
     try {
       await apiRequest(`/api/admin/expenses/${item.id}`, {
         method: "PATCH",
-        ...jsonBody({ ...item, status: "paid", targetType: selected.type, targetId: selected.id }),
+        ...jsonBody({ status: "paid" }),
       });
       await loadExpenses();
     } catch (caught) {

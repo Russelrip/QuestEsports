@@ -26,9 +26,9 @@ class Settings(BaseSettings):
     henrik_api_key: str | None = None
     henrik_base_url: str = "https://api.henrikdev.xyz"
     henrik_auth_scheme: str = "bare"  # bare | Bearer (pinned by Wave 0)
-    henrik_timeout_seconds: float = 15.0
-    henrik_max_retries: int = 2
-    henrik_retry_after_cap_seconds: float = 30.0
+    henrik_timeout_seconds: float = Field(default=15.0, gt=0, le=120)
+    henrik_max_retries: int = Field(default=2, ge=0, le=5)
+    henrik_retry_after_cap_seconds: float = Field(default=30.0, ge=0, le=300)
     default_platform: str = "pc"
     default_affinity: str = "eu"
     # Leaderboard registration affinity/platform (R12): mirror valorantsl-new's
@@ -38,8 +38,8 @@ class Settings(BaseSettings):
     leaderboard_platform: str = "pc"
     # Updater worker settings (R29; mirrors valorantsl-new's
     # ``update_interval_minutes`` / ``rate_limit_delay``).
-    updater_interval_minutes: int = 30
-    updater_rate_limit_delay: float = 2.5
+    updater_interval_minutes: int = Field(default=30, gt=0, le=1440)
+    updater_rate_limit_delay: float = Field(default=2.5, ge=0, le=60)
     # Leaderboard server check (0018). The updater fetches each player's recent
     # competitive servers at most once per interval, and an admin reviews the
     # players whose matches are mostly away from the home servers. The defaults
@@ -47,14 +47,14 @@ class Settings(BaseSettings):
     # only on Singapore and/or Mumbai, and the other three played 24-25 of
     # their last 25 on Sydney.
     server_check_home_clusters: str = "Singapore,Mumbai"
-    server_check_interval_hours: float = Field(default=24, gt=0)
+    server_check_interval_hours: float = Field(default=24, gt=0, le=168)
     server_check_match_count: int = Field(default=25, ge=1, le=100)
-    server_check_window_days: int = Field(default=30, ge=1)
-    server_check_min_matches: int = Field(default=5, ge=1)
+    server_check_window_days: int = Field(default=30, ge=1, le=365)
+    server_check_min_matches: int = Field(default=5, ge=1, le=100)
     server_check_away_share: float = Field(default=0.5, gt=0, le=1)
     # Name-audit worker (R34; mirrors valorantsl-new's ``name_audit_delay``):
     # seconds slept between players during the weekly name/tag drift audit.
-    name_audit_delay: float = 0.75
+    name_audit_delay: float = Field(default=0.75, ge=0, le=60)
     default_initial_elo: Decimal = Decimal(1000)
     admin_api_key: str | None = None
     # VAL DML runtime role (four-role model; deployment). The migration runner
@@ -67,9 +67,9 @@ class Settings(BaseSettings):
     quest_service_shared_secrets: str | None = None
     quest_service_issuer: str = "quest-esports"
     quest_service_audience: str = "valorant-platform"
-    service_token_max_skew_seconds: int = 30
+    service_token_max_skew_seconds: int = Field(default=30, ge=0, le=300)
     log_level: str = "INFO"
-    match_search_max_page_size: int = 50
+    match_search_max_page_size: int = Field(default=50, ge=1, le=100)
     # Henrik caps a page near 10 regardless of the requested size, so this is a
     # ceiling of roughly 10 x this many matches per player. At 5 that reached
     # about 50 matches — under three weeks for an active player, which is not
@@ -77,7 +77,7 @@ class Settings(BaseSettings):
     # page costs two Henrik requests (one per player), so 10 is a ceiling of 20
     # requests for the deepest search a caller can ask for; callers still choose
     # their own `max_pages` below it.
-    match_search_max_pages: int = 10
+    match_search_max_pages: int = Field(default=10, ge=1, le=100)
     raw_payload_in_responses: bool = False
     # Discord OAuth (R21): minimal httpx exchange; mirrors valorantsl-new's
     # ``discord_client_id``/``discord_client_secret``/``discord_redirect_uri``.
@@ -90,15 +90,15 @@ class Settings(BaseSettings):
     # if an operator starts it unconfigured.
     discord_token_1: str = ""
     discord_token_2: str = ""
-    discord_guild_id: int = 0
+    discord_guild_id: int = Field(default=0, ge=0)
     # Release validation gate.  Literal validation is intentional: a typo must
     # fail closed at settings construction rather than silently disabling the
     # freeze.
     write_freeze_mode: Literal["off", "validation"] = "off"
-    write_freeze_retry_after_seconds: int = 60
+    write_freeze_retry_after_seconds: int = Field(default=60, ge=0, le=3600)
     release_lock_path: str = "/var/lock/quest-esports-release.lock"
-    name_audit_lock_retries: int = Field(default=5, ge=0)
-    name_audit_lock_retry_seconds: float = Field(default=60, ge=0)
+    name_audit_lock_retries: int = Field(default=5, ge=0, le=100)
+    name_audit_lock_retry_seconds: float = Field(default=60, ge=0, le=300)
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

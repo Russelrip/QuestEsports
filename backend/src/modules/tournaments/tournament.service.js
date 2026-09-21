@@ -1774,7 +1774,7 @@ const getTournamentRegistrationStatus = async ({ slug, user }) => {
         {
           OR: [
             { userId: user.id },
-            { captainEmail: normalizeEmail(user.email) },
+            { userId: null, captainEmail: normalizeEmail(user.email) },
           ],
         },
       ],

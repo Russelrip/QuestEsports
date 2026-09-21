@@ -220,12 +220,18 @@ const claimNextJob = async () => {
               id: candidate.id,
               status: candidate.status,
               ...(candidate.status === "processing"
-                ? { lockedAt: candidate.lockedAt }
+                ? {
+                    lockedAt: candidate.lockedAt,
+                    ...(candidate.leaseToken
+                      ? { leaseToken: candidate.leaseToken }
+                      : {}),
+                  }
                 : {}),
             },
             data: {
               status: "processing",
               lockedAt: now,
+              leaseToken: crypto.randomUUID(),
               payload: protectJobPayload(candidate.payload),
               attempts: {
                 increment: 1,
@@ -267,18 +273,20 @@ const claimNextJob = async () => {
 };
 
 const markJobSucceeded = async (job) => {
-  await prisma.backgroundJob.update({
-    where: { id: job.id },
+  const result = await prisma.backgroundJob.updateMany({
+    where: { id: job.id, status: "processing", leaseToken: job.leaseToken },
     data: {
       payload: scrubJobPayload(job.payload),
       status: "succeeded",
       lockedAt: null,
+      leaseToken: null,
       completedAt: new Date(),
       failedAt: null,
       lastError: null,
       dedupeKey: null,
     },
   });
+  return result.count === 1;
 };
 
 const markJobFailed = async (job) => {
@@ -286,11 +294,12 @@ const markJobFailed = async (job) => {
   const reachedMaxAttempts = attempts >= job.maxAttempts;
   const now = new Date();
 
-  await prisma.backgroundJob.update({
-    where: { id: job.id },
+  const result = await prisma.backgroundJob.updateMany({
+    where: { id: job.id, status: "processing", leaseToken: job.leaseToken },
     data: {
       status: reachedMaxAttempts ? "failed" : "queued",
       lockedAt: null,
+      leaseToken: null,
       failedAt: reachedMaxAttempts ? now : null,
       availableAt: reachedMaxAttempts
         ? job.availableAt
@@ -301,21 +310,24 @@ const markJobFailed = async (job) => {
         : {}),
     },
   });
+  return result.count === 1;
 };
 
 // Held rather than sent, and put back in the queue with its payload intact.
 // Not a failure: nothing went wrong and nothing is lost, so it must not consume
 // an attempt or leave an error on the row.
 const deferJob = async (job, availableAt) => {
-  await prisma.backgroundJob.update({
-    where: { id: job.id },
+  const result = await prisma.backgroundJob.updateMany({
+    where: { id: job.id, status: "processing", leaseToken: job.leaseToken },
     data: {
       status: "queued",
       lockedAt: null,
+      leaseToken: null,
       availableAt,
       attempts: Math.max(job.attempts - 1, 0),
     },
   });
+  return result.count === 1;
 };
 
 const processJobByName = async (job) => {
@@ -329,8 +341,8 @@ const processJobByName = async (job) => {
           ceiling: deferral.ceiling,
           availableAt: deferral.availableAt,
         });
-        await deferJob(job, deferral.availableAt);
-        return { deferred: true };
+        const deferred = await deferJob(job, deferral.availableAt);
+        return deferred ? { deferred: true } : false;
       }
       return processQueuedMailJob(job.payload, { jobId: job.id });
     }
@@ -377,29 +389,32 @@ const runJobWorkerTick = async () => {
         processedCount += 1;
         continue;
       }
-      await markJobSucceeded(job);
-      logger.info("Background job completed", {
-        jobId: job.id,
-        jobName: job.name,
-        attempts: job.attempts,
-      });
+      if (await markJobSucceeded(job)) {
+        logger.info("Background job completed", {
+          jobId: job.id,
+          jobName: job.name,
+          attempts: job.attempts,
+        });
+      }
     } catch (error) {
       job.error = error;
-      await markJobFailed(job);
+      const fenced = await markJobFailed(job);
 
-      logger.error("Background job failed", {
-        jobId: job.id,
-        jobName: job.name,
-        attempts: job.attempts,
-        maxAttempts: job.maxAttempts,
-        error,
-      });
+      if (fenced) {
+        logger.error("Background job failed", {
+          jobId: job.id,
+          jobName: job.name,
+          attempts: job.attempts,
+          maxAttempts: job.maxAttempts,
+          error,
+        });
 
-      captureException(error, {
-        jobId: job.id,
-        jobName: job.name,
-        attempts: job.attempts,
-      });
+        captureException(error, {
+          jobId: job.id,
+          jobName: job.name,
+          attempts: job.attempts,
+        });
+      }
     }
 
     processedCount += 1;

@@ -203,6 +203,56 @@ test("a retry is never asked for a logo, including one that has none", async () 
   }
 });
 
+test("an owned registration is not selected by another user who shares its captain email", async () => {
+  const ownedRegistration = {
+    userId: "user-1",
+    captainEmail: "captain@example.com",
+  };
+  const matchesPrismaOr = (where) => where.OR.some((clause) =>
+    Object.entries(clause).every(([field, value]) => ownedRegistration[field] === value)
+  );
+  const { module: service, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: {
+      prisma: {
+        tournament: { findFirst: async () => tournament },
+        savedTeam: { findUnique: async () => null },
+        teamRegistration: {
+          findFirst: async ({ where }) => matchesPrismaOr(where)
+            ? {
+                id: "registration-owned-by-user-1",
+                ...ownedRegistration,
+                status: "pending",
+                paymentStatus: "paid",
+                verificationStatus: "verified",
+                members: [],
+                payments: [],
+              }
+            : null,
+        },
+        user: { findMany: async () => [] },
+        oAuthAccount: { findFirst: async () => ({ providerUserId: "discord-2" }) },
+      },
+    },
+    [uploadModulePath]: {},
+    [teamServicePath]: {},
+    [paymentServicePath]: { assertPayHereConfigured: () => undefined },
+    [bankTransferServicePath]: {},
+  });
+
+  try {
+    await assert.rejects(
+      () => service.createConfiguredRegistration({
+        slug: tournament.slug,
+        body,
+        user: { ...user, id: "user-2", email: "captain@example.com" },
+      }),
+      (error) => error.statusCode === 400 && /team logo is required/i.test(error.message)
+    );
+  } finally {
+    restore();
+  }
+});
+
 test("captains can cancel their own unpaid tournament registration", async () => {
   let deletedId = null;
   const { module: service, restore } = loadModuleWithMocks(servicePath, {
@@ -210,14 +260,26 @@ test("captains can cancel their own unpaid tournament registration", async () =>
       prisma: {
         savedTeam: { findUnique: async () => ({ logoName: "saved-team.webp" }) },
         teamRegistration: {
-          findFirst: async () => ({
-            id: "registration-1",
-            paymentStatus: "unpaid",
-            teamLogoName: null,
-          }),
-          delete: async ({ where }) => {
-            deletedId = where.id;
+          findFirst: async ({ where }) => {
+            assert.deepEqual(where.OR, [
+              { userId: user.id },
+              { userId: null, captainEmail: user.email },
+            ]);
+            return {
+              id: "registration-1",
+              paymentStatus: "unpaid",
+              teamLogoName: null,
+            };
           },
+          deleteMany: async ({ where }) => {
+            deletedId = where.id;
+            assert.equal(where.paymentStatus, "unpaid");
+            return { count: 1 };
+          },
+        },
+        $transaction: async function (work, options) {
+          assert.equal(options.isolationLevel, "Serializable");
+          return work(this);
         },
       },
     },
@@ -246,6 +308,14 @@ test("captains cannot cancel after a payment reservation has started", async () 
             paymentStatus: "pending",
             teamLogoName: null,
           }),
+          deleteMany: async ({ where }) => {
+            assert.equal(where.paymentStatus, "unpaid");
+            return { count: 0 };
+          },
+        },
+        $transaction: async function (work, options) {
+          assert.equal(options.isolationLevel, "Serializable");
+          return work(this);
         },
       },
     },
@@ -265,6 +335,63 @@ test("captains cannot cancel after a payment reservation has started", async () 
   }
 });
 
+test("cancellation loses a deterministic race when payment starts before conditional deletion", async () => {
+  const registration = {
+    id: "registration-race",
+    paymentStatus: "unpaid",
+    teamLogoName: null,
+    payments: [],
+  };
+  let eligibilityRead = false;
+  let transactionOptions;
+  const { module: service, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: {
+      prisma: {
+        teamRegistration: {
+          findFirst: async () => {
+            eligibilityRead = true;
+            return { ...registration };
+          },
+          deleteMany: async ({ where }) => {
+            assert.equal(eligibilityRead, true);
+            assert.deepEqual(where, {
+              id: registration.id,
+              paymentStatus: "unpaid",
+            });
+            // Simulate the payment-start transaction committing between the
+            // cancellation read and its conditional delete.
+            registration.paymentStatus = "pending";
+            return { count: registration.paymentStatus === "unpaid" ? 1 : 0 };
+          },
+        },
+        $transaction: async function (work, options) {
+          transactionOptions = options;
+          return work(this);
+        },
+      },
+    },
+    [uploadModulePath]: {},
+    [teamServicePath]: {},
+    [paymentServicePath]: {},
+    [bankTransferServicePath]: {},
+  });
+
+  try {
+    await assert.rejects(
+      () => service.cancelUnpaidRegistration({ slug: tournament.slug, user }),
+      (error) => error.statusCode === 409 && /payment reservation has started/i.test(error.message)
+    );
+    assert.deepEqual(transactionOptions, {
+      isolationLevel: "Serializable",
+      maxWait: 10000,
+      timeout: 20000,
+    });
+    assert.equal(registration.paymentStatus, "pending");
+  } finally {
+    restore();
+  }
+});
+
 test("captains must contact an administrator after their payment window expires", async () => {
   const { module: service, restore } = loadModuleWithMocks(servicePath, {
     [prismaModulePath]: {
@@ -277,7 +404,9 @@ test("captains must contact an administrator after their payment window expires"
             teamLogoName: null,
             payments: [{ status: "expired" }],
           }),
+          deleteMany: async () => ({ count: 0 }),
         },
+        $transaction: async function (work) { return work(this); },
       },
     },
     [uploadModulePath]: {},

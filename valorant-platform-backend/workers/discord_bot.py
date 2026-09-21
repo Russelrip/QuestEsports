@@ -131,6 +131,7 @@ class DiscordBotRunner:
         self.logger = logging.getLogger(f"discord_bot.bot{bot_id}")
         self.interval_minutes = config.get("update_interval_minutes", 15)
         self.rate_limit_delay = config.get("rate_limit_delay", 0.5)
+        self._main_loop_task: asyncio.Task | None = None
 
         intents = discord.Intents.default()
         intents.members = True
@@ -145,7 +146,11 @@ class DiscordBotRunner:
         @self.bot.event
         async def on_ready() -> None:
             self.logger.info("%s connected to Discord", self.bot.user)
-            self.bot.loop.create_task(self.main_loop())
+            # discord.py emits on_ready again after a reconnect. Keep one
+            # reconciliation loop per runner; a reconnect must not multiply
+            # writes and upstream requests every fifteen minutes.
+            if self._main_loop_task is None or self._main_loop_task.done():
+                self._main_loop_task = self.bot.loop.create_task(self.main_loop())
 
         if self.bot_id == 1:
             @self.bot.event
@@ -298,14 +303,22 @@ class DiscordBotRunner:
                             await asyncio.sleep(self.rate_limit_delay)
                 finally:
                     await session.close()
+            except asyncio.CancelledError:
+                # Do not let the cancellation fall through to the interval
+                # sleep below. In particular, close() must not wait a full
+                # reconciliation interval while an iteration is being torn
+                # down.
+                raise
             except Exception:
                 self.logger.exception("error in main loop")
             finally:
-                self.logger.info(
-                    "sleeping for %s minutes before next iteration",
-                    self.interval_minutes,
-                )
-                await asyncio.sleep(self.interval_minutes * 60)
+                task = asyncio.current_task()
+                if task is None or not task.cancelling():
+                    self.logger.info(
+                        "sleeping for %s minutes before next iteration",
+                        self.interval_minutes,
+                    )
+                    await asyncio.sleep(self.interval_minutes * 60)
 
     async def run(self) -> None:
         """Start the bot (logs in with this runner's token)."""
@@ -314,6 +327,11 @@ class DiscordBotRunner:
 
     async def close(self) -> None:
         """Close the bot's Discord connection."""
+        task = self._main_loop_task
+        if task is not None and not task.done():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+        self._main_loop_task = None
         await self.bot.close()
 
 

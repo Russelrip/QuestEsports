@@ -116,6 +116,12 @@ async def health(authorization: str | None = Header(default=None, alias="Authori
     # keeps configuration-readiness detail away from unauthenticated callers.
     if not authorization:
         return {"status": "ok", "db": "up"}
+    settings = get_settings()
+    if settings.app_env == "production" and not _service_token_compatibility(settings, authorization):
+        # A malformed, expired, or otherwise invalid bearer token must not turn
+        # this endpoint into a configuration oracle. Keep the readiness failure
+        # generic; only a verified Quest token may receive named checks.
+        return JSONResponse(status_code=503, content={"status": "degraded", "db": "up"})
     checks = _integration_checks(authorization)
     if not checks:
         # Keep development and test behavior intentionally unchanged. In

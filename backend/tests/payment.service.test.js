@@ -97,7 +97,7 @@ test("duplicate notifications are idempotent", async () => {
   const current = { id: "tx-2", providerOrderId: body.order_id, amount: 1000, currency: "LKR", status: "paid", notificationDigest: digest };
   const tx = {
     paymentTransaction: { findUnique: async () => current, update: async () => { updateCalls += 1; } },
-    paymentNotificationAudit: { create: async () => undefined },
+    paymentNotificationAudit: { findFirst: async () => null, create: async () => undefined },
   };
   const prisma = { paymentTransaction: { findUnique: async () => current }, $transaction: async (callback) => callback(tx) };
   const { module: service, restore } = load(prisma);
@@ -105,6 +105,45 @@ test("duplicate notifications are idempotent", async () => {
     assert.equal(await service.processPayHereNotification(body), current);
     assert.equal(current.__tournamentProjectionChanged, false);
     assert.equal(updateCalls, 0);
+  } finally { restore(); }
+});
+
+test("a previously audited PayHere digest cannot reapply a transition", async () => {
+  const body = {
+    merchant_id: env.PAYHERE_MERCHANT_ID,
+    order_id: "order-audited",
+    payment_id: "pay-audited",
+    payhere_amount: "1000.00",
+    payhere_currency: "LKR",
+    status_code: "2",
+  };
+  body.md5sig = signature(body);
+  const current = {
+    id: "tx-audited",
+    providerOrderId: body.order_id,
+    amount: 1000,
+    currency: "LKR",
+    status: "review_required",
+    notificationDigest: null,
+  };
+  let updates = 0;
+  const tx = {
+    paymentTransaction: {
+      findUnique: async () => current,
+      update: async () => { updates += 1; },
+    },
+    paymentNotificationAudit: {
+      findFirst: async () => ({ id: "audit-1" }),
+    },
+  };
+  const { module: service, restore } = load({
+    paymentTransaction: { findUnique: async () => current },
+    $transaction: async (callback) => callback(tx),
+  });
+  try {
+    const result = await service.processPayHereNotification(body);
+    assert.equal(result.status, "review_required");
+    assert.equal(updates, 0);
   } finally { restore(); }
 });
 
@@ -119,6 +158,7 @@ test("late successful notifications are routed to manual review", async () => {
       update: async ({ data }) => ({ ...current, ...data }),
     },
     paymentNotificationAudit: {
+      findFirst: async () => null,
       create: async ({ data }) => { appliedStatus = data.appliedStatus; },
     },
   };
@@ -157,7 +197,7 @@ test("review-required notification with no registration target write is not tour
       findUnique: async () => current,
       update: async ({ data }) => ({ ...current, ...data }),
     },
-    paymentNotificationAudit: { create: async () => undefined },
+    paymentNotificationAudit: { findFirst: async () => null, create: async () => undefined },
   };
   const { module: service, restore } = load({
     paymentTransaction: { findUnique: async () => current },
@@ -256,6 +296,7 @@ test("PayHere role conflicts preserve the signed payment as review_required with
       findMany: async () => [{ members: [{ role: "COACH", email: "coach@example.com", riotId: "Player#001" }] }],
     },
     paymentNotificationAudit: {
+      findFirst: async () => null,
       create: async ({ data }) => { auditData = data; },
     },
   };
@@ -603,7 +644,7 @@ test("paid ticket state and its confirmation job commit in one transaction", asy
       },
     },
     ticket: { updateMany: async () => ({ count: 2 }) },
-    paymentNotificationAudit: { create: async () => undefined },
+    paymentNotificationAudit: { findFirst: async () => null, create: async () => undefined },
   };
   const prisma = {
     paymentTransaction: { findUnique: async () => current },
@@ -1037,6 +1078,79 @@ test("manual PayHere acceptance refuses orders whose inventory was released", as
   } finally {
     restore();
   }
+});
+
+test("manual PayHere acceptance refuses an expired ticket order", async () => {
+  const current = {
+    id: "tx-expired-ticket",
+    provider: "payhere",
+    status: "review_required",
+    registrationId: null,
+    merchandiseOrderId: null,
+    ticketOrderId: "ticket-order-1",
+    ticketOrder: {
+      id: "ticket-order-1",
+      eventId: "event-1",
+      quantity: 1,
+      expiresAt: new Date(Date.now() - 1000),
+      capacityReleasedAt: null,
+      event: { status: "on_sale", capacity: 10 },
+    },
+  };
+  const { module: service, restore } = load({
+    $transaction: async (callback) => callback({
+      paymentTransaction: { findUnique: async () => current },
+    }),
+  });
+  try {
+    await assert.rejects(
+      service.reconcilePayHerePayment({
+        transactionId: current.id,
+        decision: "accept",
+        note: "Verified in PayHere.",
+        admin: { id: "admin-1" },
+        audit: paymentAudit("payment.payhere.reconciled", "accept", "accepted"),
+      }),
+      (error) => error.statusCode === 409 && /reservation expired/i.test(error.message),
+    );
+  } finally { restore(); }
+});
+
+test("manual PayHere acceptance rechecks ticket capacity", async () => {
+  const current = {
+    id: "tx-full-ticket",
+    provider: "payhere",
+    status: "review_required",
+    registrationId: null,
+    merchandiseOrderId: null,
+    ticketOrderId: "ticket-order-2",
+    ticketOrder: {
+      id: "ticket-order-2",
+      eventId: "event-1",
+      quantity: 2,
+      expiresAt: new Date(Date.now() + 60_000),
+      capacityReleasedAt: null,
+      event: { status: "on_sale", capacity: 3 },
+    },
+  };
+  const { module: service, restore } = load({
+    $transaction: async (callback) => callback({
+      paymentTransaction: { findUnique: async () => current },
+      ticketOrder: { aggregate: async () => ({ _sum: { quantity: 2 } }) },
+    }),
+  });
+  try {
+    await assert.rejects(
+      service.reconcilePayHerePayment({
+        transactionId: current.id,
+        decision: "accept",
+        note: "Verified in PayHere.",
+        admin: { id: "admin-1" },
+        audit: paymentAudit("payment.payhere.reconciled", "accept", "accepted"),
+      }),
+      (error) => error.statusCode === 409 && /ticket capacity remains/i.test(error.message),
+    );
+  } finally { restore(); }
 });
 
 test("late PayHere acceptance rejects an active same-tournament coach/player conflict", async () => {

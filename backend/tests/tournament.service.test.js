@@ -73,12 +73,15 @@ test("admin tournament listing rejects unsupported status filters", async () => 
 
 test("registration status includes coach invitations in verification and payment gating", async () => {
   let repairedRegistrationId = null;
+  let registrationLookup;
   const prisma = {
     tournament: {
       findUnique: async () => ({ id: "tournament-1", registrationFeeAmount: 2500 }),
     },
     teamRegistration: {
-      findFirst: async () => ({
+      findFirst: async (args) => {
+        registrationLookup = args.where;
+        return {
         id: "registration-1",
         status: "pending",
         paymentStatus: "pending",
@@ -96,7 +99,8 @@ test("registration status includes coach invitations in verification and payment
           provider: "bank_transfer",
           status: "pending",
         }],
-      }),
+        };
+      },
     },
   };
   const { module: tournamentService, restore } = loadModuleWithMocks(servicePath, {
@@ -121,6 +125,10 @@ test("registration status includes coach invitations in verification and payment
     assert.equal(result.registration.expiredInviteCount, 1);
     assert.equal(result.registration.assignedSlotNumber, 7);
     assert.equal(repairedRegistrationId, "registration-1");
+    assert.deepEqual(registrationLookup.AND[0].OR, [
+      { userId: "user-1" },
+      { userId: null, captainEmail: "captain@example.com" },
+    ]);
     assert.deepEqual(result.registration.payment, {
       orderId: "QST-0123456789",
       provider: "bank_transfer",

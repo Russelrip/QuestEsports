@@ -289,8 +289,9 @@ uvicorn backend.app.main:app --reload --port 8001
   (`test_series_create_contract_shape`) — unrelated to Phase 2; a separate cleanup pass.
 - **~40 deferred minors** (parity-mandated or cosmetic) are triaged in the SDD ledger:
   `.superpowers/sdd/2026-08-14-valorant-player-leaderboard-standardization/progress.md`.
-  Notable ones: OAuth `state`/CSRF param not added (source parity); `access_token` returned to the
-  client (source parity — revisit in Phase 3); Discord `_used_codes` grows unbounded; leaderboard
+  Notable ones: OAuth `state`/CSRF param not added (source parity); the provider `access_token` is
+  used only for the immediate Discord identity lookup and is not returned; Discord `_used_codes` grows
+  unbounded; leaderboard
   `discord_username` lookup is case-insensitive against a case-sensitive unique index (source parity).
 - The user's "manual series" feature (`0016_manual_series.sql` + series/rating code) is committed on
   `main` and untouched.

@@ -215,6 +215,36 @@ async def test_500_exhausted_raises_unavailable_error():
 
 # ---------------------------------------------------------------- auth header
 
+async def test_caller_controlled_account_segments_are_percent_encoded():
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.raw_path == b"/valorant/v2/account/Player%2FOne/Tag%23EU"
+        return httpx.Response(200, json=_load("account_v2/valid.json"))
+
+    client = _client(handler)
+    try:
+        await client.get_account("Player/One", "Tag#EU")
+    finally:
+        await client.aclose()
+
+
+async def test_oversized_path_segment_keeps_provider_validation_contract():
+    client = _client(lambda request: httpx.Response(500))
+    try:
+        with pytest.raises(HenrikValidationError):
+            await client.get_account("x" * 33, "EU")
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.parametrize("invalid_name", [".", "..", "\x00", "\u0085", "\ud800"])
+async def test_invalid_unicode_and_dot_path_segments_are_validation_errors(invalid_name: str):
+    client = _client(lambda request: httpx.Response(500))
+    try:
+        with pytest.raises(HenrikValidationError):
+            await client.get_account(invalid_name, "EU")
+    finally:
+        await client.aclose()
+
 async def test_auth_header_bare_scheme_sends_key():
     seen: dict = {}
 

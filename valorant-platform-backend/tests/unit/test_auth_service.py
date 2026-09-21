@@ -141,7 +141,7 @@ async def test_callback_exchanges_fetches_and_builds_response(
     assert resp.user.discord_discriminator == "0"
     assert resp.user.discord_avatar == "abc123"
     assert resp.user.discord_email == "player@example.com"
-    assert resp.user.access_token == "tok-123"
+    assert "access_token" not in resp.user.model_dump()
     assert resp.existing_data is not None
     assert resp.existing_data.puuid == "puuid-1"
     assert resp.existing_data.name == "PlayerA"

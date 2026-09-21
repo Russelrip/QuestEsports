@@ -23,7 +23,7 @@ from app.api.routes import (
     teams,
 )
 from app.config import get_settings
-from app.logging_setup import setup_logging
+from app.logging_setup import request_log_path, setup_logging
 from app.middleware.write_freeze import WriteFreezeMiddleware
 from app.middleware.write_freeze import router as freeze_router
 
@@ -36,11 +36,16 @@ def _log_request_completed(request: Request, status_code: int, elapsed_seconds: 
         extra={
             "request_id": getattr(request.state, "request_id", None),
             "method": request.method,
-            "path": request.url.path,
+            "path": request_log_path(request),
             "status_code": status_code,
             "duration_ms": round(elapsed_seconds * 1000.0, 1),
         },
     )
+
+
+def _request_log_path(request: Request) -> str:
+    """Backward-compatible alias for the shared request-path log helper."""
+    return request_log_path(request)
 
 
 class RequestIdMiddleware(BaseHTTPMiddleware):

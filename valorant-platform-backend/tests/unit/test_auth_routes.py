@@ -43,7 +43,6 @@ CALLBACK_RESPONSE = DiscordCallbackResponse(
         discord_discriminator="0",
         discord_avatar="abc123",
         discord_email="player@example.com",
-        access_token="tok-123",
     ),
     exists=True,
     existing_data=DiscordExistingData(
@@ -146,6 +145,7 @@ def test_get_callback_returns_envelope(monkeypatch: pytest.MonkeyPatch) -> None:
     resp = client.get("/api/v1/auth/discord/callback", params={"code": "some-code"})
     assert resp.status_code == 200
     assert resp.json() == CALLBACK_RESPONSE.model_dump()
+    assert "access_token" not in resp.json()["user"]
 
 
 def test_post_check_discord_returns_user(monkeypatch: pytest.MonkeyPatch) -> None:

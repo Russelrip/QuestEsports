@@ -691,15 +691,6 @@ const saveAdminEvent = async ({ eventId, body, auditContext = {} }) => {
   });
   if (linkedEvent)
     throw new HttpError(400, "This LAN event already has an entrance fee.");
-  if (
-    existing &&
-    data.capacity < (await getReservedQuantity(prisma, existing.id))
-  ) {
-    throw new HttpError(
-      409,
-      "Capacity cannot be lower than the number of reserved and paid tickets.",
-    );
-  }
   const persist = (database) => eventId
     ? database.ticketEvent.update({
         where: { id: eventId },
@@ -710,20 +701,30 @@ const saveAdminEvent = async ({ eventId, body, auditContext = {} }) => {
         data: { id: crypto.randomUUID(), ...data },
         include: { series: { select: ticketSeriesSelect } },
       });
-  const event = auditContext.actorUserId || auditContext.requestId || auditContext.ipAddress
-    ? await prisma.$transaction(async (tx) => {
-      const saved = await persist(tx);
+  const event = await runSerializable(async (tx) => {
+    const current = eventId
+      ? await tx.ticketEvent.findUnique({ where: { id: eventId } })
+      : null;
+    if (eventId && !current) throw new HttpError(404, "Ticketed event not found.");
+    if (current && data.capacity < (await getReservedQuantity(tx, current.id))) {
+      throw new HttpError(
+        409,
+        "Capacity cannot be lower than the number of reserved and paid tickets.",
+      );
+    }
+    const saved = await persist(tx);
+    if (auditContext.actorUserId || auditContext.requestId || auditContext.ipAddress) {
       await recordAuditInTransaction(tx, {
         ...auditContext,
         action: eventId ? "ticket.event.updated" : "ticket.event.created",
         targetType: "TicketEvent",
         targetId: saved.id,
-        beforeData: existing ? { status: existing.status, capacity: existing.capacity, slug: existing.slug } : undefined,
+        beforeData: current ? { status: current.status, capacity: current.capacity, slug: current.slug } : undefined,
         afterData: { status: saved.status, capacity: saved.capacity, slug: saved.slug },
       });
-      return saved;
-    })
-    : await persist(prisma);
+    }
+    return saved;
+  });
   return mapAdminEvent(event, await getEventStats(event.id));
 };
 

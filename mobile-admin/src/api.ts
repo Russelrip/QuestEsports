@@ -1,5 +1,6 @@
 import * as SecureStore from "expo-secure-store";
 import type { ApiEnvelope } from "@/types";
+import { isSessionInvalidResponse } from "@/input-validation";
 
 const TOKEN_KEY = "quest.admin.session.v1";
 let unauthorizedHandler: (() => void) | null = null;
@@ -31,6 +32,11 @@ export const setUnauthorizedHandler = (handler: (() => void) | null) => {
   unauthorizedHandler = handler;
 };
 
+async function invalidateSession() {
+  await sessionStore.clear();
+  unauthorizedHandler?.();
+}
+
 type RequestOptions = RequestInit & {
   authenticated?: boolean;
   timeoutMs?: number;
@@ -45,7 +51,10 @@ export async function apiRequest<T extends ApiEnvelope>(
   const token = authenticated ? await sessionStore.get() : null;
 
   if (authenticated) {
-    if (!token) throw new ApiError("Your admin session has ended. Sign in again.", 401);
+    if (!token) {
+      await invalidateSession();
+      throw new ApiError("Your admin session has ended. Sign in again.", 401);
+    }
     headers.set("Authorization", `Bearer ${token}`);
   }
   if (requestInit.body && !(requestInit.body instanceof FormData) && !headers.has("Content-Type")) {
@@ -68,9 +77,8 @@ export async function apiRequest<T extends ApiEnvelope>(
       : ({ success: response.ok, message: await response.text() } as T);
 
     if (!response.ok || data.success === false) {
-      if (authenticated && response.status === 401) {
-        await sessionStore.clear();
-        unauthorizedHandler?.();
+      if (authenticated && isSessionInvalidResponse(path, response.status, data)) {
+        await invalidateSession();
       }
       throw new ApiError(data.message || `Request failed (${response.status}).`, response.status, data);
     }

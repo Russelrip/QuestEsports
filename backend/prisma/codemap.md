@@ -5,6 +5,9 @@
 Prisma owns the relational application schema and committed migration history.
 `schema.prisma` defines `EventSeries`, the nullable tournament series
 relation, child registration fields, waitlist metadata, and public references.
+Background jobs also carry a nullable lease token: workers replace it when
+reclaiming stale work, and completion/failure writes must match it so an old
+worker cannot fence a newer owner.
 
 The additive support-conversation schema defines authenticated user-owned
 support threads, staff assignment/status state, persisted messages, and

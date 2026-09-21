@@ -5,6 +5,7 @@ import { Button, ErrorNotice, StatusBadge } from "@/components/ui";
 import { colors, formatDate, humanize, radius, spacing } from "@/theme";
 import type { ApiEnvelope } from "@/types";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { DETAIL_FIELD_ALLOWLIST, sanitizeDetailRecord } from "@/detail-record";
 
 export type RecordAction = {
   label: string;
@@ -24,6 +25,7 @@ type Props<T extends { id: string }> = {
   detailPath?: (item: T) => string;
   detailKey?: string;
   actions?: (item: T, detail: Record<string, unknown>) => RecordAction[];
+  detailAllowlist?: ReadonlySet<string>;
   onClose: () => void;
   onChanged: () => void;
 };
@@ -44,7 +46,7 @@ function flattenRecord(value: Record<string, unknown>, prefix = "", depth = 0): 
   });
 }
 
-export function DetailModal<T extends { id: string }>({ visible, item, title, detailPath, detailKey, actions, onClose, onChanged }: Props<T>) {
+export function DetailModal<T extends { id: string }>({ visible, item, title, detailPath, detailKey, actions, detailAllowlist = DETAIL_FIELD_ALLOWLIST, onClose, onChanged }: Props<T>) {
   const [detail, setDetail] = useState<Record<string, unknown>>({});
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
@@ -56,7 +58,7 @@ export function DetailModal<T extends { id: string }>({ visible, item, title, de
   useEffect(() => {
     if (!visible || !item) return;
     const currentRequest = ++detailRequest.current;
-    setDetail(item as unknown as Record<string, unknown>);
+    setDetail(sanitizeDetailRecord(item as unknown as Record<string, unknown>, detailAllowlist));
     setError(null);
     if (!detailPath || !detailKey) {
       setLoading(false);
@@ -67,7 +69,7 @@ export function DetailModal<T extends { id: string }>({ visible, item, title, de
       .then((data) => {
         const loaded = data[detailKey];
         if (currentRequest === detailRequest.current && loaded && typeof loaded === "object") {
-          setDetail(loaded as Record<string, unknown>);
+          setDetail(sanitizeDetailRecord(loaded as Record<string, unknown>, detailAllowlist));
         }
       })
       .catch((caught) => {
@@ -81,7 +83,7 @@ export function DetailModal<T extends { id: string }>({ visible, item, title, de
     return () => {
       detailRequest.current += 1;
     };
-  }, [detailKey, detailPath, item, visible]);
+  }, [detailAllowlist, detailKey, detailPath, item, visible]);
 
   const rows = useMemo(() => flattenRecord(detail), [detail]);
   const availableActions = item && actions ? actions(item, detail) : [];
@@ -95,7 +97,12 @@ export function DetailModal<T extends { id: string }>({ visible, item, title, de
     setBusy(action.label);
     setError(null);
     try {
-      const body = action.buildBody ? action.buildBody(input) : action.body;
+      const normalizedInput = input.trim();
+      if (action.inputLabel && !normalizedInput) {
+        setError(`${action.inputLabel} is required.`);
+        return;
+      }
+      const body = action.buildBody ? action.buildBody(normalizedInput) : action.body;
       await apiRequest<ApiEnvelope>(action.path, {
         method: action.method,
         ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
