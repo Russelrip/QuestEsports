@@ -16,6 +16,7 @@ services:
       - 0.0.0.0
       - --port
       - "8000"
+      - --no-access-log
       - --ssl-certfile
       - /run/valorant-tls/valorant-platform.crt
       - --ssl-keyfile

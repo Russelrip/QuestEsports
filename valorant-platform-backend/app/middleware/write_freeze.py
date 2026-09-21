@@ -16,6 +16,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.api.dependencies import require_service_token
 from app.config import Settings, get_settings
+from app.logging_setup import request_log_path
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +66,7 @@ class WriteFreezeMiddleware(BaseHTTPMiddleware):
             logger.warning(
                 "request rejected by write freeze: method=%s path=%s mode=validation",
                 request.method,
-                request.url.path,
+                request_log_path(request),
             )
             return JSONResponse(
                 status_code=503,

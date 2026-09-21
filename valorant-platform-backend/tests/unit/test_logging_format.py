@@ -1,10 +1,16 @@
 import io
 import json
 import logging
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
+from fastapi import Response
+from starlette.requests import Request
 
 from app.logging_setup import REDACT_KEYS, JsonFormatter
+from app.main import _request_log_path
+from app.middleware import write_freeze
 
 
 def _capture_logger(name: str) -> tuple[logging.Logger, io.StringIO, logging.StreamHandler]:
@@ -99,3 +105,60 @@ def test_json_formatter_preserves_nested_non_sensitive_values() -> None:
         "headers": {"x-request-id": "abc", "user_agent": "curl/8.0"},
         "items": [{"name": "valorant", "count": 2}, ["a", "b"]],
     }
+
+
+def test_request_logs_use_route_templates_instead_of_identifier_paths() -> None:
+    request = Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/api/v1/players/puuid-secret",
+            "headers": [],
+            "query_string": b"",
+            "route": SimpleNamespace(path="/api/v1/players/{player_id}"),
+        }
+    )
+
+    assert _request_log_path(request) == "/api/v1/players/{player_id}"
+    assert "puuid-secret" not in _request_log_path(request)
+
+
+def test_unmatched_request_logs_redact_all_path_values() -> None:
+    request = Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/api/v1/players/puuid-secret",
+            "headers": [],
+            "query_string": b"",
+        }
+    )
+
+    path = _request_log_path(request)
+    assert path == "/<redacted>/<redacted>/<redacted>/<redacted>"
+    assert "puuid-secret" not in path
+
+
+async def test_write_freeze_logs_redacted_path(monkeypatch, caplog) -> None:
+    from app.config import Settings
+
+    monkeypatch.setattr(write_freeze, "get_settings", lambda: Settings(write_freeze_mode="validation"))
+    request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/api/v1/register/puuid-secret",
+            "headers": [],
+            "query_string": b"",
+        }
+    )
+
+    with caplog.at_level(logging.WARNING, logger="app.middleware.write_freeze"):
+        response = await write_freeze.WriteFreezeMiddleware(
+            AsyncMock()
+        ).dispatch(request, AsyncMock())
+
+    assert isinstance(response, Response)
+    assert response.status_code == 503
+    assert "puuid-secret" not in caplog.text
+    assert "<redacted>" in caplog.text

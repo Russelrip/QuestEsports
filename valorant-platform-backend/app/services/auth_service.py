@@ -4,7 +4,9 @@ Ports ``valorantsl-new`` ``backend/app/routers/auth.py`` into the standard
 layering with a minimal ``httpx`` OAuth exchange instead of ``fastapi-discord``
 (R21): build the authorize URL, exchange the one-time authorization code for an
 access token, fetch ``/users/@me``, and report whether the Discord user already
-has a ``leaderboard_players`` row. The in-memory code dedupe mirrors
+has a ``leaderboard_players`` row. The provider access token is retained only
+for that immediate lookup and is never returned to the caller. The in-memory
+code dedupe mirrors
 ``valorantsl-new``'s module-level ``_used_codes`` (R24): a code is added before
 the exchange and only removed on error, so a successful exchange is never
 replayed (single-instance deployment, as today). No geo-gating anywhere (R15).
@@ -147,7 +149,6 @@ class AuthService:
                 discord_discriminator=discord_user.get("discriminator", "0"),
                 discord_avatar=discord_user.get("avatar"),
                 discord_email=discord_user.get("email"),
-                access_token=access_token,
             ),
             exists=existing is not None,
             existing_data=(

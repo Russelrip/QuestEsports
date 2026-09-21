@@ -30,7 +30,6 @@ class DiscordCallbackUser(BaseModel):
     discord_discriminator: str | None = None
     discord_avatar: str | None = None
     discord_email: str | None = None
-    access_token: str | None = None
 
 
 class DiscordExistingData(BaseModel):

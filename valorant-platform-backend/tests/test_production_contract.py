@@ -154,6 +154,12 @@ def _compose_config() -> dict:
     return json.loads(result.stdout)
 
 
+def test_production_uvicorn_access_logging_is_disabled() -> None:
+    compose = (ROOT / "docker-compose.production.yml").read_text(encoding="utf-8")
+
+    assert "      - --no-access-log\n" in compose
+
+
 def test_compose_rejects_missing_release_digest() -> None:
     if shutil.which("docker") is None:
         pytest.skip("docker is unavailable")
@@ -654,6 +660,31 @@ def test_name_audit_lock_settings_reject_negative_retry_values() -> None:
         Settings(name_audit_lock_retries=-1)
     with pytest.raises(ValueError):
         Settings(name_audit_lock_retry_seconds=-0.1)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("henrik_timeout_seconds", 0),
+        ("henrik_timeout_seconds", 121),
+        ("henrik_max_retries", -1),
+        ("henrik_max_retries", 6),
+        ("henrik_retry_after_cap_seconds", -0.1),
+        ("updater_interval_minutes", 0),
+        ("updater_interval_minutes", 1441),
+        ("updater_rate_limit_delay", -0.1),
+        ("updater_rate_limit_delay", 60.1),
+        ("name_audit_delay", -0.1),
+        ("name_audit_delay", 60.1),
+        ("match_search_max_pages", 0),
+        ("match_search_max_pages", 101),
+    ],
+)
+def test_worker_and_upstream_settings_reject_unsafe_numeric_bounds(field: str, value: object) -> None:
+    from app.config import Settings
+
+    with pytest.raises(ValueError):
+        Settings(**{field: value})
 
 
 def test_release_lock_success_yields_a_live_non_null_handle(tmp_path) -> None:

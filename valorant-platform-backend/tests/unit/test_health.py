@@ -159,7 +159,7 @@ def test_production_health_requires_a_quest_compatible_service_token(monkeypatch
         "/api/v1/health", headers={"Authorization": "Bearer not-a-valid-quest-token"}
     )
     assert rejected.status_code == 503
-    assert rejected.json()["checks"]["service_token"] == "not_ready"
+    assert rejected.json() == {"status": "degraded", "db": "up"}
 
 
 def test_production_health_serves_liveness_without_a_service_token(monkeypatch) -> None:
