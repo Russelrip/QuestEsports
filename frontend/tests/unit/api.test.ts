@@ -20,12 +20,35 @@ afterEach(() => {
 });
 
 describe("API helpers", () => {
-  it("prefixes relative API paths and preserves absolute resources", () => {
+  it.each([
+    { configuredApiUrl: "https://api.example.com", path: "javascript:alert(1)", expected: "/" },
+    { configuredApiUrl: "https://api.example.com", path: "blob:https://api.example.com/id", expected: "/" },
+    { configuredApiUrl: "https://api.example.com", path: "//attacker.example/steal", expected: "/" },
+    { configuredApiUrl: "https://api.example.com", path: "https://user:pass@api.example.com/api/health", expected: "/" },
+    { configuredApiUrl: "https://api.example.com", path: "https://[invalid/api/health", expected: "/" },
+    { configuredApiUrl: undefined, path: "https://api.example.com/api/health", expected: "/" },
+  ])("rejects unsafe direct destinations: $path", ({ configuredApiUrl, path, expected }) => {
+    if (configuredApiUrl) process.env.NEXT_PUBLIC_API_URL = configuredApiUrl;
+    else delete process.env.NEXT_PUBLIC_API_URL;
+
+    expect(buildApiUrl(path)).toBe(expected);
+  });
+
+  it("prefixes relative API paths and rejects foreign absolute resources", () => {
     process.env.NEXT_PUBLIC_API_URL = "https://api.example.com";
     expect(buildApiUrl("/api/health")).toBe("https://api.example.com/api/health");
-    expect(buildApiUrl("https://cdn.example.com/image.png")).toBe(
-      "https://cdn.example.com/image.png"
+    expect(buildApiUrl("https://cdn.example.com/image.png")).toBe("/");
+    expect(buildApiUrl("data:text/plain,unexpected")).toBe("/");
+    expect(buildApiUrl("/\\attacker.example/steal")).toBe("/");
+  });
+
+  it("allows absolute URLs only when they match the configured API origin", () => {
+    process.env.NEXT_PUBLIC_API_URL = "https://api.example.com";
+
+    expect(buildApiUrl("https://api.example.com/api/health")).toBe(
+      "https://api.example.com/api/health"
     );
+    expect(buildApiUrl("https://api.example.com.evil.test/api/health")).toBe("/");
   });
 
   it("normalizes configured trailing slashes with URL parsing", () => {

@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { AuthUser } from "@/lib/auth";
 import { apiFetchJson } from "@/lib/auth";
 import { subscribeToRealtimeUpdates } from "@/lib/realtime";
+import { normalizeSameOriginPath } from "@/lib/safe-url";
 import { notifySupportRead } from "@/components/support/SupportProvider";
 
 type NotificationData = {
@@ -16,7 +17,14 @@ type NotificationData = {
 
 type Envelope<T> = { success?: boolean; data?: T };
 const empty: NotificationData = { items: [], unreadCount: 0, push: { enabled: false, publicKey: null }, preference: { matchPushEnabled: true, soundEnabled: true, matchEmailEnabled: false } };
-const notificationHref = (item: NotificationData["items"][number]) => item.type === "support_message" && item.actionUrl?.startsWith("/support/") ? item.actionUrl : item.actionUrl || "/profile";
+const notificationHref = (item: NotificationData["items"][number]) => {
+  const normalized = normalizeSameOriginPath(item.actionUrl, "/profile");
+  if (item.type !== "support_message") return normalized;
+
+  const isSupportPath = /^\/support(?:\/|[?#]|$)/.test(normalized);
+  const isAdminSupportPath = /^\/admin\/support(?:[?#]|$)/.test(normalized);
+  return isSupportPath || isAdminSupportPath ? normalized : "/profile";
+};
 
 type NotificationBellProps = {
   user: AuthUser;

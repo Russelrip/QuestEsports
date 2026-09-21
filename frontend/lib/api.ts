@@ -55,14 +55,30 @@ const getConfiguredApiOrigin = () => parseApiOrigin(
 const getPublicApiOrigin = () => parseApiOrigin(process.env.NEXT_PUBLIC_API_URL?.trim());
 
 const buildConfiguredApiUrl = (path: string, getApiOrigin: () => string | null) => {
-  if (
-    /^(?:https?|data|blob):/i.test(path)
-  ) {
-    return path;
-  }
-
   const apiOrigin = getApiOrigin();
-  return apiOrigin ? new URL(path, `${apiOrigin}/`).toString() : path;
+  const normalizedPath = path.trim();
+  const isAbsoluteDestination = /^(?:[a-z][a-z\d+.-]*:|\/\/)/i.test(normalizedPath);
+  const baseOrigin = apiOrigin || "https://api.invalid";
+
+  try {
+    const parsedUrl = new URL(normalizedPath, `${baseOrigin}/`);
+    const isHttpUrl = ["http:", "https:"].includes(parsedUrl.protocol);
+    const hasCredentials = Boolean(parsedUrl.username || parsedUrl.password);
+
+    if (
+      !isHttpUrl ||
+      hasCredentials ||
+      parsedUrl.origin !== baseOrigin ||
+      (!apiOrigin && isAbsoluteDestination)
+    ) {
+      return "/";
+    }
+
+    if (apiOrigin) return parsedUrl.toString();
+    return `${parsedUrl.pathname}${parsedUrl.search}${parsedUrl.hash}`;
+  } catch {
+    return "/";
+  }
 };
 
 export const buildApiUrl = (path: string) => buildConfiguredApiUrl(path, getConfiguredApiOrigin);
