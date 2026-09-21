@@ -57,7 +57,7 @@ const policySections = [
       "A leaderboard entry can publicly show a Riot ID and tagline, region, Discord username, current rank tier, rating, ranking position, peak and seasonal ranks, and when the player last played a recorded match.",
       "A player profile page can publicly show a Quest player identifier, display name, connected Riot ID, teams, tournament history, and cached ranking information with the time it was taken.",
       "Ranking information is obtained from third-party VALORANT data services and refreshed periodically, so a published value is a snapshot rather than a live reading.",
-      "Quest E-sports staff can hide an entry from the public board while it stays registered, or remove it entirely, for reasons such as a falsified identity, a breach of tournament rules, or a request we accept. A removed entry is kept for a limited period so an incorrect removal can be reversed, and is also present in routine encrypted backups until those expire.",
+      "Quest E-sports staff can hide an entry from the public board while it stays registered, or remove it entirely, for reasons such as a falsified identity, a breach of tournament rules, or a request we accept. A record of a removed entry is kept so that an incorrect removal can be reversed, and the entry is also present in routine encrypted backups until those expire.",
       "You can ask us to hide or remove your leaderboard entry, or disconnect the game account behind it, using the contact details in this policy.",
     ],
   },
@@ -97,7 +97,7 @@ const policySections = [
     title: "9. Cookies and Similar Technologies",
     paragraphs: [
       "Quest E-sports uses cookies or similar technologies that are necessary to keep you signed in, remember sessions, protect account security, and support basic site functionality.",
-      "The site also installs a service worker in your browser to support offline behaviour and, where you have allowed it, notification delivery. It stores site data locally in your browser and can be cleared through your browser settings.",
+      "If you enable browser notifications, the site installs a service worker in your browser to deliver them. It is not installed otherwise, and you can remove it by clearing this site's data in your browser settings.",
       "We may also use performance tools to understand traffic, reliability, and usage trends. We do not sell personal information and we do not run third-party behavioural advertising.",
     ],
   },

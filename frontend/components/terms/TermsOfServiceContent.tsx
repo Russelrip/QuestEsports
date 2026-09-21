@@ -64,7 +64,7 @@ const termsSections = [
     ],
     bullets: [
       "Selections, actions, and messages made in these rooms are recorded as the operational record of the match and may be reviewed by organisers, referees, and staff.",
-      "Staff may hide a message, restrict a participant, or take over a room where necessary for fairness, safety, or rule enforcement.",
+      "Staff may hide a message, mute a participant, or lock a room where necessary for fairness, safety, or rule enforcement.",
       "Veto results recorded by the platform stand as the outcome of that veto unless an organiser rules otherwise.",
       "Do not use these rooms to harass, abuse, threaten, or deceive other participants or staff.",
     ],
