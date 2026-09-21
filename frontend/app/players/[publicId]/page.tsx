@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { cache } from "react";
 import PageLayout from "@/components/PageLayout";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
@@ -18,10 +19,14 @@ import { buildPageMetadata } from "@/lib/site";
 
 type PlayerPageProps = { params: Promise<{ publicId: string }> };
 
+// Metadata and the page both need the profile; one request serves both.
+// fetchWithTimeout passes an AbortSignal, which Next's own fetch dedupe skips.
+const getPlayerProfile = cache(fetchPlayerProfile);
+
 export async function generateMetadata({ params }: PlayerPageProps) {
   try {
     const { publicId } = await params;
-    const player = await fetchPlayerProfile(publicId);
+    const player = await getPlayerProfile(publicId);
     return buildPageMetadata({
       title: `${player.displayName} — Player Profile`,
       description: `Quest E-sports player profile for ${player.displayName}: teams, tournament history, and competitive rankings.`,
@@ -76,7 +81,7 @@ export default async function PlayerProfilePage({ params }: PlayerPageProps) {
 
   try {
     const { publicId } = await params;
-    player = await fetchPlayerProfile(publicId);
+    player = await getPlayerProfile(publicId);
   } catch (error) {
     if (error instanceof ApiRequestError && error.status === 404) notFound();
     throw error;

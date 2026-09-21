@@ -8,7 +8,7 @@ import { FormField } from "@/components/ui/form-field";
 import { apiFetch } from "@/lib/auth";
 import { readApiResponse } from "@/lib/api";
 import { submitPayHereCheckout, type PayHereCheckout } from "@/lib/payments";
-import type { TicketedEvent, TicketQuote } from "@/lib/tickets";
+import { safeTicketOrderPath, type TicketedEvent, type TicketQuote } from "@/lib/tickets";
 
 export default function TicketCheckout({ event }: { event: TicketedEvent }) {
   const [quantity, setQuantity] = useState(Math.min(1, event.availableTickets));
@@ -101,7 +101,11 @@ export default function TicketCheckout({ event }: { event: TicketedEvent }) {
           data.message || "Ticket checkout could not be started.",
         );
       if (data.checkout) submitPayHereCheckout(data.checkout);
-      else if (data.orderPath) window.location.assign(data.orderPath);
+      else {
+        const orderPath = safeTicketOrderPath(data.orderPath);
+        if (!orderPath) throw new Error("Ticket checkout could not be started.");
+        window.location.assign(orderPath);
+      }
     } catch (nextError) {
       setError(
         nextError instanceof Error

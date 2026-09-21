@@ -1,4 +1,5 @@
 import { fetchApiJson } from "@/lib/api";
+import { normalizeSafeRedirectPath } from "@/lib/safe-redirect";
 
 export type TicketedEvent = {
   id: string;
@@ -95,4 +96,15 @@ export async function fetchTicketOrder(publicToken: string) {
     "Ticket order not found.",
   );
   return data.order;
+}
+
+// A checkout that does not go to PayHere sends the buyer to the order page. The
+// server supplies that path, so it is checked rather than trusted: anything that
+// is not this site's own order page is refused instead of navigated to.
+const TICKET_ORDER_PATHNAME = "/tickets/order";
+
+export function safeTicketOrderPath(value: string | null | undefined): string | null {
+  const path = normalizeSafeRedirectPath(value);
+  if (!path) return null;
+  return path.split(/[?#]/, 1)[0] === TICKET_ORDER_PATHNAME ? path : null;
 }
