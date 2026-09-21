@@ -99,7 +99,7 @@ const shutdown = async (signal, exitCode = 0) => {
       if (result.status === "rejected") {
         shutdownFailed = true;
         logger.error("Shutdown drain task failed", {
-          task: ["http", "job_worker", "commerce_maintenance", "challonge_scheduler", "data_hygiene", "realtime_transport"][index],
+          task: ["http", "job_worker", "commerce_maintenance", "challonge_scheduler", "ranking_scheduler", "data_hygiene", "realtime_transport"][index],
           error: result.reason,
           signal,
         });
