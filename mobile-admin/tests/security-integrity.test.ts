@@ -28,4 +28,13 @@ describe("mobile admin safety helpers", () => {
     expect(isSessionInvalidResponse("/api/admin/orders/1", 403, { code: "session_revoked" })).toBe(true);
     expect(isSessionInvalidResponse("/api/admin/orders/1", 401, {})).toBe(true);
   });
+
+  it("signs out a demoted admin on the admin guard's code, wherever the API puts it", () => {
+    // Unversioned routes carry it in `details`, /api/v1 routes in `error` too.
+    expect(isSessionInvalidResponse("/api/admin/orders/1", 403, { details: { code: "admin_access_required" } })).toBe(true);
+    expect(isSessionInvalidResponse("/api/v1/admin/veto-rooms", 403, { error: { code: "admin_access_required" } })).toBe(true);
+    // A super-admin-only route or a staff-area refusal must not end a session.
+    expect(isSessionInvalidResponse("/api/admin/staff-roles", 403, { message: "Super admin access is required." })).toBe(false);
+    expect(isSessionInvalidResponse("/api/v1/admin/veto-rooms", 403, { error: { code: "forbidden" } })).toBe(false);
+  });
 });

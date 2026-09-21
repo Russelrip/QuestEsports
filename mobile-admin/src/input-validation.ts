@@ -18,6 +18,11 @@ export function isSessionInvalidResponse(path: string, status: number, data: unk
 
   if (!data || typeof data !== "object") return false;
   const record = data as Record<string, unknown>;
-  const code = String(record.code || record.errorCode || record.reason || "").toLowerCase();
+  // Unversioned routes put the code in `details`, /api/v1 routes also in `error`.
+  const nested = (key: string) => {
+    const value = record[key];
+    return value && typeof value === "object" ? (value as Record<string, unknown>).code : undefined;
+  };
+  const code = String(record.code || record.errorCode || record.reason || nested("details") || nested("error") || "").toLowerCase();
   return ["session_invalid", "session_revoked", "token_invalid", "token_expired", "admin_access_required"].includes(code);
 }
