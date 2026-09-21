@@ -120,10 +120,13 @@ export default function ProfileView() {
   // tab; the panel reports each reload back so the two never disagree.
   const [gameAccounts, setGameAccounts] = useState<GameAccountList | null>(null);
   const [gameAccountsSettled, setGameAccountsSettled] = useState(false);
-  // Kept in a ref, not state: clearing a state flag here would re-run the
-  // effect and tear down the settling observer on its own first alignment.
-  const alignedGameAccountsRef = useRef(false);
-  const [scrollToGameAccounts, setScrollToGameAccounts] = useState(false);
+  // Each deep link or press of the header button is a new request. The effect
+  // records the one it handled in a ref rather than clearing state: clearing
+  // would re-run the effect and tear down the settling observer on its own
+  // first alignment, while a one-shot flag would ignore every later press.
+  const [gameAccountsScrollRequest, setGameAccountsScrollRequest] = useState(0);
+  const handledScrollRequestRef = useRef(0);
+  const requestGameAccountsScroll = () => setGameAccountsScrollRequest((request) => request + 1);
   const { data: teamsData, setData: setTeamsData, loading: teamsLoading, error: teamsError } = useTeams(Boolean(user));
   const showToast = useToastStore((state) => state.showToast);
   const teams = teamsData ?? [];
@@ -154,7 +157,7 @@ export default function ProfileView() {
       // `/profile?tab=account#valorant-account` is the link other pages use to
       // send a player straight to connecting VALORANT. The browser cannot
       // honour the fragment itself: the panel is not rendered yet.
-      if (window.location.hash === `#${GAME_ACCOUNTS_ANCHOR}`) setScrollToGameAccounts(true);
+      if (window.location.hash === `#${GAME_ACCOUNTS_ANCHOR}`) requestGameAccountsScroll();
     } else if (params.get("tab") === "invitations") {
       // Every invitation notice points here, and so does the onboarding page a
       // captain's copied link starts at.
@@ -210,11 +213,11 @@ export default function ProfileView() {
     // Waits for the header row to settle, because it appears above the panel
     // and would push it back out of view after the scroll; and for the panel
     // itself, which is not rendered until the signed-in view is.
-    if (!scrollToGameAccounts || activeTab !== "account" || !gameAccountsSettled) return;
-    if (alignedGameAccountsRef.current) return;
+    if (!gameAccountsScrollRequest || activeTab !== "account" || !gameAccountsSettled) return;
+    if (handledScrollRequestRef.current === gameAccountsScrollRequest) return;
     const panel = document.getElementById(GAME_ACCOUNTS_ANCHOR);
     if (!panel) return;
-    alignedGameAccountsRef.current = true;
+    handledScrollRequestRef.current = gameAccountsScrollRequest;
 
     // Instant, not smooth: this is arriving at a link, not moving within the
     // page. The site sets `scroll-behavior: smooth` on the whole document, so
@@ -244,7 +247,7 @@ export default function ProfileView() {
     }
 
     return release;
-  }, [activeTab, scrollToGameAccounts, gameAccountsSettled, user]);
+  }, [activeTab, gameAccountsScrollRequest, gameAccountsSettled, user]);
 
   if (isLoading) {
     return (
@@ -426,7 +429,7 @@ export default function ProfileView() {
                     className="shrink-0"
                     onClick={() => {
                       setActiveTab("account");
-                      setScrollToGameAccounts(true);
+                      requestGameAccountsScroll();
                     }}
                   >
                     {action}
