@@ -235,9 +235,9 @@ def test_cd_signs_and_verifies_the_exact_digest_with_trusted_identity() -> None:
     assert "expected an SPDX or CycloneDX SBOM predicate" in cd
     assert "expected an SLSA provenance v1 or v0.2 predicate" in cd
     assert "vars.LEGACY_DIRECT_CD_ENABLED == 'true'" in cd
-    assert "FROM python:3.12-slim@sha256:" in dockerfile
+    assert "FROM python:3.14-slim@sha256:" in dockerfile
     assert "COPY --from=ghcr.io/astral-sh/uv:0.8.14@sha256:" in dockerfile
-    assert "FROM python:3.12-slim\n" not in dockerfile
+    assert "FROM python:3.14-slim\n" not in dockerfile
 
 
 def test_compose_has_exact_services_network_and_loopback_ingress() -> None:

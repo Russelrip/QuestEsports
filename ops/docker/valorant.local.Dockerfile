@@ -5,7 +5,7 @@
 # own deployment; this image exists purely for local parity.
 
 # pyproject.toml requires >=3.11.
-FROM python:3.12-slim-bookworm
+FROM python:3.14-slim-bookworm
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates curl \

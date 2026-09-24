@@ -296,6 +296,6 @@ the full code → HTTP table is in Appendix B of the implementation plan and in
 
 ## Production hardening verification
 
-Python 3.11+ is supported (CI and runtime image use 3.12). Run `uv sync --extra dev --locked`, `uv run ruff check app workers tests scripts`, and `uv run pytest -m "not live" -q`. Windows without IANA zones can add `--with tzdata` to `uv run`. Production readiness verifies the Quest-signed health token and configuration without writes; see the monorepo production runbook.
+Python 3.11+ is supported (CI runs on the runner's system 3.12; the runtime image uses 3.14). Run `uv sync --extra dev --locked`, `uv run ruff check app workers tests scripts`, and `uv run pytest -m "not live" -q`. Windows without IANA zones can add `--with tzdata` to `uv run`. Production readiness verifies the Quest-signed health token and configuration without writes; see the monorepo production runbook.
 
 Production uses the immutable Compose release; standalone `npm start`, Vercel and PM2 instructions apply only to development or historical deployments.
