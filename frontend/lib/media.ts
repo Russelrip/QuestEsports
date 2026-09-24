@@ -644,25 +644,3 @@ export const fetchPosters = async (searchParams?: URLSearchParams) => {
     },
   };
 };
-
-export const fetchPublicPosters = async (searchParams?: URLSearchParams) => {
-  const suffix = searchParams?.toString() ? `?${searchParams.toString()}` : "";
-  const response = await fetchWithTimeout(`${resolveMediaUrl("/api/posters")}${suffix}`, {
-    next: { revalidate: 300 },
-    headers: withServerOriginHeader(),
-  });
-
-  const payload = await parseApiResponse<{ posters: Poster[]; pagination?: MediaPagination }>(
-    response,
-    "Media request failed.",
-  );
-  return {
-    ...payload,
-    pagination: payload.pagination || {
-      page: 1,
-      pageSize: payload.posters.length,
-      total: payload.posters.length,
-      totalPages: 1,
-    },
-  };
-};
