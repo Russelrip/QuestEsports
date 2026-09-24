@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { cache } from "react";
 import PageLayout from "@/components/PageLayout";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
@@ -25,10 +26,14 @@ import {
 // id; nothing joins the two yet.
 type MatchPageProps = { params: Promise<{ id: string }> };
 
+// Metadata and the page both need the match; one request serves both.
+// fetchWithTimeout passes an AbortSignal, which Next's own fetch dedupe skips.
+const getPublicMatch = cache(fetchPublicMatch);
+
 export async function generateMetadata({ params }: MatchPageProps) {
   try {
     const { id } = await params;
-    const match = await fetchPublicMatch(id);
+    const match = await getPublicMatch(id);
     const title = `${teamLabel(match.teams.a)} vs ${teamLabel(match.teams.b)}`;
     return buildPageMetadata({
       title: `${title} — Match`,
@@ -224,7 +229,7 @@ export default async function MatchPage({ params }: MatchPageProps) {
 
   try {
     const { id } = await params;
-    match = await fetchPublicMatch(id);
+    match = await getPublicMatch(id);
   } catch (error) {
     if (error instanceof ApiRequestError && error.status === 404) notFound();
     throw error;

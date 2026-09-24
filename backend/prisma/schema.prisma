@@ -2154,6 +2154,7 @@ model BackgroundJob {
   maxAttempts Int                 @default(5) @map("max_attempts")
   availableAt DateTime            @default(now()) @map("available_at")
   lockedAt    DateTime?           @map("locked_at")
+  leaseToken  String?             @map("lease_token")
   completedAt DateTime?           @map("completed_at")
   failedAt    DateTime?           @map("failed_at")
   lastError   String?             @map("last_error")

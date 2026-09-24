@@ -14,6 +14,7 @@ import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useToastStore } from "@/hooks/useToastStore";
 import { apiFetch } from "@/lib/auth";
+import { saveBlob } from "@/lib/download-filename";
 import {
   fetchImages,
   fetchPublicUploadFiles,
@@ -202,15 +203,7 @@ export default function AdminMediaManager() {
       if (!response.ok) {
         await parseApiResponse(response, "Unable to download image.");
       }
-      const objectUrl = URL.createObjectURL(await response.blob());
-      try {
-        const link = document.createElement("a");
-        link.href = objectUrl;
-        link.download = safeDownloadName(asset);
-        link.click();
-      } finally {
-        URL.revokeObjectURL(objectUrl);
-      }
+      saveBlob(await response.blob(), safeDownloadName(asset));
     } catch (nextError) {
       showToast({
         tone: "error",
@@ -230,15 +223,7 @@ export default function AdminMediaManager() {
       if (!response.ok) {
         await parseApiResponse(response, "Unable to download file.");
       }
-      const objectUrl = URL.createObjectURL(await response.blob());
-      try {
-        const link = document.createElement("a");
-        link.href = objectUrl;
-        link.download = file.filename;
-        link.click();
-      } finally {
-        URL.revokeObjectURL(objectUrl);
-      }
+      saveBlob(await response.blob(), file.filename);
     } catch (nextError) {
       showToast({
         tone: "error",

@@ -357,7 +357,9 @@ const reconcilePayHerePayment = async ({
           },
         },
         merchandiseOrder: true,
-        ticketOrder: { include: { event: { select: { status: true } } } },
+        ticketOrder: {
+          include: { event: { select: { status: true, capacity: true } } },
+        },
       },
     });
     if (!current || current.provider !== "payhere") {
@@ -418,6 +420,12 @@ const reconcilePayHerePayment = async ({
           "Reserved ticket capacity was released; refund the payment.",
         );
       }
+      if (current.ticketOrderId && current.ticketOrder?.expiresAt <= now) {
+        throw new HttpError(
+          409,
+          "The ticket reservation expired; refund the payment.",
+        );
+      }
       if (
         current.ticketOrderId &&
         current.ticketOrder?.event?.status === "cancelled"
@@ -426,6 +434,30 @@ const reconcilePayHerePayment = async ({
           409,
           "The ticketed event is cancelled; refund the payment.",
         );
+      }
+      if (current.ticketOrderId) {
+        const reserved = await tx.ticketOrder.aggregate({
+          where: {
+            eventId: current.ticketOrder.eventId,
+            id: { not: current.ticketOrder.id },
+            OR: [
+              { status: "paid" },
+              {
+                status: "pending_payment",
+                capacityReleasedAt: null,
+                expiresAt: { gt: now },
+              },
+            ],
+          },
+          _sum: { quantity: true },
+        });
+        const reservedQuantity = reserved._sum.quantity || 0;
+        if (reservedQuantity + current.ticketOrder.quantity > current.ticketOrder.event.capacity) {
+          throw new HttpError(
+            409,
+            "No ticket capacity remains; refund the payment.",
+          );
+        }
       }
       const updated = await tx.paymentTransaction.update({
         where: { id: current.id },

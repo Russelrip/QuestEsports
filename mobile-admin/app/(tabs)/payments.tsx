@@ -29,18 +29,18 @@ export default function PaymentsScreen() {
       actions={(item) => [
         ...(item.provider === "bank_transfer" && ["pending", "review_required"].includes(item.status)
           ? [
-              { label: "Approve transfer", tone: "primary" as const, method: "PATCH" as const, path: `/api/admin/payments/${item.id}/bank-transfer-review`, body: { decision: "approve" } },
-              { label: "Reject transfer", tone: "danger" as const, method: "PATCH" as const, path: `/api/admin/payments/${item.id}/bank-transfer-review`, inputLabel: "Rejection reason", buildBody: (reason: string) => ({ decision: "reject", reason }) },
+              { label: "Approve transfer", tone: "primary" as const, method: "PATCH" as const, path: `/api/admin/payments/${item.id}/bank-transfer-review`, confirm: "Approve this bank transfer?", body: { decision: "approve" } },
+              { label: "Reject transfer", tone: "danger" as const, method: "PATCH" as const, path: `/api/admin/payments/${item.id}/bank-transfer-review`, confirm: "Reject this bank transfer?", inputLabel: "Rejection reason", buildBody: (reason: string) => ({ decision: "reject", reason }) },
             ]
           : []),
         ...(item.provider === "payhere" && item.status === "review_required"
           ? [
-              { label: "Accept payment", tone: "primary" as const, method: "PATCH" as const, path: `/api/admin/payments/${item.id}/payhere-reconciliation`, inputLabel: "Reconciliation note", buildBody: (note: string) => ({ decision: "accept", note }) },
-              { label: "Record refund", tone: "danger" as const, method: "PATCH" as const, path: `/api/admin/payments/${item.id}/payhere-reconciliation`, inputLabel: "Provider refund ID", buildBody: (providerRefundId: string) => ({ decision: "mark_refunded", providerRefundId, note: `External PayHere refund ${providerRefundId} confirmed in Quest Admin.` }) },
+              { label: "Accept payment", tone: "primary" as const, method: "PATCH" as const, path: `/api/admin/payments/${item.id}/payhere-reconciliation`, confirm: "Accept this payment into the ledger?", inputLabel: "Reconciliation note", buildBody: (note: string) => ({ decision: "accept", note }) },
+              { label: "Record refund", tone: "danger" as const, method: "PATCH" as const, path: `/api/admin/payments/${item.id}/payhere-reconciliation`, confirm: "Record this provider refund?", inputLabel: "Provider refund ID", buildBody: (providerRefundId: string) => ({ decision: "mark_refunded", providerRefundId, note: `External PayHere refund ${providerRefundId} confirmed in Quest Admin.` }) },
             ]
           : []),
         ...(item.status === "expired" && item.purpose === "tournament_registration"
-          ? [{ label: "Reopen payment", tone: "secondary" as const, method: "POST" as const, path: `/api/admin/payments/${item.id}/reopen` }]
+          ? [{ label: "Reopen payment", tone: "secondary" as const, method: "POST" as const, path: `/api/admin/payments/${item.id}/reopen`, confirm: "Reopen this expired payment?" }]
           : []),
       ]}
     />

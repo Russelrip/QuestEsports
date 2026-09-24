@@ -55,6 +55,13 @@ export default function VetoRoomControlScreen() {
     } finally { setBusy(""); }
   };
 
+  const confirmAdminCommand = (command: string, title: string, message: string, extra: Record<string, unknown> = {}, destructive = false) => {
+    Alert.alert(title, message, [
+      { text: "Go back", style: "cancel" },
+      { text: "Confirm", style: destructive ? "destructive" : "default", onPress: () => void adminCommand(command, extra) },
+    ]);
+  };
+
   const roomAction = async (path: string, extra: Record<string, unknown>, key: string) => {
     if (!room) return;
     setBusy(key);
@@ -119,8 +126,8 @@ export default function VetoRoomControlScreen() {
           {room.status === "toss_complete" ? <Button label="Start legacy veto" icon="play-outline" loading={busy === "start"} onPress={() => void adminCommand("start")} /> : null}
           {room.status === "open" ? <Button label="Force start" tone="secondary" onPress={() => void adminCommand("start", { force: true })} /> : null}
           {["in_progress", "completed"].includes(room.status) ? <Button label="Undo last step" tone="secondary" icon="arrow-undo-outline" onPress={() => void adminCommand("rewind", { targetStep: Math.max(0, room.currentStep - 1) })} /> : null}
-          <Button label="Reset room" tone="secondary" icon="refresh-outline" onPress={() => void adminCommand("reset")} />
-          <Button label="Cancel room" tone="danger" icon="close-circle-outline" onPress={() => void adminCommand("cancel")} />
+          <Button label="Reset room" tone="secondary" icon="refresh-outline" onPress={() => confirmAdminCommand("reset", "Reset veto room?", "This rewinds the room and clears recorded toss and veto actions.", {}, true)} />
+          <Button label="Cancel room" tone="danger" icon="close-circle-outline" onPress={() => confirmAdminCommand("cancel", "Cancel veto room?", "Players will no longer be able to use this room.", {}, true)} />
         </View>
       </Card>
 

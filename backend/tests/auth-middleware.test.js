@@ -91,6 +91,12 @@ test("authentication and role middleware deny missing or insufficient credential
       403
     );
     assert.equal(run(middleware.requireAdmin, { user: { id: "admin-1", role: "admin" } }), null);
+
+    // The admin guard's refusal is the one a demoted admin meets on every
+    // admin route; the mobile client signs out on this code, and only on it.
+    const demoted = run(middleware.requireAdmin, { user: { id: "user-1", role: "user" }, method: "GET", originalUrl: "/api/admin/orders", ip: "127.0.0.1" });
+    assert.deepEqual(demoted.details, { code: "admin_access_required" });
+    assert.equal(run(middleware.requireVerifiedEmail, { user: { id: "user-1", emailVerified: false } }).details, undefined);
   } finally {
     restore();
   }

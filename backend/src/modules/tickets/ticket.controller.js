@@ -111,7 +111,13 @@ const updateTicket = asyncHandler(async (req, res) => {
 });
 const exportReport = asyncHandler(async (req, res) => {
   const { event, rows } = await service.getEventReportRows(req.params.eventId);
-  const escape = (value) => `"${String(value ?? "").replace(/"/g, '""')}"`;
+  const formulaPrefixPattern = /^[\s\p{Cc}\p{Cf}]*[=+\-@]/u;
+  const neutralizeFormulaPrefix = (value) => {
+    const text = String(value ?? "");
+    return formulaPrefixPattern.test(text) ? `'${text}` : text;
+  };
+  const escape = (value) =>
+    `"${neutralizeFormulaPrefix(value).replace(/"/g, '""')}"`;
   const headers = [
     "Ticket",
     "Ticket status",

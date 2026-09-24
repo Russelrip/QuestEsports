@@ -1309,7 +1309,7 @@ cd D:\Work\Projects\QuestEsports
 .\ops\test-paris-database-backup-windows.ps1
 ```
 
-The first command reads the historical/local Paris `DIRECT_URL` without printing it, dumps only the application `public` schema, encrypts the result with the offline recovery recipient, writes a checksum, and removes plaintext staging data. The second command verifies the checksum and restores the latest archive into a disposable PostgreSQL 17 container. Files are stored under `D:\Work\QuestEsports-backups\paris-database` with restricted ACLs. This is not the live VPS backup or recovery path.
+The first command reads the historical/local Paris `DIRECT_URL` without printing it, dumps both Quest-owned schemas (`public` and `valorant`, never the Supabase-managed ones), encrypts the result with the offline recovery recipient, writes a checksum, and removes plaintext staging data. The second command verifies the checksum and restores the latest archive into a disposable PostgreSQL 17 container. Files are stored under `D:\Work\QuestEsports-backups\paris-database` with restricted ACLs. This is not the live VPS backup or recovery path.
 
 This Windows snapshot does not contain production VPS uploads and is not a substitute for the scheduled full VPS backup or its off-site copy.
 

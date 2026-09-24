@@ -14,6 +14,7 @@ const mailDefinitionsPath = path.join(
   __dirname,
   "../src/lib/mail/mail-job-definitions.js"
 );
+const mailBudgetPath = path.join(__dirname, "../src/lib/mail/mail-budget.js");
 const loggerMock = {
   logger: { info: () => {}, warn: () => {}, error: () => {} },
   redact: (value) => {
@@ -110,6 +111,11 @@ const createJobsPrismaMock = () => {
           }
         }
 
+        if (Object.prototype.hasOwnProperty.call(where, "leaseToken") &&
+            job.leaseToken !== where.leaseToken) {
+          return { count: 0 };
+        }
+
         if (data.status) {
           job.status = data.status;
         }
@@ -124,6 +130,18 @@ const createJobsPrismaMock = () => {
 
         if (Object.prototype.hasOwnProperty.call(data, "payload")) {
           job.payload = JSON.parse(JSON.stringify(data.payload));
+        }
+
+        for (const field of [
+          "completedAt",
+          "failedAt",
+          "availableAt",
+          "dedupeKey",
+          "leaseToken",
+        ]) {
+          if (Object.prototype.hasOwnProperty.call(data, field)) {
+            job[field] = data[field];
+          }
         }
 
         if (data.attempts?.increment) {
@@ -453,4 +471,97 @@ test("runJobWorkerTick retries failed jobs until the max attempt threshold", asy
   } finally {
     restore();
   }
+});
+
+test("a reclaimed worker cannot complete a job with a stale lease", async () => {
+  const prismaMock = createJobsPrismaMock();
+  const staleLease = "old-owner";
+  const { module: jobsModule, restore } = loadModuleWithMocks(jobsPath, {
+    [prismaModulePath]: { prisma: prismaMock.prisma },
+    [generatedPrismaPath]: {
+      Prisma: {
+        TransactionIsolationLevel: { Serializable: "Serializable" },
+        PrismaClientKnownRequestError: class PrismaClientKnownRequestError extends Error {},
+      },
+    },
+    [envPath]: {
+      env: { JOB_WORKER_ENABLED: true, JOB_WORKER_POLL_MS: 5000, JOB_WORKER_MAX_ATTEMPTS: 5 },
+    },
+    [loggerPath]: loggerMock,
+    [monitoringPath]: { captureException: () => {} },
+    [mailDefinitionsPath]: {
+      EMAIL_JOB_NAME: "email.send",
+      processQueuedMailJob: async () => {
+        assert.notEqual(prismaMock.jobs[0].leaseToken, staleLease);
+        prismaMock.jobs[0].leaseToken = "new-owner";
+        return true;
+      },
+    },
+  });
+
+  try {
+    await jobsModule.enqueueJob("email.send", { type: "verification" });
+    prismaMock.jobs[0].status = "processing";
+    prismaMock.jobs[0].lockedAt = new Date(Date.now() - 6 * 60 * 1000);
+    prismaMock.jobs[0].leaseToken = staleLease;
+    await jobsModule.runJobWorkerTick();
+    assert.equal(prismaMock.jobs[0].status, "processing");
+    assert.equal(prismaMock.jobs[0].leaseToken, "new-owner");
+  } finally { restore(); }
+});
+
+test("stale workers cannot write failure or deferral results after lease reclaim", async () => {
+  const prismaMock = createJobsPrismaMock();
+  const staleLease = "old-owner";
+  const { module: jobsModule, restore } = loadModuleWithMocks(jobsPath, {
+    [prismaModulePath]: { prisma: prismaMock.prisma },
+    [generatedPrismaPath]: {
+      Prisma: {
+        TransactionIsolationLevel: { Serializable: "Serializable" },
+        PrismaClientKnownRequestError: class PrismaClientKnownRequestError extends Error {},
+      },
+    },
+    [envPath]: {
+      env: { JOB_WORKER_ENABLED: true, JOB_WORKER_POLL_MS: 5000, JOB_WORKER_MAX_ATTEMPTS: 5 },
+    },
+    [loggerPath]: loggerMock,
+    [monitoringPath]: { captureException: () => {} },
+    [mailDefinitionsPath]: {
+      EMAIL_JOB_NAME: "email.send",
+      processQueuedMailJob: async (payload) => {
+        assert.notEqual(prismaMock.jobs.find((job) => job.payload.type === payload.type).leaseToken, staleLease);
+        if (payload.type === "failure") {
+          prismaMock.jobs.find((job) => job.payload.type === payload.type).leaseToken = "new-failure-owner";
+          throw new Error("stale failure");
+        }
+        return true;
+      },
+    },
+    [mailBudgetPath]: {
+      getMailDeferral: async ({ payload }) => {
+        if (payload.type !== "deferral") return null;
+        const job = prismaMock.jobs.find((entry) => entry.payload.type === payload.type);
+        job.leaseToken = "new-deferral-owner";
+        return { sentToday: 10, ceiling: 10, availableAt: new Date(Date.now() + 60 * 1000) };
+      },
+    },
+  });
+
+  try {
+    await jobsModule.enqueueJobs([
+      { name: "email.send", payload: { type: "failure" } },
+      { name: "email.send", payload: { type: "deferral" } },
+    ]);
+    for (const job of prismaMock.jobs) {
+      job.status = "processing";
+      job.lockedAt = new Date(Date.now() - 6 * 60 * 1000);
+      job.leaseToken = staleLease;
+    }
+
+    assert.equal(await jobsModule.runJobWorkerTick(), 2);
+    assert.equal(prismaMock.jobs[0].status, "processing");
+    assert.equal(prismaMock.jobs[0].leaseToken, "new-failure-owner");
+    assert.equal(prismaMock.jobs[1].status, "processing");
+    assert.equal(prismaMock.jobs[1].leaseToken, "new-deferral-owner");
+  } finally { restore(); }
 });

@@ -373,6 +373,26 @@ test("private APK release authenticates its post-checkout fetch without restorin
   assert.match(source, /persist-credentials: false/);
 });
 
+test("admin APK release refuses an APK not signed by the pinned certificate", () => {
+  const { document } = loadWorkflow(path.join(workflowDirectory, "release-admin-apk.yml"));
+  const steps = document.jobs["build-and-release"].steps;
+  const names = steps.map((step) => step.name);
+  const verifyIndex = names.indexOf("Verify APK signing certificate");
+  assert.ok(verifyIndex > names.indexOf("Build signed release APK"), "the certificate is checked after the APK is built");
+  assert.ok(verifyIndex < names.indexOf("Prepare release files"), "and before anything is published");
+
+  const verify = steps[verifyIndex];
+  assert.equal(
+    verify.env.EXPECTED_CERT_SHA256,
+    "${{ vars.ANDROID_SIGNING_CERT_SHA256 }}",
+    "the expected fingerprint comes from the protected release environment, not the repository",
+  );
+  assert.match(verify.run, /apksigner" verify --print-certs/);
+  assert.match(verify.run, /test -n "\$EXPECTED_CERT_SHA256"/, "a missing pin must fail the release, not skip the check");
+  assert.match(verify.run, /-eq 1/, "exactly one signer is accepted");
+  assert.match(verify.run, /test "\$actual" = "\$expected"/);
+});
+
 test("operator documentation agrees on cutover, TLS, backup, and remaining host gates", () => {
   const ciDocument = read("docs/ci-cd.md");
   const ci = section(ciDocument, "## Production flow", "## Active workflows");
@@ -390,8 +410,8 @@ test("operator documentation agrees on cutover, TLS, backup, and remaining host 
     const normalized = document.replace(/\s+/g, " ");
     assert.match(normalized, /2026-08-31/);
     assert.match(normalized, /PostgreSQL \*{0,2}17\.11\*{0,2}/);
-    assert.match(normalized, /quest-postgres/);
-    assert.match(normalized, /127\.0\.0\.1:5433/);
+    assert.match(normalized, /quest-postgres:5432/, name);
+    assert.doesNotMatch(normalized, /127\.0\.0\.1:5433/, `${name} must not describe the retired pre-Compose port`);
     assert.match(normalized, /Supabase[^.]*stale[^.]*(?:not a rollback target|not.*rollback)/i, name);
     assert.match(normalized, /No rehearsal was performed|rehearsal[^.]*skipped|rehearsal[^.]*not performed/i, name);
   }
@@ -438,7 +458,10 @@ test("operator documentation agrees on cutover, TLS, backup, and remaining host 
     /VALORANT_DATABASE_SSL_CA_FILE[\s\S]*VALORANT_DATABASE_SSL_SERVER_HOSTNAME[\s\S]*VALORANT_DATABASE_SSL_VERIFY=full/,
   );
   assert.doesNotMatch(handoff, /ssl=verify-full/);
-  assert.match(collaboration, /Production is the VPS PostgreSQL \*{0,2}17\.11\*{0,2} container `quest-postgres`/);
+  assert.match(
+    collaboration.replace(/\s+/g, " "),
+    /Production is the VPS PostgreSQL \*{0,2}17\.11\*{0,2} Compose container `quest-prod-postgres-1`, reached by the services privately as `quest-postgres:5432`/,
+  );
   assert.match(collaboration.replace(/\s+/g, " "), /not a production rollback target.*not a Supabase production SQL editor/);
   assert.doesNotMatch(collaboration, /Run the production statement|PRODUCTION_PROJECT_REF/);
 
@@ -466,7 +489,8 @@ test("operator documents keep live VPS, test Supabase, and release-input claims 
   const valorantTopology = section(valorant, "### 2.1 Topology", "### 2.2 Two schemas, four roles");
   assert.match(valorantTopology, /VPS PostgreSQL 17\.11/);
   assert.match(valorantTopology, /quest-postgres/);
-  assert.match(valorantTopology, /127\.0\.0\.1:5433/);
+  assert.match(valorantTopology, /quest-postgres:5432/);
+  assert.doesNotMatch(valorantTopology, /127\.0\.0\.1:5433|Vercel/, "the topology names the live Compose stack");
   assert.doesNotMatch(valorantTopology, /Supabase/i);
   const valorantLocal = section(valorant, "## 6. Local development", "## 7. Verification — what is verified vs prospective");
   assert.match(valorantLocal, /dedicated Supabase test project/);
@@ -498,12 +522,19 @@ test("operator documents keep live VPS, test Supabase, and release-input claims 
     "## Backup And Operations Guidance",
     "## Production Improvement Opportunities",
   );
-  assert.match(database, /live VPS PostgreSQL 17\.11[\s\S]*quest-postgres[\s\S]*127\.0\.0\.1:5433/);
+  assert.match(database, /live VPS PostgreSQL 17\.11[\s\S]*quest-postgres:5432/);
+  assert.doesNotMatch(database, /127\.0\.0\.1:5433/);
+  assert.match(
+    database,
+    /Only host-run restores use[\s\S]*127\.0\.0\.1:55432/,
+    "backups reach the database privately; only restores use the loopback staging overlay",
+  );
   assert.match(database, /historical\/pre-cutover or staging tooling/);
   assert.doesNotMatch(database, /live Paris database|target Supabase project/i);
 
   const setupStatus = section(read("docs/setup-and-deployment.md"), "## Current production status", "## Requirements");
-  assert.match(setupStatus, /2026-08-31[\s\S]*quest-postgres[\s\S]*127\.0\.0\.1:5433/);
+  assert.match(setupStatus, /2026-08-31[\s\S]*quest-postgres:5432/);
+  assert.doesNotMatch(setupStatus, /127\.0\.0\.1:5433/);
   assert.match(setupStatus, /Supabase[\s\S]*not a rollback target/);
   assert.doesNotMatch(setupStatus, /Supabase[^\n]*rollback material/i);
 
@@ -516,7 +547,7 @@ test("operator documents keep live VPS, test Supabase, and release-input claims 
   assert.match(releaseControls, /`COMPOSE_DEPLOY_ENABLED`/);
   assert.doesNotMatch(releaseControls, /`compose_run_id`|`deploy_sha`|`BACKEND_DEPLOY_ENABLED`|`FRONTEND_DEPLOY_ENABLED`/);
   assert.match(environment, /Production `DATABASE_URL` and `DIRECT_URL` must use `sslmode=verify-full`/);
-  assert.match(environment, /VPS container `quest-postgres`/);
+  assert.match(environment.replace(/\s+/g, " "), /VPS Compose container `quest-prod-postgres-1`, reached privately as `quest-postgres:5432`/);
 
   const runbook = read("docs/production-runbook.md");
   assert.doesNotMatch(runbook, /sslmode=require/);

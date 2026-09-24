@@ -32,7 +32,10 @@ const requireAdmin = (req, res, next) => {
       userId: req.user?.id || null,
       ip: req.ip,
     });
-    next(new HttpError(403, "Admin access is required."));
+    // Machine-readable because this is the refusal a demoted admin meets on
+    // every admin route: the mobile client signs out on this code alone, and
+    // not on other 403s such as a super-admin-only or staff-area refusal.
+    next(new HttpError(403, "Admin access is required.", { code: "admin_access_required" }));
     return;
   }
 

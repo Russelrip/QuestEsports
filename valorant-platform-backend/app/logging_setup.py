@@ -53,6 +53,20 @@ def _redact(value: Any) -> Any:
     return value
 
 
+def request_log_path(request: Any) -> str:
+    """Return a route template, never an identifier-bearing request path."""
+    route = request.scope.get("route")
+    template = getattr(route, "path", None)
+    if isinstance(template, str) and template:
+        return template
+
+    # Unmatched routes and middleware that runs before routing have no template.
+    # Preserve only the number of segments as an operational hint; values such
+    # as PUUIDs and Riot IDs are deliberately not retained in the request log.
+    segments = [segment for segment in request.url.path.split("/") if segment]
+    return "/" + "/".join("<redacted>" for _ in segments)
+
+
 class JsonFormatter(logging.Formatter):
     """Single-line JSON formatter: ts, level, logger, msg plus redacted extra fields."""
 

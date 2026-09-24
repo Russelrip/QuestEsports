@@ -51,6 +51,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     setUnauthorizedHandler(() => {
       setUser(null);
+      setSessionError(null);
     });
     return () => setUnauthorizedHandler(null);
   }, []);

@@ -26,7 +26,9 @@ complete raw upstream envelope verbatim for the Task 8 import layer.
 import asyncio
 import json
 import logging
+import unicodedata
 from time import perf_counter
+from urllib.parse import quote
 
 import httpx
 
@@ -78,7 +80,10 @@ class HenrikClient:
     async def get_account(self, name: str, tag: str, *, force: bool = False) -> HenrikAccount:
         params = {"force": "true"} if force else None
         body, http_status = await self._request(
-            "account", "GET", f"/valorant/v2/account/{name}/{tag}", params=params
+            "account",
+            "GET",
+            f"/valorant/v2/account/{_path_segment(name, 'name', 32)}/{_path_segment(tag, 'tag', 16)}",
+            params=params,
         )
         envelope = self._validate_success_envelope(body, http_status)
         return self._mapper.to_account(envelope["data"])
@@ -92,7 +97,7 @@ class HenrikClient:
         reach those players too).
         """
         body, http_status = await self._request(
-            "account_by_puuid", "GET", f"/valorant/v1/by-puuid/account/{puuid}"
+            "account_by_puuid", "GET", f"/valorant/v1/by-puuid/account/{_path_segment(puuid, 'puuid', 128)}"
         )
         envelope = self._validate_success_envelope(body, http_status)
         return self._mapper.to_account(envelope["data"])
@@ -119,7 +124,8 @@ class HenrikClient:
         body, http_status = await self._request(
             "matches_by_puuid",
             "GET",
-            f"/valorant/v4/by-puuid/matches/{affinity}/{platform}/{puuid}",
+            f"/valorant/v4/by-puuid/matches/{_path_segment(affinity, 'affinity', 32)}"
+            f"/{_path_segment(platform, 'platform', 32)}/{_path_segment(puuid, 'puuid', 128)}",
             params=params,
         )
         envelope = self._validate_success_envelope(body, http_status)
@@ -139,7 +145,8 @@ class HenrikClient:
         body, http_status = await self._request(
             "player_mmr",
             "GET",
-            f"/valorant/v3/by-puuid/mmr/{affinity}/{platform}/{puuid}",
+            f"/valorant/v3/by-puuid/mmr/{_path_segment(affinity, 'affinity', 32)}"
+            f"/{_path_segment(platform, 'platform', 32)}/{_path_segment(puuid, 'puuid', 128)}",
         )
         envelope = self._validate_success_envelope(body, http_status)
         return self._mapper.to_player_mmr(envelope["data"])
@@ -156,7 +163,8 @@ class HenrikClient:
         body, http_status = await self._request(
             "last_competitive_match",
             "GET",
-            f"/valorant/v4/by-puuid/matches/{affinity}/{platform}/{puuid}",
+            f"/valorant/v4/by-puuid/matches/{_path_segment(affinity, 'affinity', 32)}"
+            f"/{_path_segment(platform, 'platform', 32)}/{_path_segment(puuid, 'puuid', 128)}",
             params={"mode": "competitive", "size": "1"},
         )
         envelope = self._validate_success_envelope(body, http_status)
@@ -180,7 +188,8 @@ class HenrikClient:
         body, http_status = await self._request(
             "stored_matches",
             "GET",
-            f"/valorant/v1/by-puuid/stored-matches/{affinity}/{puuid}",
+            f"/valorant/v1/by-puuid/stored-matches/{_path_segment(affinity, 'affinity', 32)}"
+            f"/{_path_segment(puuid, 'puuid', 128)}",
             params={"mode": "competitive", "size": str(size)},
         )
         envelope = self._validate_success_envelope(body, http_status)
@@ -193,7 +202,10 @@ class HenrikClient:
         self, match_id: str, *, affinity: str
     ) -> HenrikMatchDetailEnvelope:
         body, http_status = await self._request(
-            "match_detail", "GET", f"/valorant/v4/match/{affinity}/{match_id}"
+            "match_detail",
+            "GET",
+            f"/valorant/v4/match/{_path_segment(affinity, 'affinity', 32)}"
+            f"/{_path_segment(match_id, 'match_id', 128)}",
         )
         envelope = self._validate_success_envelope(body, http_status)
         return HenrikMatchDetailEnvelope(
@@ -393,6 +405,29 @@ def _parse_retry_after(value: str | None) -> float | None:
     except (TypeError, ValueError):
         return None
     return parsed if parsed >= 0 else None
+
+
+def _path_segment(value: str, label: str, max_length: int) -> str:
+    """Validate and percent-encode one caller-controlled Henrik path segment.
+
+    ``quote(..., safe="")`` is intentional: a Riot ID, PUUID, or match id must
+    never be able to add a path separator or query delimiter to an upstream
+    request. Length and control-character limits keep malformed input out of
+    the HTTP client while retaining the provider's stable validation error
+    contract for callers.
+    """
+    if (
+        not isinstance(value, str)
+        or not value
+        or value in {".", ".."}
+        or len(value) > max_length
+        or any(
+            unicodedata.category(character) in {"Cc", "Cs"}
+            for character in value
+        )
+    ):
+        raise HenrikValidationError(f"invalid {label}", sub_code=None, request_id=None)
+    return quote(value, safe="")
 
 
 def _parse_int(value: str | None) -> int | None:

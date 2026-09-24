@@ -455,7 +455,7 @@ Set-Location D:\Work\Projects\QuestEsports
 .\ops\test-paris-database-backup-windows.ps1
 ```
 
-This workflow validates an encrypted application-database snapshot in disposable PostgreSQL 17. The Windows snapshot contains the application `public` schema only, does not contain VPS uploads, and does not replace the full off-site backup or a full `public` plus `valorant` recovery archive.
+This workflow validates an encrypted application-database snapshot in disposable PostgreSQL 17. The Windows snapshot contains both Quest-owned schemas, `public` and `valorant` (its manifest records `schemas_included=public,valorant`), does not contain VPS uploads, and does not replace the full off-site backup.
 
 ## Recovery decision matrix
 
@@ -464,7 +464,7 @@ This workflow validates an encrypted application-database snapshot in disposable
 | One missing upload | Recover the matching file from an archive on an isolated host, verify it, then copy only that file back |
 | Upload tree corruption | Stop writes, restore both upload roots from one consistent archive, and verify database/file references |
 | Accidental application-table change | Restore the archive into disposable PostgreSQL first, inspect the required rows, then choose targeted SQL recovery or an approved full restore |
-| VPS PostgreSQL 17 database loss | Replace or recover the VPS PostgreSQL 17 target (`quest-postgres`, `127.0.0.1:5433`) from a verified complete archive, restore the application schemas recorded by the archive manifest (`public` and `valorant` when included), update protected secrets, run migrations/security checks, then switch the backend only after validation; never select stale Supabase |
+| VPS PostgreSQL 17 database loss | Replace or recover the VPS PostgreSQL 17 target (Compose service `postgres`, private `quest-postgres:5432`) from a verified complete archive, restore the application schemas recorded by the archive manifest (`public` and `valorant` when included), update protected secrets, run migrations/security checks, then switch the backend only after validation; never select stale Supabase |
 | VPS loss with database intact | Rebuild the VPS from Git and the secret store, restore public/private uploads, reinstall Docker/Nginx/systemd/rclone, redeploy the current release, then verify health |
 | Complete environment loss | Rebuild database and VPS, restore database/uploads, restore external configuration from its separate secret recovery process, then update DNS and verify every integration |
 | OAuth token revoked | Re-authorize the affected configured remote and run a manual plus systemd backup test; do not change archive encryption keys |

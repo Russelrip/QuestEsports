@@ -101,7 +101,7 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
         tournamentId: tournament.id,
         OR: [
           { userId: user.id },
-          { captainEmail: normalizeEmail(user.email) },
+          { userId: null, captainEmail: normalizeEmail(user.email) },
         ],
       },
       include: {
