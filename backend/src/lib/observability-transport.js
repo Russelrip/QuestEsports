@@ -1,3 +1,5 @@
+const { env } = require("../config/env");
+
 const DEFAULT_TIMEOUT_MS = 3000;
 const MAX_QUEUE_SIZE = 1000;
 const MAX_IN_FLIGHT = 4;
@@ -10,6 +12,27 @@ let dropped = 0;
 let consecutiveFailures = 0;
 let circuitOpenUntil = 0;
 
+const isAllowedObservabilityUrl = (url, allowedHosts = []) => {
+  if (!url) return false;
+
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+
+  if (parsed.protocol !== "https:" || parsed.username || parsed.password) {
+    return false;
+  }
+
+  if (allowedHosts instanceof Set) {
+    return allowedHosts.has(parsed.hostname);
+  }
+
+  return Array.isArray(allowedHosts) && allowedHosts.includes(parsed.hostname);
+};
+
 const postJson = async ({
   url,
   token,
@@ -18,6 +41,10 @@ const postJson = async ({
 }) => {
   if (!url) {
     return false;
+  }
+
+  if (!isAllowedObservabilityUrl(url, env.OBSERVABILITY_ALLOWED_HOSTS)) {
+    throw new Error("Observability endpoint is not an allowed HTTPS destination.");
   }
 
   const headers = {
@@ -32,6 +59,7 @@ const postJson = async ({
     method: "POST",
     headers,
     body: JSON.stringify(payload),
+    redirect: "error",
     signal,
   });
 
@@ -81,6 +109,11 @@ const schedulePostJson = ({ url, token, payload, onError }) => {
     return false;
   }
 
+  if (!isAllowedObservabilityUrl(url, env.OBSERVABILITY_ALLOWED_HOSTS)) {
+    dropped += 1;
+    return false;
+  }
+
   if (Date.now() < circuitOpenUntil || queue.length >= MAX_QUEUE_SIZE) {
     dropped += 1;
     return false;
@@ -118,6 +151,7 @@ const getObservabilityTransportStatus = () => ({
 });
 
 module.exports = {
+  isAllowedObservabilityUrl,
   postJson,
   schedulePostJson,
   flushObservabilityTransport,

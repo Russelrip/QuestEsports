@@ -41,6 +41,12 @@ const productionEnv = {
   VALORANT_SERVICE_SECRET: "x".repeat(64),
   VALORANT_SERVICE_KEY_ID: "kid-1",
   VALORANT_INTERNAL_BASE_URL: "https://valorant.internal:8443",
+  LOG_DRAIN_URL: "",
+  LOG_DRAIN_TOKEN: "",
+  MONITORING_WEBHOOK_URL: "",
+  MONITORING_WEBHOOK_TOKEN: "",
+  DISCORD_ALERT_WEBHOOK_URL: "",
+  OBSERVABILITY_ALLOWED_HOSTS: "",
 };
 
 const loadEnvironment = (overrides) =>
@@ -49,6 +55,20 @@ const loadEnvironment = (overrides) =>
     env: { ...productionEnv, ...overrides },
     encoding: "utf8",
   });
+
+const readObservabilityEnv = (overrides) =>
+  spawnSync(
+    process.execPath,
+    [
+      "-e",
+      "const { env } = require('./src/config/env'); process.stdout.write(JSON.stringify({ LOG_DRAIN_URL: env.LOG_DRAIN_URL, MONITORING_WEBHOOK_URL: env.MONITORING_WEBHOOK_URL, DISCORD_ALERT_WEBHOOK_URL: env.DISCORD_ALERT_WEBHOOK_URL }))",
+    ],
+    {
+      cwd: backendRoot,
+      env: { ...productionEnv, NODE_ENV: "test", ...overrides },
+      encoding: "utf8",
+    },
+  );
 
 const readRealtimeChannel = (overrides) =>
   spawnSync(
@@ -97,6 +117,82 @@ test("production environment accepts an HTTPS OAuth callback on the API origin",
     GOOGLE_CALLBACK_URL: "https://api.quest.example.com/api/auth/google/callback",
   });
   assert.equal(result.status, 0, result.stderr);
+});
+
+test("production observability sinks require an explicit host allowlist", () => {
+  const sinks = [
+    ["LOG_DRAIN_URL", "https://logs.example.com/ingest", "logs.example.com"],
+    [
+      "MONITORING_WEBHOOK_URL",
+      "https://monitoring.example.com/events",
+      "monitoring.example.com",
+    ],
+    [
+      "DISCORD_ALERT_WEBHOOK_URL",
+      "https://discord.com/api/webhooks/123/secret",
+      "discord.com",
+    ],
+  ];
+
+  for (const [name, endpoint, host] of sinks) {
+    const missingAllowlist = loadEnvironment({
+      [name]: endpoint,
+      OBSERVABILITY_ALLOWED_HOSTS: "",
+    });
+    assert.notEqual(missingAllowlist.status, 0, name);
+    assert.match(missingAllowlist.stderr, /OBSERVABILITY_ALLOWED_HOSTS/, name);
+
+    const validHost = loadEnvironment({
+      [name]: endpoint,
+      OBSERVABILITY_ALLOWED_HOSTS: ` ${host.toUpperCase()} `,
+    });
+    assert.equal(validHost.status, 0, `${name}: ${validHost.stderr}`);
+
+    const lookalikeHost = loadEnvironment({
+      [name]:
+        name === "DISCORD_ALERT_WEBHOOK_URL"
+          ? endpoint
+          : endpoint.replace(host, `${host}.evil.example`),
+      OBSERVABILITY_ALLOWED_HOSTS:
+        name === "DISCORD_ALERT_WEBHOOK_URL" ? "other.example" : host,
+    });
+    assert.notEqual(lookalikeHost.status, 0, name);
+    assert.match(lookalikeHost.stderr, new RegExp(`${name} host is not listed`), name);
+  }
+});
+
+test("non-production invalid observability sinks are inert and report local-only reasons", () => {
+  const inert = readObservabilityEnv({
+    LOG_DRAIN_URL: "http://logs.example.com/ingest",
+    MONITORING_WEBHOOK_URL: "https://monitoring.example.com/events",
+    DISCORD_ALERT_WEBHOOK_URL: "https://discord.com/api/not-a-webhook",
+    OBSERVABILITY_ALLOWED_HOSTS: "logs.example.com",
+  });
+  assert.equal(inert.status, 0, inert.stderr);
+  assert.deepEqual(JSON.parse(inert.stdout), {
+    LOG_DRAIN_URL: "",
+    MONITORING_WEBHOOK_URL: "",
+    DISCORD_ALERT_WEBHOOK_URL: "",
+  });
+  assert.match(inert.stderr, /Invalid observability destination disabled/);
+  assert.match(inert.stderr, /LOG_DRAIN_URL.*requires-https/);
+  assert.match(inert.stderr, /MONITORING_WEBHOOK_URL.*host-not-allowlisted/);
+  assert.match(inert.stderr, /DISCORD_ALERT_WEBHOOK_URL.*invalid-webhook-shape/);
+  assert.doesNotMatch(inert.stderr, /https:\/\/|logs\.example\.com|monitoring\.example\.com/);
+
+  const valid = readObservabilityEnv({
+    LOG_DRAIN_URL: "https://logs.example.com/ingest",
+    MONITORING_WEBHOOK_URL: "https://monitoring.example.com/events",
+    DISCORD_ALERT_WEBHOOK_URL: "https://discord.com/api/webhooks/123/secret",
+    OBSERVABILITY_ALLOWED_HOSTS:
+      "logs.example.com, monitoring.example.com, discord.com",
+  });
+  assert.equal(valid.status, 0, valid.stderr);
+  assert.deepEqual(JSON.parse(valid.stdout), {
+    LOG_DRAIN_URL: "https://logs.example.com/ingest",
+    MONITORING_WEBHOOK_URL: "https://monitoring.example.com/events",
+    DISCORD_ALERT_WEBHOOK_URL: "https://discord.com/api/webhooks/123/secret",
+  });
 });
 
 test("production binds the mobile OAuth App Link to the API origin", () => {

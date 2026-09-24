@@ -29,6 +29,20 @@ const normalizeCsv = (value) =>
     .map((entry) => entry.trim())
     .filter(Boolean);
 
+const normalizeObservabilityHosts = (value) =>
+  [...new Set(normalizeCsv(value).map((host) => host.toLowerCase()))];
+
+const warnInvalidObservabilityDestination = (variable, reason) => {
+  console.warn(
+    JSON.stringify({
+      level: "warn",
+      message: "Invalid observability destination disabled.",
+      variable,
+      reason,
+    }),
+  );
+};
+
 const required = (name) => {
   const value = String(process.env[name] || "").trim();
 
@@ -435,6 +449,9 @@ const env = {
   MONITORING_WEBHOOK_URL: optional("MONITORING_WEBHOOK_URL"),
   MONITORING_WEBHOOK_TOKEN: optional("MONITORING_WEBHOOK_TOKEN"),
   DISCORD_ALERT_WEBHOOK_URL: optional("DISCORD_ALERT_WEBHOOK_URL"),
+  OBSERVABILITY_ALLOWED_HOSTS: normalizeObservabilityHosts(
+    process.env.OBSERVABILITY_ALLOWED_HOSTS,
+  ),
   GOOGLE_CLIENT_ID: optional("GOOGLE_CLIENT_ID"),
   GOOGLE_CLIENT_SECRET: optional("GOOGLE_CLIENT_SECRET"),
   GOOGLE_CALLBACK_URL: optional("GOOGLE_CALLBACK_URL"),
@@ -541,17 +558,40 @@ if (env.DISCORD_ALERT_WEBHOOK_URL) {
   try {
     discordWebhookUrl = new URL(env.DISCORD_ALERT_WEBHOOK_URL);
   } catch {
-    throw new Error("DISCORD_ALERT_WEBHOOK_URL must be a valid absolute URL.");
-  }
-  const allowedDiscordHosts = new Set(["discord.com", "discordapp.com"]);
-  if (
-    discordWebhookUrl.protocol !== "https:" ||
-    !allowedDiscordHosts.has(discordWebhookUrl.hostname) ||
-    !/^\/api\/webhooks\/[^/]+\/[^/]+\/?$/.test(discordWebhookUrl.pathname)
-  ) {
-    throw new Error(
-      "DISCORD_ALERT_WEBHOOK_URL must be an HTTPS Discord webhook URL.",
+    if (env.NODE_ENV === "production") {
+      throw new Error("DISCORD_ALERT_WEBHOOK_URL must be a valid absolute URL.");
+    }
+    warnInvalidObservabilityDestination(
+      "DISCORD_ALERT_WEBHOOK_URL",
+      "malformed-url",
     );
+    env.DISCORD_ALERT_WEBHOOK_URL = "";
+  }
+  if (discordWebhookUrl) {
+    const allowedDiscordHosts = new Set(["discord.com", "discordapp.com"]);
+    const isValidDiscordWebhook =
+      discordWebhookUrl.protocol === "https:" &&
+      !discordWebhookUrl.username &&
+      !discordWebhookUrl.password &&
+      allowedDiscordHosts.has(discordWebhookUrl.hostname) &&
+      /^\/api\/webhooks\/[^/]+\/[^/]+\/?$/.test(discordWebhookUrl.pathname);
+
+    if (!isValidDiscordWebhook) {
+      if (env.NODE_ENV === "production") {
+        throw new Error(
+          "DISCORD_ALERT_WEBHOOK_URL must be an HTTPS Discord webhook URL.",
+        );
+      }
+      warnInvalidObservabilityDestination(
+        "DISCORD_ALERT_WEBHOOK_URL",
+        discordWebhookUrl.protocol !== "https:"
+          ? "requires-https"
+          : discordWebhookUrl.username || discordWebhookUrl.password
+            ? "contains-credentials"
+            : "invalid-webhook-shape",
+      );
+      env.DISCORD_ALERT_WEBHOOK_URL = "";
+    }
   }
 }
 
@@ -677,12 +717,67 @@ if (env.NODE_ENV === "production") {
       "JOB_WORKER_ENABLED must be enabled in production while asynchronous mail delivery is required.",
     );
   }
-  for (const [name, endpoint] of [
+  const remoteEndpoints = [
     ["UPSTASH_REDIS_REST_URL", env.UPSTASH_REDIS_REST_URL],
     ["LOG_DRAIN_URL", env.LOG_DRAIN_URL],
     ["MONITORING_WEBHOOK_URL", env.MONITORING_WEBHOOK_URL],
-  ]) {
+  ];
+  for (const [name, endpoint] of remoteEndpoints) {
     if (endpoint) assertHttpsUrl(name, endpoint);
+  }
+
+  const configuredObservabilityEndpoints = [
+    ["LOG_DRAIN_URL", env.LOG_DRAIN_URL],
+    ["MONITORING_WEBHOOK_URL", env.MONITORING_WEBHOOK_URL],
+    ["DISCORD_ALERT_WEBHOOK_URL", env.DISCORD_ALERT_WEBHOOK_URL],
+  ].filter(([, endpoint]) => endpoint);
+
+  if (
+    configuredObservabilityEndpoints.length &&
+    env.OBSERVABILITY_ALLOWED_HOSTS.length === 0
+  ) {
+    throw new Error(
+      "OBSERVABILITY_ALLOWED_HOSTS must list at least one approved host when observability URLs are configured in production.",
+    );
+  }
+
+  for (const [name, endpoint] of configuredObservabilityEndpoints) {
+    const parsed = new URL(endpoint);
+    if (!env.OBSERVABILITY_ALLOWED_HOSTS.includes(parsed.hostname)) {
+      throw new Error(
+        `${name} host is not listed in OBSERVABILITY_ALLOWED_HOSTS.`,
+      );
+    }
+  }
+} else {
+  for (const name of [
+    "LOG_DRAIN_URL",
+    "MONITORING_WEBHOOK_URL",
+    "DISCORD_ALERT_WEBHOOK_URL",
+  ]) {
+    const endpoint = env[name];
+    if (!endpoint) continue;
+
+    let parsed;
+    try {
+      parsed = new URL(endpoint);
+    } catch {
+      warnInvalidObservabilityDestination(name, "malformed-url");
+      env[name] = "";
+      continue;
+    }
+
+    let reason = "";
+    if (parsed.protocol !== "https:") reason = "requires-https";
+    else if (parsed.username || parsed.password) reason = "contains-credentials";
+    else if (!env.OBSERVABILITY_ALLOWED_HOSTS.includes(parsed.hostname)) {
+      reason = "host-not-allowlisted";
+    }
+
+    if (reason) {
+      warnInvalidObservabilityDestination(name, reason);
+      env[name] = "";
+    }
   }
 }
 
@@ -738,6 +833,7 @@ module.exports = {
     assertHttpsUrl,
     normalizeBoolean,
     normalizeCsv,
+    normalizeObservabilityHosts,
     normalizeIntegerInRange,
     normalizeMaintenanceMessage,
     normalizeNodeEnv,

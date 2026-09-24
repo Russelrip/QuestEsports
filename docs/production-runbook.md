@@ -420,11 +420,62 @@ Production startup intentionally fails when any of these invariants is broken:
 - `UPLOAD_ROOT` and `PRIVATE_UPLOAD_ROOT` are configured.
 - `MAIL_DELIVERY_REQUIRED=true` and the selected provider credentials plus `MAIL_FROM` are complete.
 - PayHere values are either all blank or all configured; a configured notify URL must use HTTPS.
+- `OBSERVABILITY_ALLOWED_HOSTS` is a hostname-only, comma-separated allowlist; it is non-empty whenever any observability sink is configured, and every configured sink host appears in it.
 - `DATABASE_URL` and `DIRECT_URL` explicitly use an approved `sslmode` and the mobile App Link fingerprint is configured.
 
 The PKCE migration intentionally leaves `mobile_oauth_grants.code_challenge` nullable for one release so migrations can run before the old API process is replaced. New code writes and requires the challenge and rejects any unbound grant. Enforce the database `NOT NULL` constraint only in a later release after all old API processes are retired.
 
-Use [backend/.env.example](../backend/.env.example) for the full variable list and the [Setup and Deployment Guide](./setup-and-deployment.md) for production examples.
+Use [backend/.env.example](../backend/.env.example) as a starting template for variable names, not as the complete production variable list. Verify the production contract against the [Environment Reference](./environment-reference.md) and the [Setup and Deployment Guide](./setup-and-deployment.md).
+
+### Manual `HENRIK_API_KEY` rotation and log review
+
+Rotate the Henrik credential outside the repository whenever it may have been
+copied, exposed, or otherwise used outside its approved runtime. Treat the
+existing credential as compromised until the provider confirms revocation.
+Never print, echo, copy into shell history, paste into tickets, or read the key
+value into a log or diagnostic command.
+
+1. Schedule the change with the VALORANT service owner. In the Henrik control
+   plane, revoke the old credential and issue a replacement through the
+   approved secret manager. Record only the rotation timestamp, owner, and
+   provider-side credential identifier; never record the credential value.
+2. Update the protected VALORANT runtime environment using the secret manager's
+   write/update flow or an access-controlled editor. Do not use `env`, `printenv`,
+   `echo`, `docker compose config`, or shell tracing to verify the value. The
+   protected file is `/etc/quest-esports/valorant.production.env`.
+3. Recreate the VALORANT API, updater, and bot services through the approved
+   Compose/release operation so each process receives the replacement. Do not
+   include the environment file or rendered Compose configuration in output.
+4. Verify only non-secret health results through the approved authenticated
+   container helper. The helper supplies authorization internally; do not probe
+   the endpoint with an ad hoc request. Capture and validate its JSON without
+   printing the response:
+
+   ```bash
+   HEALTH_JSON="$(${VALORANT_CONTAINER_HEALTH_COMMAND:?Set the approved VALORANT health helper})"
+   printf '%s' "$HEALTH_JSON" | node -e '
+   const body = JSON.parse(require("fs").readFileSync(0, "utf8"));
+   const checks = body?.checks;
+   if (
+     body?.status !== "ok" ||
+     body?.db !== "up" ||
+     body?.integration !== "ready" ||
+     checks?.henrik !== "ready"
+   ) process.exit(1);
+   console.log("VALORANT health: status=ok db=up integration=ready checks.henrik=ready");
+   '
+   ```
+
+   Confirm the updater and bot remain healthy through their approved service
+   status checks. Never print authorization headers, tokens, or raw health
+   response diagnostics.
+5. Review the deployment/release log, VALORANT service logs, shell history,
+   editor backups, and synchronization locations for the key, authorization
+   headers, or credential-bearing URLs. Use the platform's secret-redacting
+   viewer or a filename/line-number-only scanner; do not display matching
+   lines. If any exposure is found, revoke the replacement, issue another one,
+   and repeat this procedure. Retain only redacted evidence and the rotation
+   timestamp.
 
 ## Clustered Realtime Operations
 

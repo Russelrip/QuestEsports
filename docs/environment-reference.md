@@ -108,6 +108,16 @@ The interim and restored backup services use `BACKUP_CLIENT_CERT_FILE` and
 | `MONITORING_WEBHOOK_URL` | No | Backend/operations owner | D/P | Secret | `<monitoring webhook URL>` | Restart backend |
 | `MONITORING_WEBHOOK_TOKEN` | Conditional | Backend/operations owner | D/P | Secret | `<monitoring webhook token>` when required | Restart backend |
 | `DISCORD_ALERT_WEBHOOK_URL` | No | Backend/operations owner | D/P | Secret | `<private Discord webhook URL>` | Restart backend |
+| `OBSERVABILITY_ALLOWED_HOSTS` | Conditional — required and non-empty in production when any observability sink is configured | Backend/operations owner | L/D/P | Public/non-secret | `<comma-separated approved hostnames>`; hostnames only, never URLs, paths, webhook tokens, or credentials | Restart backend |
+
+`OBSERVABILITY_ALLOWED_HOSTS` is a comma-separated allowlist of hostnames only
+(for example, `logs.example.com,monitoring.example.com`). Do not put a scheme,
+path, query string, webhook URL, token, or other credential in this variable.
+In production, configured observability sinks are fail-closed: startup fails
+unless the allowlist is non-empty and every configured sink hostname is
+explicitly listed. In non-production, an invalid or unapproved sink is disabled
+rather than requested. Keep the sink URLs and any associated tokens in the
+protected runtime secret store; do not copy them into this documentation.
 
 ### Clustered realtime requirements
 
