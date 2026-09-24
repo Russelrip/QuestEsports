@@ -7,7 +7,7 @@ test("privacy policy page renders the app shell and policy content", async ({ pa
     page.getByRole("banner").getByRole("link", { name: "Quest home" })
   ).toBeVisible();
   await expect(page.getByRole("heading", { name: "Privacy Policy" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "16. Contact Us" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "19. Contact Us" })).toBeVisible();
 });
 
 test("contact page includes both TikTok accounts, Gmail, and the WhatsApp community", async ({ page }) => {
