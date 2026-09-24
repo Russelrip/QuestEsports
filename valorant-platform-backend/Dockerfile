@@ -1,7 +1,7 @@
 # Production image for the sibling VALORANT service boundary.
 # Certificates, keys, database URLs, and all other deployment secrets are
 # intentionally absent from this image and are mounted/injected at runtime.
-FROM python:3.12-slim@sha256:09f7da3bc104798d0afb40bc08d23ab2da20a76130cec1f2ef170848f5d85217
+FROM python:3.14-slim@sha256:caaf356f40667c496d405780745b9ac25771c189a51dfcc42430d531ea09f8a2
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
