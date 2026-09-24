@@ -1,7 +1,7 @@
 "use client";
 
 import { formatSriLankaDate, formatSriLankaDateTime } from "@/lib/date-time";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -35,6 +35,13 @@ import { type VetoRoom, vetoRequest } from "@/lib/veto";
 import { type MatchRoomSummary, roomRequest } from "@/lib/match-rooms";
 import { adminHomeFor } from "@/lib/staff-permissions";
 import { getMyGameAccounts, summarizeValorantConnection, type GameAccountList } from "@/lib/game-accounts";
+
+// How long the deep-linked jump keeps correcting itself while the page is
+// still growing under it. Long enough to cover the panel's own requests on a
+// slow connection, short enough that nobody meets a page that moves on its own.
+const GAME_ACCOUNTS_SETTLE_MS = 1500;
+// Any of these means a reader is driving now, so the jump stops correcting.
+const TAKEOVER_EVENTS = ["wheel", "touchstart", "keydown"] as const;
 
 const profileSchema = z.object({
   firstName: z.string().min(1, "First name is required."),
@@ -113,7 +120,13 @@ export default function ProfileView() {
   // tab; the panel reports each reload back so the two never disagree.
   const [gameAccounts, setGameAccounts] = useState<GameAccountList | null>(null);
   const [gameAccountsSettled, setGameAccountsSettled] = useState(false);
-  const [scrollToGameAccounts, setScrollToGameAccounts] = useState(false);
+  // Each deep link or press of the header button is a new request. The effect
+  // records the one it handled in a ref rather than clearing state: clearing
+  // would re-run the effect and tear down the settling observer on its own
+  // first alignment, while a one-shot flag would ignore every later press.
+  const [gameAccountsScrollRequest, setGameAccountsScrollRequest] = useState(0);
+  const handledScrollRequestRef = useRef(0);
+  const requestGameAccountsScroll = () => setGameAccountsScrollRequest((request) => request + 1);
   const { data: teamsData, setData: setTeamsData, loading: teamsLoading, error: teamsError } = useTeams(Boolean(user));
   const showToast = useToastStore((state) => state.showToast);
   const teams = teamsData ?? [];
@@ -144,7 +157,7 @@ export default function ProfileView() {
       // `/profile?tab=account#valorant-account` is the link other pages use to
       // send a player straight to connecting VALORANT. The browser cannot
       // honour the fragment itself: the panel is not rendered yet.
-      if (window.location.hash === `#${GAME_ACCOUNTS_ANCHOR}`) setScrollToGameAccounts(true);
+      if (window.location.hash === `#${GAME_ACCOUNTS_ANCHOR}`) requestGameAccountsScroll();
     } else if (params.get("tab") === "invitations") {
       // Every invitation notice points here, and so does the onboarding page a
       // captain's copied link starts at.
@@ -200,16 +213,41 @@ export default function ProfileView() {
     // Waits for the header row to settle, because it appears above the panel
     // and would push it back out of view after the scroll; and for the panel
     // itself, which is not rendered until the signed-in view is.
-    if (!scrollToGameAccounts || activeTab !== "account" || !gameAccountsSettled) return;
+    if (!gameAccountsScrollRequest || activeTab !== "account" || !gameAccountsSettled) return;
+    if (handledScrollRequestRef.current === gameAccountsScrollRequest) return;
     const panel = document.getElementById(GAME_ACCOUNTS_ANCHOR);
     if (!panel) return;
+    handledScrollRequestRef.current = gameAccountsScrollRequest;
+
     // Instant, not smooth: this is arriving at a link, not moving within the
     // page. The site sets `scroll-behavior: smooth` on the whole document, so
     // leaving it unsaid animates too. An animated jump only advances as frames
     // are drawn, and on a busy device it could leave the panel out of view.
-    panel.scrollIntoView({ behavior: "instant", block: "start" });
-    setScrollToGameAccounts(false);
-  }, [activeTab, scrollToGameAccounts, gameAccountsSettled, user]);
+    const align = () => panel.scrollIntoView({ behavior: "instant", block: "start" });
+    align();
+
+    // One measurement is not enough. The header row above the panel and the
+    // panel's own two requests each land after this first jump and move the
+    // panel under it, so a slow load lands short of the target -- far enough
+    // to leave the heading off the top of the screen. Keep re-aligning while
+    // the page is still growing, then stop: after this the scroll belongs to
+    // whoever is reading.
+    const observer = new ResizeObserver(align);
+    observer.observe(document.body);
+    let settleTimer = 0;
+    const release = () => {
+      observer.disconnect();
+      window.clearTimeout(settleTimer);
+      for (const event of TAKEOVER_EVENTS) window.removeEventListener(event, release);
+    };
+    settleTimer = window.setTimeout(release, GAME_ACCOUNTS_SETTLE_MS);
+    // A reader who scrolls, or reaches for the keyboard, has taken over.
+    for (const event of TAKEOVER_EVENTS) {
+      window.addEventListener(event, release, { passive: true, once: true });
+    }
+
+    return release;
+  }, [activeTab, gameAccountsScrollRequest, gameAccountsSettled, user]);
 
   if (isLoading) {
     return (
@@ -391,7 +429,7 @@ export default function ProfileView() {
                     className="shrink-0"
                     onClick={() => {
                       setActiveTab("account");
-                      setScrollToGameAccounts(true);
+                      requestGameAccountsScroll();
                     }}
                   >
                     {action}
