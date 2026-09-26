@@ -132,6 +132,7 @@ class DiscordBotRunner:
         self.interval_minutes = config.get("update_interval_minutes", 15)
         self.rate_limit_delay = config.get("rate_limit_delay", 0.5)
         self._main_loop_task: asyncio.Task | None = None
+        self._nickname_forbidden: set = set()
 
         intents = discord.Intents.default()
         intents.members = True
@@ -168,11 +169,18 @@ class DiscordBotRunner:
 
     async def update_nickname(self, member, global_name: str, rank_tier: str) -> None:
         """Edit the member's nickname to ``{global_name} ({mapped_rank})`` (32-char cap)."""
+        nickname = build_nickname(global_name, rank_tier)
+        if member.nick == nickname:
+            return
         try:
-            await member.edit(nick=build_nickname(global_name, rank_tier))
+            await member.edit(nick=nickname)
             self.logger.info("updated display name for %s", member.name)
         except discord.errors.Forbidden:
-            self.logger.warning("bot lacks permissions to update display name for %s", member.name)
+            # Members whose roles outrank the bot's can never be renamed; say
+            # so once instead of on every pass.
+            level = logging.DEBUG if member.id in self._nickname_forbidden else logging.WARNING
+            self._nickname_forbidden.add(member.id)
+            self.logger.log(level, "bot lacks permissions to update display name for %s", member.name)
         except Exception:
             self.logger.exception("error updating nickname for %s", member.name)
 
@@ -188,24 +196,27 @@ class DiscordBotRunner:
                     if role_name is not None
                 ),
             }
-            roles_to_remove = [role for role in member.roles if role.name in managed_role_names]
-            if roles_to_remove:
-                await member.remove_roles(*roles_to_remove)
-                self.logger.info(
-                    "%s: removed roles: %s",
-                    member.name,
-                    ", ".join(role.name for role in roles_to_remove),
-                )
-            else:
-                self.logger.info("%s: no roles to remove", member.name)
+            current_roles = [role for role in member.roles if role.name in managed_role_names]
+            target_roles = [role for role in new_roles if role.name in managed_role_names]
+            roles_to_add = [role for role in target_roles if role not in current_roles]
+            roles_to_remove = [role for role in current_roles if role not in target_roles]
 
-            roles_to_add = [role for role in new_roles if role.name in managed_role_names]
+            # Add before removing: a failed call then leaves the member with
+            # too many bot-managed roles rather than none, and a member whose
+            # roles are already correct costs no Discord requests at all.
             if roles_to_add:
                 await member.add_roles(*roles_to_add)
                 self.logger.info(
                     "%s: added roles: %s",
                     member.name,
                     ", ".join(role.name for role in roles_to_add),
+                )
+            if roles_to_remove:
+                await member.remove_roles(*roles_to_remove)
+                self.logger.info(
+                    "%s: removed roles: %s",
+                    member.name,
+                    ", ".join(role.name for role in roles_to_remove),
                 )
         except discord.errors.Forbidden:
             self.logger.warning("bot lacks permissions to update roles for %s", member.name)

@@ -6,7 +6,10 @@ No Discord connection is made; identity write-back uses a fake repository.
 from __future__ import annotations
 
 import asyncio
+import logging
 from unittest.mock import AsyncMock, Mock
+
+import discord
 
 from workers import discord_bot
 from workers.discord_bot import (
@@ -33,10 +36,19 @@ class _Guild:
 
 
 class _Member:
-    def __init__(self, *, member_id: str, roles: list[_Role], guild: _Guild, bot: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        member_id: str,
+        roles: list[_Role],
+        guild: _Guild,
+        bot: bool = False,
+        nick: str | None = None,
+    ) -> None:
         self.id = member_id
         self.name = "discord-name"
         self.global_name = "Global Name"
+        self.nick = nick
         self.roles = roles
         self.guild = guild
         self.bot = bot
@@ -48,6 +60,7 @@ class _Member:
 def _runner() -> DiscordBotRunner:
     runner = object.__new__(DiscordBotRunner)
     runner.logger = Mock()
+    runner._nickname_forbidden = set()
     return runner
 
 
@@ -344,6 +357,67 @@ async def test_update_roles_only_removes_and_adds_explicit_managed_roles():
     assert member.remove_roles.await_args.args == (omega,)
     assert member.add_roles.await_args.args == (iron, verified)
     assert unrelated in member.roles
+
+
+async def test_member_who_is_already_correct_costs_no_discord_requests():
+    guild = _Guild("@everyone", "Alpha", "Diamond", "Verified", "Tournament Staff")
+    everyone, alpha, diamond, verified, unrelated = guild.roles
+    member = _Member(
+        member_id="111",
+        roles=[everyone, unrelated, alpha, diamond, verified],
+        guild=guild,
+        nick="Global Name (Dia)",
+    )
+
+    await _runner().update_discord_roles(member, [_player(discord_id="111", rank="Diamond 3")])
+
+    member.edit.assert_not_awaited()
+    member.add_roles.assert_not_awaited()
+    member.remove_roles.assert_not_awaited()
+
+
+async def test_rank_change_touches_only_the_roles_that_differ():
+    guild = _Guild("@everyone", "Alpha", "Diamond", "Ascendant", "Verified")
+    everyone, alpha, diamond, ascendant, verified = guild.roles
+    member = _Member(
+        member_id="111",
+        roles=[everyone, alpha, diamond, verified],
+        guild=guild,
+        nick="Global Name (Dia)",
+    )
+
+    await _runner().update_discord_roles(member, [_player(discord_id="111", rank="Ascendant 1")])
+
+    assert member.add_roles.await_args.args == (ascendant,)
+    assert member.remove_roles.await_args.args == (diamond,)
+    assert member.edit.await_args.kwargs == {"nick": "Global Name (Asc)"}
+
+
+async def test_failed_add_leaves_existing_roles_untouched():
+    guild = _Guild("@everyone", "Alpha", "Diamond", "Ascendant", "Verified")
+    everyone, alpha, diamond, ascendant, verified = guild.roles
+    member = _Member(
+        member_id="111",
+        roles=[everyone, alpha, diamond, verified],
+        guild=guild,
+    )
+    member.add_roles.side_effect = RuntimeError("503 Service Unavailable")
+
+    await _runner().update_roles(member, [alpha, ascendant, verified])
+
+    member.remove_roles.assert_not_awaited()
+
+
+async def test_forbidden_nickname_is_warned_once_per_member():
+    guild = _Guild("@everyone", "Diamond")
+    member = _Member(member_id="111", roles=[guild.roles[0]], guild=guild)
+    member.edit.side_effect = discord.errors.Forbidden(Mock(status=403, reason="Forbidden"), "missing permissions")
+    runner = _runner()
+
+    await runner.update_nickname(member, "Global Name", "Diamond")
+    await runner.update_nickname(member, "Global Name", "Diamond")
+
+    assert [call.args[0] for call in runner.logger.log.call_args_list] == [logging.WARNING, logging.DEBUG]
 
 
 async def test_bot_member_is_skipped_even_when_called_directly():
