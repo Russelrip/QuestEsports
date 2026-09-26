@@ -45,6 +45,7 @@ const policySections = [
       "We store a cached snapshot of competitive standing obtained for that account, which can include current rank tier, rating, Sri Lanka ranking position, peak and seasonal ranks, the time of the most recent recorded match, and the time the snapshot was taken.",
       "One game account can be connected to one Quest E-sports player. This limit exists to prevent two people claiming the same account and to keep competitive records attached to the right person.",
       "A connected Discord account is kept as tournament infrastructure separate from sign-in, so that organisers and referees can still reach a player whose account arrangements later change. We store the Discord account identifier with a cached copy of the username and display name.",
+      "Your Discord account identifier is not secret on Discord itself: anyone who shares a server with you can find it. Quest E-sports does not publish it on the leaderboard or on player profiles, but we cannot prevent it being found through Discord.",
       "Replacing or disconnecting a connected account keeps the earlier link as history rather than deleting the competitive record it is attached to.",
     ],
   },
@@ -186,7 +187,7 @@ export default function PrivacyPolicyContent() {
       <div className="grid gap-6">
         <Card className="p-6 sm:p-8">
           <p className="text-xs uppercase tracking-[0.28em] text-purple-200/80">Last Updated</p>
-          <h2 className="mt-3 text-3xl text-white">September 20, 2026</h2>
+          <h2 className="mt-3 text-3xl text-white">September 26, 2026</h2>
           <p className="mt-4 max-w-4xl text-sm leading-7 text-slate-300">
             This policy applies to the Quest E-sports website at <span className="text-white">questesports.lk</span> and related
             tournament, competitive ranking, and account services.
