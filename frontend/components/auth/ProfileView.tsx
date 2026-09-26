@@ -610,6 +610,7 @@ export default function ProfileView() {
                           </dl>
                         ) : <p className="mt-2 text-sm leading-6 text-slate-500">Connect Discord under Linked accounts to display your private connected-account details.</p>}
                         <p className="mt-3 text-xs leading-5 text-slate-500">These details come from Discord and cannot be edited here.</p>
+                        {user.discordId ? <p className="mt-1 text-xs leading-5 text-slate-500">Quest does not publish your Discord ID, but it is not secret on Discord: anyone who shares a server with you can find it.</p> : null}
                       </div>
                     </div>
                     {profileForm.formState.errors.root?.message ? <p className="text-sm text-slate-300">{profileForm.formState.errors.root.message}</p> : null}
