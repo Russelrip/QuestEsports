@@ -782,6 +782,12 @@ test("admin game account search and unlink are queries real PostgreSQL accepts",
   const memberId = crypto.randomUUID();
   const requestId = crypto.randomUUID();
   const externalId = `integration-puuid-${suffix}`;
+  // `discord_identities` enforces a real snowflake (^[0-9]{5,32}$), so a label
+  // like `discord-<uuid>` is refused outright — exactly the kind of constraint a
+  // mocked client cannot show you, and the reason this case exists. Twelve
+  // digits: comfortably inside the constraint, and deliberately too short to
+  // read as a real Discord id, which the secret scan flags.
+  const discordUserId = `1111${suffix.replace(/\D/g, "").padEnd(8, "0").slice(0, 8)}`;
 
   // The search walks Player -> User and Player -> DiscordIdentity, and the
   // unlink leans on `registration_members.game_account_id` being ON DELETE SET
@@ -808,7 +814,7 @@ test("admin game account search and unlink are queries real PostgreSQL accepts",
       data: {
         id: crypto.randomUUID(),
         playerId,
-        discordUserId: `discord-${suffix}`,
+        discordUserId,
         username: `holder-discord-${short}`,
       },
     });
@@ -826,7 +832,17 @@ test("admin game account search and unlink are queries real PostgreSQL accepts",
       },
     });
     await prisma.playerRanking.create({
-      data: { id: crypto.randomUUID(), playerId, game: "valorant", position: 4, elo: 1200 },
+      // `syncedAt` is required and has no default: every value on this row is
+      // as-of, and a cached rank that cannot say when it synced claims more
+      // freshness than it has.
+      data: {
+        id: crypto.randomUUID(),
+        playerId,
+        game: "valorant",
+        position: 4,
+        elo: 1200,
+        syncedAt: new Date(),
+      },
     });
     await prisma.gameAccountChangeRequest.create({
       data: {
