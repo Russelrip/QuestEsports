@@ -79,7 +79,7 @@ const STAFF_PERMISSIONS = Object.freeze({
   game_accounts: Object.freeze({
     group: "Game Operations",
     label: "Account changes",
-    description: "Approve or reject players' game account change requests.",
+    description: "Approve or reject game account change requests, and unlink an account from the player holding it.",
   }),
   valorant_leaderboard: Object.freeze({
     group: "Game Operations",

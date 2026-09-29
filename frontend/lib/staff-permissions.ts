@@ -68,7 +68,7 @@ export const STAFF_PERMISSIONS = {
   game_accounts: {
     group: "Game Operations",
     label: "Account changes",
-    description: "Approve or reject players' game account change requests.",
+    description: "Approve or reject game account change requests, and unlink an account from the player holding it.",
   },
   valorant_leaderboard: {
     group: "Game Operations",

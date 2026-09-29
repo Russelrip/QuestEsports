@@ -424,6 +424,10 @@ test("a leaderboard role holder reaches the leaderboard area and nothing else", 
     ["GET", "/api/v1/admin/valorant/series"],
     ["POST", "/api/v1/admin/valorant/series/s-1/finalize"],
     ["GET", "/api/v1/admin/game-accounts/change-requests"],
+    // Searching names the player holding an account, and unlinking releases
+    // it. Both belong to `game_accounts`, not to whoever runs the board.
+    ["GET", "/api/v1/admin/game-accounts?q=someone"],
+    ["POST", "/api/v1/admin/game-accounts/account-1/unlink"],
     ["GET", "/api/v1/admin/tournaments/tournament-a/challonge"],
     ["GET", "/api/v1/admin/audit-logs"],
   ]) {
@@ -464,6 +468,10 @@ test("a super admin builds a role, assigns it, and edits or deletes it with imme
   assert.equal(assigned.status, 200);
   assert.deepEqual(assigned.body.data.roles.map((role) => role.name), ["Ops"]);
   assert.equal((await call(server, "GET", changeRequests, "player")).status, 200);
+  // The same area opens the other half of the job: finding who holds an
+  // account, and releasing it.
+  assert.equal((await call(server, "GET", "/api/v1/admin/game-accounts?q=someone", "player")).status, 200);
+  assert.equal((await call(server, "POST", "/api/v1/admin/game-accounts/account-1/unlink", "player", { reason: "x" })).status, 200);
   assert.equal((await call(server, "GET", challonge, "player")).status, 403);
 
   // Changing the role's areas changes what every holder can open.

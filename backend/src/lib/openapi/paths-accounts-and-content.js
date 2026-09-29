@@ -58,6 +58,20 @@ const accountsAndContentPaths = {
       authenticated: true,
     }),
   },
+  "/api/v1/admin/game-accounts": {
+    get: createOperation(
+      "Game accounts",
+      "Find a linked game account and the player holding it, by Riot ID, player ID, or name",
+      { authenticated: true },
+    ),
+  },
+  "/api/v1/admin/game-accounts/{accountId}/unlink": {
+    post: createOperation(
+      "Game accounts",
+      "Release a game account from the player holding it so it can be linked again",
+      { authenticated: true, parameters: idParameter("accountId") },
+    ),
+  },
   "/api/v1/teams/{teamId}/registration-readiness": {
     get: createOperation(
       "Game accounts",

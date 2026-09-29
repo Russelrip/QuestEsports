@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import AdminShell from "@/components/admin/AdminShell";
+import AdminGameAccountUnlink from "@/components/admin/AdminGameAccountUnlink";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
@@ -21,7 +22,18 @@ const FILTERS: { value: ChangeRequestStatus | "all"; label: string }[] = [
   { value: "all", label: "All" },
 ];
 
+// Two halves of the same job, and both are needed to answer a player who has
+// been told to contact support: reviewing a move the player asked for, and
+// releasing an account they cannot ask about because somebody else holds it.
+const TABS = [
+  { value: "requests", label: "Change requests" },
+  { value: "unlink", label: "Unlink an account" },
+] as const;
+
+type Tab = (typeof TABS)[number]["value"];
+
 export default function AdminGameAccountChanges() {
+  const [tab, setTab] = useState<Tab>("requests");
   const [filter, setFilter] = useState<ChangeRequestStatus | "all">("pending");
   const [requests, setRequests] = useState<GameAccountChangeRequest[]>([]);
   const [loading, setLoading] = useState(true);
@@ -75,9 +87,24 @@ export default function AdminGameAccountChanges() {
 
   return (
     <AdminShell
-      title="Game account changes"
-      description="Review players asking to move their competitive identity to a different game account."
+      title="Game accounts"
+      description="Review players moving their competitive identity, and release an account from the player holding it."
     >
+      <div className="mb-6 flex flex-wrap gap-2 border-b border-white/8 pb-4">
+        {TABS.map((entry) => (
+          <Button
+            key={entry.value}
+            type="button"
+            size="sm"
+            variant={tab === entry.value ? "secondary" : "ghost"}
+            onClick={() => setTab(entry.value)}
+          >
+            {entry.label}
+          </Button>
+        ))}
+      </div>
+
+      {tab === "unlink" ? <AdminGameAccountUnlink /> : (
       <div className="grid gap-6">
         <Card className="p-5">
           <p className="text-sm leading-6 text-slate-400">
@@ -214,6 +241,7 @@ export default function AdminGameAccountChanges() {
           </div>
         )}
       </div>
+      )}
     </AdminShell>
   );
 }

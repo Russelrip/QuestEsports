@@ -16,6 +16,8 @@ const {
   listChangeRequests,
   reviewChangeRequest,
 } = require("./game-account-change.service");
+const { searchLinkedAccounts, unlinkGameAccount } = require("./game-account-admin.service");
+const { hasStaffPermission } = require("../permissions/staff-permission.service");
 
 const respond = (res, data, status = 200) =>
   res.status(status).json({ success: true, data, meta: { serverNow: new Date().toISOString() } });
@@ -145,6 +147,42 @@ const reviewAdminChangeRequest = asyncHandler(async (req, res) => {
   respond(res, data);
 });
 
+// The lookup that makes "contact support" actionable. Staff are the only
+// callers who ever see who holds an account.
+const searchAdminGameAccounts = asyncHandler(async (req, res) => {
+  const data = await searchLinkedAccounts({ query: req.query.q ? String(req.query.q) : "" });
+  respond(res, { accounts: data });
+});
+
+const unlinkAdminGameAccount = asyncHandler(async (req, res) => {
+  // Removing the upstream leaderboard registration belongs to the
+  // `valorant_leaderboard` area. Someone holding only `game_accounts` unlinks
+  // on Quest and nothing more, rather than reaching another area's action
+  // through this one.
+  const mayReleaseLeaderboard =
+    req.body?.releaseLeaderboard === true &&
+    (await hasStaffPermission(req.user, "valorant_leaderboard"));
+
+  const data = await unlinkGameAccount({
+    accountId: req.params.accountId,
+    reason: req.body?.reason,
+    expectedRiotId: req.body?.expectedRiotId,
+    allowLocked: req.body?.allowLocked === true,
+    releaseLeaderboard: mayReleaseLeaderboard,
+    adminUserId: req.user.id,
+    audit: requestAuditContext(req),
+  });
+
+  // Say plainly when the leaderboard was left alone because the caller could
+  // not act on it, rather than reporting a release that did not happen.
+  respond(res, {
+    ...data,
+    leaderboard:
+      data.leaderboard ??
+      (req.body?.releaseLeaderboard === true ? { state: "not_permitted" } : null),
+  });
+});
+
 module.exports = {
   resolveValorant,
   requestValorantChange,
@@ -152,6 +190,8 @@ module.exports = {
   getMyLeaderboardRegistration,
   listAdminChangeRequests,
   reviewAdminChangeRequest,
+  searchAdminGameAccounts,
+  unlinkAdminGameAccount,
   linkValorant,
   importValorantFromLeaderboard,
   listMyGameAccounts,

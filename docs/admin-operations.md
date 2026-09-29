@@ -111,7 +111,7 @@ Audited as `admin.staff_role.created`, `admin.staff_role.updated`,
 | Shop | `shop` | Products and Orders |
 | Payments | `payments` | Payments |
 | Expenses | `expenses` | Expenses |
-| Account changes | `game_accounts` | Account Changes |
+| Game accounts | `game_accounts` | Game Accounts: review change requests, and unlink an account from the player holding it |
 | VALORANT leaderboard | `valorant_leaderboard` | Admin → Valorant → **Leaderboard Players**. The other Valorant tabs stay admin-only |
 
 Never delegable: Overview, Users, Roles, Audit Log, Support Queue, Match Rooms,
@@ -629,10 +629,52 @@ Other pages can link straight to it with `/profile?tab=account#valorant-account`
   while the request waited, approval is refused. Reject the request instead.
 
 Deleting a user keeps their player record and linked Riot account, with no
-Quest user behind it. Nobody can connect that Riot account until an admin moves
-the record. The player sees "belongs to an older Quest player record" and is
-sent to support. Resolving a Riot ID never proves ownership, so this is never
-handed over automatically.
+Quest user behind it. The player sees "belongs to an older Quest player record"
+and is sent to support; **Unlink an account** below is how support answers that.
+Resolving a Riot ID never proves ownership, so this is never handed over
+automatically.
+
+## Unlinking a Game Account
+
+Admin → **Game Accounts** → **Unlink an account** is the other half of the
+"contact support" a player is told when an account they want is already
+connected to somebody else. The change-request flow only moves a player **off**
+an account they hold; it cannot take one off another player. Use this for an
+account that changed hands, was connected to the wrong profile, or sits on an
+older player record nobody can sign in as.
+
+Search by **Name#Tag** (exact), a player ID (`QPID-000042`), or a name — Riot,
+Quest or Discord. This is the only screen that names who holds an account, and
+only the `game_accounts` area opens it.
+
+Unlinking **releases** the account; it never hands it to anyone. Whoever should
+have it connects it themselves from their own profile, through the usual Riot ID
+confirmation and Discord corroboration. What happens when you unlink:
+
+- A reason is required. It goes to the audit log as `game_account.unlinked`
+  along with who held the account, at what verification level, and how many
+  rosters pointed at it. The row itself is deleted — the identifier is globally
+  unique, so retiring the row would leave the account just as unclaimable — and
+  that audit entry is the record afterwards.
+- **Approved rosters keep what they registered.** The Riot ID, tag and
+  verification level are stored on the registration itself and survive the
+  unlink, so past tournaments still show what was actually played.
+- An account **locked to an approved roster** needs a second, explicit
+  confirmation, because that tournament may still be running.
+- Any **pending change request** made from that account is closed, with a note
+  the player sees on their profile.
+- The player's cached leaderboard rank is cleared once they hold no account for
+  the game. It comes back on the next sync for whatever they do hold.
+- **Tick "Also remove their VALORANT leaderboard registration"** unless the old
+  holder should stay on the board. Quest and the leaderboard are separate
+  systems: leave the upstream registration in place and the board goes on naming
+  the old holder, and the next person to connect the account is told they
+  registered when the board still points at somebody else. That removal is
+  undoable from **Leaderboard Players** → removals. It needs the
+  `valorant_leaderboard` area; without it the checkbox is replaced by a note
+  saying the registration was left alone.
+
+There is no undo on this screen. The account becomes claimable immediately.
 
 ## Removing and Restoring Leaderboard Players
 
