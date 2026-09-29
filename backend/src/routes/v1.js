@@ -268,6 +268,11 @@ router.delete(
 const gameAccountStaff = requireStaffPermission("game_accounts");
 router.get("/admin/game-accounts/change-requests", requireAuth, gameAccountStaff, gameAccountController.listAdminChangeRequests);
 router.post("/admin/game-accounts/change-requests/:requestId/review", requireAuth, gameAccountStaff, gameAccountController.reviewAdminChangeRequest);
+// The other half of the "contact support" the player-facing conflict prints:
+// the search that names who holds an account, and the unlink that releases it.
+// Rate limited like the player-facing resolve, because this one names people.
+router.get("/admin/game-accounts", requireAuth, gameAccountStaff, gameAccountResolveLimiter, gameAccountController.searchAdminGameAccounts);
+router.post("/admin/game-accounts/:accountId/unlink", requireAuth, gameAccountStaff, gameAccountController.unlinkAdminGameAccount);
 
 // Delegated admin areas. Declared before the blanket admin guard below so a
 // user granted only `valorant_leaderboard` reaches these and nothing else under

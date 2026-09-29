@@ -1351,7 +1351,7 @@ always pass). Anything not listed stays `requireAdmin`:
 | `shop` | `/api/admin/products*`, `/api/admin/orders*`, and `/api/images*` for product images |
 | `payments` | `/api/admin/payments*` |
 | `expenses` | `/api/admin/expenses*`, `/api/admin/expense-targets` |
-| `game_accounts` | `/api/v1/admin/game-accounts/change-requests*` |
+| `game_accounts` | `/api/v1/admin/game-accounts*` (change requests, holder search, and unlink) |
 | `valorant_leaderboard` | `/api/v1/admin/valorant/leaderboard/*` |
 
 Shared reads accept any of several areas: `GET /api/admin/tournaments` (tournaments,

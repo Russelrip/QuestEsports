@@ -766,3 +766,228 @@ test("real PostgreSQL lets the runtime role run the readiness schema probe", {
     await prisma.$disconnect();
   }
 });
+
+test("admin game account search and unlink are queries real PostgreSQL accepts", {
+  skip: !runDatabaseTests,
+}, async () => {
+  const { prisma } = require("../src/lib/prisma");
+  const service = require("../src/modules/game-accounts/game-account-admin.service");
+  const suffix = crypto.randomUUID();
+  const short = suffix.slice(0, 8);
+  const userId = crypto.randomUUID();
+  const playerId = crypto.randomUUID();
+  const accountId = crypto.randomUUID();
+  const tournamentId = crypto.randomUUID();
+  const registrationId = crypto.randomUUID();
+  const memberId = crypto.randomUUID();
+  const requestId = crypto.randomUUID();
+  const externalId = `integration-puuid-${suffix}`;
+  // `discord_identities` enforces a real snowflake (^[0-9]{5,32}$), so a label
+  // like `discord-<uuid>` is refused outright — exactly the kind of constraint a
+  // mocked client cannot show you, and the reason this case exists. Twelve
+  // digits: comfortably inside the constraint, and deliberately too short to
+  // read as a real Discord id, which the secret scan flags.
+  const discordUserId = `1111${suffix.replace(/\D/g, "").padEnd(8, "0").slice(0, 8)}`;
+
+  // The search walks Player -> User and Player -> DiscordIdentity, and the
+  // unlink leans on `registration_members.game_account_id` being ON DELETE SET
+  // NULL. Mocked Prisma accepts any of that, so the relation names, the
+  // insensitive filters and the delete behaviour are proven once here.
+  try {
+    await prisma.user.create({
+      data: {
+        id: userId,
+        firstName: "Integration",
+        lastName: "Holder",
+        email: `holder-${suffix}@example.com`,
+        emailNormalized: `holder-${suffix}@example.com`,
+        username: `holder-${short}`,
+        usernameNormalized: `holder-${short}`,
+        passwordHash: "integration-test-hash",
+        emailVerified: true,
+      },
+    });
+    await prisma.player.create({
+      data: { id: playerId, userId, displayName: `Integration Holder ${short}` },
+    });
+    await prisma.discordIdentity.create({
+      data: {
+        id: crypto.randomUUID(),
+        playerId,
+        discordUserId,
+        username: `holder-discord-${short}`,
+      },
+    });
+    await prisma.gameAccount.create({
+      data: {
+        id: accountId,
+        playerId,
+        game: "valorant",
+        externalId,
+        username: `Holder${short}`,
+        tagline: "LK1",
+        region: "ap",
+        verificationStatus: "discord_corroborated",
+        status: "active",
+      },
+    });
+    await prisma.playerRanking.create({
+      // `syncedAt` is required and has no default: every value on this row is
+      // as-of, and a cached rank that cannot say when it synced claims more
+      // freshness than it has.
+      data: {
+        id: crypto.randomUUID(),
+        playerId,
+        game: "valorant",
+        position: 4,
+        elo: 1200,
+        syncedAt: new Date(),
+      },
+    });
+    await prisma.gameAccountChangeRequest.create({
+      data: {
+        id: requestId,
+        playerId,
+        currentAccountId: accountId,
+        game: "valorant",
+        requestedExternalId: `integration-other-${suffix}`,
+        requestedUsername: "Other",
+        requestedTagline: "LK2",
+        reason: "integration fixture",
+      },
+    });
+    await prisma.tournament.create({
+      data: {
+        id: tournamentId,
+        slug: `integration-unlink-${suffix}`,
+        title: "Unlink Integration Tournament",
+        game: "valorant",
+        shortDescription: "Unlink integration test",
+        fullDescription: "Unlink integration test",
+        format: "5v5",
+        teamSize: 5,
+        maxTeams: 2,
+        prizePool: "Testing",
+      },
+    });
+    await prisma.teamRegistration.create({
+      data: {
+        id: registrationId,
+        tournamentId,
+        teamName: `Unlink Team ${short}`,
+        captainName: "Integration Captain",
+        captainEmail: `captain-${suffix}@example.com`,
+        captainPhone: "+94770000000",
+        captainDiscord: `captain-${short}`,
+        captainRiotId: `Holder${short}#LK1`,
+        contactEmail: `contact-${suffix}@example.com`,
+        status: "approved",
+        members: {
+          create: [{
+            id: memberId,
+            role: "PLAYER",
+            memberOrder: 0,
+            name: "Integration Holder",
+            playerId,
+            // The committed competitive identity, alongside the link that is
+            // about to be released.
+            gameAccountId: accountId,
+            externalIdSnapshot: externalId,
+            usernameSnapshot: `Holder${short}`,
+            tagSnapshot: "LK1",
+            verificationStatusSnapshot: "discord_corroborated",
+            snapshotAt: new Date(),
+          }],
+        },
+      },
+    });
+
+    // All three search forms, against the real schema.
+    const byRiotId = await service.searchLinkedAccounts({ query: `Holder${short}#LK1` });
+    assert.equal(byRiotId.length, 1);
+    assert.equal(byRiotId[0].id, accountId);
+    assert.equal(byRiotId[0].player.discord.username, `holder-discord-${short}`);
+    assert.equal(byRiotId[0].registrationSnapshots, 1);
+    // Never the identifier itself, even for staff.
+    assert.equal(byRiotId[0].externalId, undefined);
+
+    const player = await prisma.player.findUnique({
+      where: { id: playerId },
+      select: { publicId: true },
+    });
+    const byPublicId = await service.searchLinkedAccounts({ query: player.publicId });
+    assert.deepEqual(byPublicId.map((entry) => entry.id), [accountId]);
+
+    // Case-insensitive, and reaching through Player -> User and
+    // Player -> DiscordIdentity.
+    for (const query of [`holder${short}`, `INTEGRATION HOLDER ${short}`, `holder-discord-${short}`]) {
+      const found = await service.searchLinkedAccounts({ query });
+      assert.ok(found.some((entry) => entry.id === accountId), `no match for ${query}`);
+    }
+
+    const result = await service.unlinkGameAccount({
+      accountId,
+      reason: "Integration test releases the account.",
+      expectedRiotId: `Holder${short}#LK1`,
+      adminUserId: userId,
+    });
+
+    assert.equal(result.released.riotId, `Holder${short}#LK1`);
+    assert.equal(result.changeRequestsClosed, 1);
+    assert.equal(result.rankingsCleared, 1);
+    assert.equal(result.leaderboard, null);
+
+    // The identifier is genuinely free: the unique index no longer holds it.
+    assert.equal(await prisma.gameAccount.count({ where: { id: accountId } }), 0);
+    const reclaimedId = crypto.randomUUID();
+    await prisma.gameAccount.create({
+      data: {
+        id: reclaimedId,
+        playerId,
+        game: "valorant",
+        externalId,
+        username: `Reclaimed${short}`,
+        tagline: "LK9",
+        status: "active",
+      },
+    });
+    assert.equal(await prisma.gameAccount.count({ where: { id: reclaimedId } }), 1);
+
+    // The roster keeps what it registered; only the link is gone. This is the
+    // whole reason deleting the row is safe, and it is a database behaviour no
+    // mock can demonstrate.
+    const member = await prisma.registrationMember.findUnique({ where: { id: memberId } });
+    assert.equal(member.gameAccountId, null);
+    assert.equal(member.externalIdSnapshot, externalId);
+    assert.equal(member.usernameSnapshot, `Holder${short}`);
+    assert.equal(member.tagSnapshot, "LK1");
+    assert.equal(member.verificationStatusSnapshot, "discord_corroborated");
+
+    const closed = await prisma.gameAccountChangeRequest.findUnique({ where: { id: requestId } });
+    assert.equal(closed.status, "rejected");
+    assert.match(closed.adminNote, /staff unlinked the account/);
+    assert.equal(await prisma.playerRanking.count({ where: { playerId, game: "valorant" } }), 0);
+
+    const audit = await prisma.auditLog.findFirst({
+      where: { action: "game_account.unlinked", targetId: accountId },
+    });
+    assert.ok(audit, "the unlink was not audited");
+    assert.equal(audit.beforeData.displayIdentity, `Holder${short}#LK1`);
+    assert.equal(audit.reason, "Integration test releases the account.");
+    // Audit policy redacts PUUIDs; the fingerprint is what ties the row back.
+    assert.ok(audit.beforeData.externalIdFingerprint);
+    assert.equal(JSON.stringify(audit.beforeData).includes(externalId), false);
+    await prisma.auditLog.deleteMany({ where: { id: audit.id } });
+  } finally {
+    await prisma.registrationMember.deleteMany({ where: { registrationId } });
+    await prisma.teamRegistration.deleteMany({ where: { id: registrationId } });
+    await prisma.tournament.deleteMany({ where: { id: tournamentId } });
+    await prisma.gameAccountChangeRequest.deleteMany({ where: { playerId } });
+    await prisma.playerRanking.deleteMany({ where: { playerId } });
+    await prisma.gameAccount.deleteMany({ where: { playerId } });
+    await prisma.discordIdentity.deleteMany({ where: { playerId } });
+    await prisma.player.deleteMany({ where: { id: playerId } });
+    await prisma.user.deleteMany({ where: { id: userId } });
+    await prisma.$disconnect();
+  }
+});

@@ -46,6 +46,23 @@ private registration fields to public components. Event summary responses omit
 payment evidence, admin holds/notes, and private upload names; full sensitive
 records are loaded only in the existing admin detail workflow.
 
+## Game accounts
+
+- `AdminGameAccountChanges.tsx` renders `/admin/game-accounts` and owns the two
+  tabs. **Change requests** reviews a player moving off an account they hold; a
+  Riot rename never reaches it, which the page says so nobody hunts for a bug.
+- `AdminGameAccountUnlink.tsx` is the other tab and the only screen that names
+  who holds an account — the answer to the "already linked to another Quest
+  account, contact support" a player is shown. It searches by Riot ID, player ID
+  or name, then releases the account: it never reassigns one, because the next
+  holder connects it themselves through the usual confirmation.
+  A reason is required, an account locked to an approved roster takes a second
+  explicit confirmation, and the panel shows the roster count before the
+  decision rather than after it. Removing the upstream leaderboard registration
+  is offered only to someone who also holds `valorant_leaderboard`; without it
+  the panel says the registration was left alone, because silence there leaves
+  the public board naming the previous holder.
+
 ## VALORANT leaderboard players
 
 - `valorant/ValorantLeaderboardPlayersManager.tsx` searches registrations and
