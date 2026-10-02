@@ -45,6 +45,7 @@
     "prebuild:android": "expo prebuild --platform android --clean"
   },
   "overrides": {
+    "brace-expansion@5": "5.0.12",
     "uuid": "11.1.1",
     "decode-uri-component": "$decode-uri-component"
   },
