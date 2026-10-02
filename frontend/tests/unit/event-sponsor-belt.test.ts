@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { collectEventSponsors } from "@/components/tournaments/event/EventSponsorBelt";
+import { beltDuration, collectEventSponsors } from "@/components/tournaments/event/EventSponsorBelt";
 import type { EventSeries, TournamentSponsor } from "@/lib/tournaments";
 
 const sponsor = (id: string, name: string): TournamentSponsor => ({
@@ -34,5 +34,15 @@ describe("collectEventSponsors", () => {
   it("returns nothing when no child tournament has sponsors, so the belt stays hidden", () => {
     const event = { tournaments: [{}, { sponsors: [] }] } as unknown as EventSeries;
     expect(collectEventSponsors(event)).toEqual([]);
+  });
+});
+
+describe("beltDuration", () => {
+  it("gives a long lineup four seconds per logo", () => {
+    expect(beltDuration(12)).toBe("48s");
+  });
+
+  it("holds a short lineup to a floor, so three sponsors do not whip past", () => {
+    expect(beltDuration(3)).toBe("24s");
   });
 });
