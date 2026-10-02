@@ -3,19 +3,17 @@ import { spawnSync } from "node:child_process";
 const minimumSeverity = "high";
 const severityRanks = { info: 0, low: 1, moderate: 2, high: 3, critical: 4 };
 const allowedAdvisories = new Map([
-  [1138808, {
-    packageName: "image-size",
-    advisory: "GHSA-w3rx-r6r6-pgpr",
+  // node-forge has no fixed release at all: the advisory covers every published
+  // version, and the only remedy npm offers is downgrading Expo 57 to 44, which
+  // is not one. It reaches us through @expo/cli and its code-signing
+  // certificates, so it runs on a developer or build machine and never inside
+  // the shipped app. Revisit when node-forge publishes a patched release.
+  [1240912, {
+    packageName: "node-forge",
+    advisory: "GHSA-86w9-cpqp-85rv",
     owner: "repository-owner",
-    expiresOn: "2026-09-30",
-    scope: "Expo/Metro build tooling only; uploads are validated by the backend.",
-  }],
-  [1138809, {
-    packageName: "image-size",
-    advisory: "GHSA-5p2g-fcmc-qvqq",
-    owner: "repository-owner",
-    expiresOn: "2026-09-30",
-    scope: "Expo/Metro build tooling only; uploads are validated by the backend.",
+    expiresOn: "2027-01-05",
+    scope: "Expo CLI code-signing tooling only; never bundled into the shipped app.",
   }],
 ]);
 
