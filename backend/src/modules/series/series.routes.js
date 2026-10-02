@@ -51,6 +51,7 @@ router.get("/admin/events/:eventId/sponsors", requireStaffPermission("tournament
 router.post("/admin/events/:eventId/sponsors", requireStaffPermission("tournaments"), invalidateCache("events", "tournaments", "foundation"), imageUpload.single("logo"), sponsorController.createEventSponsor);
 router.patch("/admin/events/:eventId/sponsors/:sponsorId", requireStaffPermission("tournaments"), invalidateCache("events", "tournaments", "foundation"), imageUpload.single("logo"), sponsorController.updateEventSponsor);
 router.delete("/admin/events/:eventId/sponsors/:sponsorId", requireStaffPermission("tournaments"), invalidateCache("events", "tournaments", "foundation"), sponsorController.deleteEventSponsor);
+router.post("/admin/events/:eventId/sponsors/promote", requireStaffPermission("tournaments"), invalidateCache("events", "tournaments", "foundation"), sponsorController.promoteEventSponsors);
 
 router.get("/event-series", publicSeriesCache, controller.getPublicSeries);
 router.get("/event-series/:slug", publicSeriesCache, controller.getPublicSeriesDetail);

@@ -95,6 +95,65 @@ const deleteSponsor = async (owner, { ownerId, sponsorId }) => {
   }
 };
 
+// Collapses every child tournament's sponsors onto the event itself, one row
+// per brand. Most events are backed by a single lineup of sponsors rather than
+// a different set per game, and an event sponsor already shows on every child
+// tournament, so holding them once on the event is the tidier shape.
+const promoteTournamentSponsorsToEvent = async (eventId) => {
+  const event = await prisma.eventSeries.findUnique({
+    where: { id: eventId },
+    select: {
+      id: true,
+      sponsors: { select: { name: true } },
+      tournaments: {
+        orderBy: [{ seriesOrder: "asc" }, { createdAt: "asc" }],
+        select: { sponsors: { orderBy: [{ displayOrder: "asc" }, { createdAt: "asc" }] } },
+      },
+    },
+  });
+  if (!event) throw new HttpError(404, owners.event.notFound);
+
+  const childSponsors = event.tournaments.flatMap((tournament) => tournament.sponsors);
+  if (!childSponsors.length) {
+    return { moved: 0, removed: 0, sponsors: await listEventSponsors(eventId) };
+  }
+
+  const seen = new Set(event.sponsors.map((sponsor) => normalizeText(sponsor.name).toLowerCase()));
+  const promoted = [];
+  // A promoted row takes over the child's logo file, so that file has to outlive
+  // the row it came from; every other child logo is orphaned by the delete.
+  const keptLogos = new Set();
+  for (const sponsor of childSponsors) {
+    const key = normalizeText(sponsor.name).toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    if (sponsor.logoImageName) keptLogos.add(sponsor.logoImageName);
+    promoted.push({
+      id: crypto.randomUUID(),
+      seriesId: eventId,
+      name: sponsor.name,
+      partnershipLabel: sponsor.partnershipLabel,
+      logoImageName: sponsor.logoImageName,
+      websiteUrl: sponsor.websiteUrl,
+      displayOrder: sponsor.displayOrder,
+    });
+  }
+
+  await prisma.$transaction([
+    ...(promoted.length ? [prisma.eventSponsor.createMany({ data: promoted })] : []),
+    prisma.tournamentSponsor.deleteMany({ where: { id: { in: childSponsors.map((sponsor) => sponsor.id) } } }),
+  ]);
+
+  const orphanedLogos = childSponsors
+    .filter((sponsor) => sponsor.logoImageName && !keptLogos.has(sponsor.logoImageName))
+    .map((sponsor) => ({ directory: sponsorLogoDirectory, filename: sponsor.logoImageName }));
+  if (orphanedLogos.length) {
+    await removeUploadsQuietly(orphanedLogos, { operation: "promoteTournamentSponsorsToEvent", seriesId: eventId });
+  }
+
+  return { moved: promoted.length, removed: childSponsors.length, sponsors: await listEventSponsors(eventId) };
+};
+
 const listTournamentSponsors = (tournamentId) => listSponsors(owners.tournament, tournamentId);
 const saveTournamentSponsor = ({ tournamentId, ...rest }) => saveSponsor(owners.tournament, { ownerId: tournamentId, ...rest });
 const deleteTournamentSponsor = ({ tournamentId, sponsorId }) => deleteSponsor(owners.tournament, { ownerId: tournamentId, sponsorId });
@@ -110,4 +169,5 @@ module.exports = {
   listEventSponsors,
   saveEventSponsor,
   deleteEventSponsor,
+  promoteTournamentSponsorsToEvent,
 };

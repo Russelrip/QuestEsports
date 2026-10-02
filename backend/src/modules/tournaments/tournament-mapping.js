@@ -30,6 +30,22 @@ const mapSponsor = (sponsor) => ({
   displayOrder: sponsor.displayOrder,
 });
 
+// An event's sponsors back every game under it, so a child tournament lists
+// them ahead of its own. The same brand often backs both the event and one of
+// its games, so collapse them to one entry each in first-seen order -- the same
+// rule the public event sponsor belt applies.
+const mapInheritedSponsors = (tournament) => {
+  const seen = new Set();
+  const sponsors = [];
+  for (const sponsor of [...(tournament.series?.sponsors || []), ...(tournament.sponsors || [])]) {
+    const key = normalizeText(sponsor.name).toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    sponsors.push(mapSponsor(sponsor));
+  }
+  return sponsors;
+};
+
 const normalizeChallongeUrl = (value) => {
   const raw = normalizeText(value);
   if (!raw) return null;
@@ -182,7 +198,7 @@ const mapTournament = (tournament, { parentWindow } = {}) => {
       : tournamentWithRegistrationCount.bracket?.status === "published"
         ? "native"
         : "none",
-    sponsors: (tournamentWithRegistrationCount.sponsors || []).map(mapSponsor),
+    sponsors: mapInheritedSponsors(tournamentWithRegistrationCount),
     contactLink: tournamentWithRegistrationCount.contactLink,
     isFeatured: tournamentWithRegistrationCount.isFeatured,
     scheduleData: tournamentWithRegistrationCount.scheduleData || null,
@@ -387,6 +403,7 @@ const sortPublicTournaments = (tournaments) =>
   });
 
 module.exports = {
+  mapInheritedSponsors,
   normalizeChallongeUrl,
   buildChallongeEmbedUrl,
   withRegistrationCount,

@@ -70,6 +70,9 @@ const buildRegistrationCountInclude = (now = new Date()) => ({
       registrationOpenAt: true,
       registrationCloseAt: true,
       registrationStatusOverride: true,
+      // An event's sponsors back every game under it, so a child tournament
+      // inherits them for display. See mapSponsors in tournament-mapping.js.
+      sponsors: { orderBy: [{ displayOrder: "asc" }, { createdAt: "asc" }] },
     },
   },
   gameCategory: true,

@@ -27,6 +27,11 @@ paths in a shell.
   `registrations/RegistrationDetail.tsx`, with its types and invitation
   constants in `registration-model.ts` and the small display pieces in
   `registration-ui.tsx`.
+- `TournamentSponsorsManager.tsx` serves both owners and lists only the rows
+  that owner holds, never inherited ones, so a removal removes what it shows.
+  On an event it also offers **Move tournament sponsors here**, which pulls
+  every child tournament's sponsors up to the event; the confirmation says the
+  child rows go, because an event sponsor already shows on each child page.
 - `TournamentEditor.tsx` remains the source of truth for child game,
   capacity, waitlist, roster, payment, schedule, and publication settings.
   A blank max teams is the form's way of saying "unlimited", so it is the one

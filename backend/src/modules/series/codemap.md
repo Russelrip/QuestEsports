@@ -19,6 +19,11 @@ admin reads include drafts.
 - `POST /admin/events/:eventId/archive` unpublishes without deleting children.
 - `POST /admin/events/:eventId/tournaments` creates a child with the event
   forced as `seriesId`, or attaches an existing tournament.
+- `/admin/events/:eventId/sponsors` and
+  `POST /admin/events/:eventId/sponsors/promote` delegate to the tournament
+  module's shared sponsor service; see
+  [`../tournaments/codemap.md`](../tournaments/codemap.md) for the inheritance
+  and promotion rules.
 
 `series.controller.js` owns envelopes and `series.routes.js` owns auth, cache,
 uploads, and invalidation. `series.service.js` owns parsing, mapping, media

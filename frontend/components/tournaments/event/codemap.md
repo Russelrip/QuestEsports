@@ -18,6 +18,17 @@ registration state.
   It is the only place the event's own dates and aggregate counts surface; the
   separate overview section that repeated them was removed, so the event page
   goes straight from the hero to the game lineup.
+- `EventSponsorBelt.tsx` is the scrolling sponsor strip under the hero. It
+  collects the event's own sponsors first, then each child tournament's,
+  collapsed to one logo per brand by case-insensitive name — the same rule the
+  backend applies when a child tournament inherits its event's sponsors, so a
+  brand set in both places shows once. The loop is two identical copies slid by
+  one copy's width, which only reads as seamless while a copy is at least as
+  wide as the belt; `.sponsor-belt-track` in `app/globals.css` guarantees that
+  by flooring the track at twice the belt's width and letting the logos stretch
+  into whatever is left. It is deliberately not a count of logos: padding a
+  short lineup out with repeats showed the same brand twice at once on a wide
+  screen.
 - `EventTournamentList.tsx` lists published child tournaments as the same
   `TournamentCard` grid used by `/tournaments`, behind per-game filter chips.
   Each card links to the tournament detail route; registration is reached from

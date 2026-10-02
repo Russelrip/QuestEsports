@@ -701,7 +701,14 @@ legend {
   to { transform: translate3d(-50%, 0, 0); }
 }
 
+/* The track holds two identical copies of the lineup and slides one copy's width
+   before snapping back, so the loop only reads as seamless while a copy is at
+   least as wide as the belt. Flooring the track at twice the belt's width makes
+   each copy fill it: a short lineup stretches to cover the belt instead of being
+   padded out with repeated logos, which on a wide screen showed the same brand
+   twice at once. A lineup that already overflows keeps its natural width. */
 .sponsor-belt-track {
+  min-width: 200%;
   animation: sponsor-belt-scroll var(--sponsor-belt-duration, 30s) linear infinite;
 }
 
@@ -716,6 +723,7 @@ legend {
     flex-wrap: wrap;
     justify-content: center;
     width: 100%;
+    min-width: 0;
   }
 
   .sponsor-belt-track [aria-hidden="true"] {
