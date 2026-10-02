@@ -991,3 +991,106 @@ test("admin game account search and unlink are queries real PostgreSQL accepts",
     await prisma.$disconnect();
   }
 });
+
+// The promote action's whole job is a cross-table move: read every child
+// tournament's sponsors, write one event row per brand, delete the child rows.
+// A mocked client accepts any of those clauses, so only the real schema can show
+// that the cascade, the dedupe and the surviving logo reference all hold.
+test("real PostgreSQL moves child tournament sponsors onto the event", {
+  skip: waitlistIntegrationSkip,
+}, async () => {
+  const { prisma } = require("../src/lib/prisma");
+  const { promoteTournamentSponsorsToEvent } = require("../src/modules/tournaments/sponsor.service");
+  const { getPublicTournamentBySlug } = require("../src/modules/tournaments/tournament-public.service");
+
+  const suffix = crypto.randomUUID();
+  const short = suffix.slice(0, 8);
+  const seriesId = crypto.randomUUID();
+  const tournamentIds = [crypto.randomUUID(), crypto.randomUUID()];
+
+  const tournamentData = (id, index) => ({
+    id,
+    seriesId,
+    seriesOrder: index,
+    slug: `integration-sponsor-${index}-${suffix}`,
+    title: `Sponsor Integration ${index}`,
+    game: "integration",
+    shortDescription: "Sponsor integration test",
+    fullDescription: "Sponsor integration test",
+    format: "5v5",
+    teamSize: 5,
+    maxTeams: 8,
+    prizePool: "Testing",
+    isPublished: true,
+  });
+
+  try {
+    await prisma.$connect();
+    await prisma.eventSeries.create({
+      data: {
+        id: seriesId,
+        slug: `integration-sponsor-event-${suffix}`,
+        title: `Sponsor Integration Event ${short}`,
+        description: "Sponsor integration test",
+        isPublished: true,
+      },
+    });
+    await prisma.tournament.create({ data: tournamentData(tournamentIds[0], 0) });
+    await prisma.tournament.create({ data: tournamentData(tournamentIds[1], 1) });
+
+    await prisma.eventSponsor.create({
+      data: { id: crypto.randomUUID(), seriesId, name: `Kobra ${short}`, partnershipLabel: "Energy Partner" },
+    });
+    await prisma.tournamentSponsor.createMany({
+      data: [
+        // Backs the event already: the child row goes, nothing is added.
+        { id: crypto.randomUUID(), tournamentId: tournamentIds[0], name: `kobra ${short} `, logoImageName: `dropped-${short}.webp` },
+        { id: crypto.randomUUID(), tournamentId: tournamentIds[0], name: `G-Flock ${short}`, partnershipLabel: "Silver Sponsor", logoImageName: `kept-${short}.webp`, displayOrder: 20 },
+        // The same brand on a second game collapses into the one promoted row.
+        { id: crypto.randomUUID(), tournamentId: tournamentIds[1], name: `g-flock ${short}`, logoImageName: `dropped-two-${short}.webp` },
+        { id: crypto.randomUUID(), tournamentId: tournamentIds[1], name: `Pearl Bay ${short}`, websiteUrl: "https://pearlbay.example" },
+      ],
+    });
+
+    const result = await promoteTournamentSponsorsToEvent(seriesId);
+    assert.equal(result.moved, 2);
+    assert.equal(result.removed, 4);
+
+    assert.equal(await prisma.tournamentSponsor.count({ where: { tournamentId: { in: tournamentIds } } }), 0);
+    const promoted = await prisma.eventSponsor.findMany({
+      where: { seriesId },
+      orderBy: [{ displayOrder: "asc" }, { createdAt: "asc" }],
+    });
+    assert.deepEqual(promoted.map((sponsor) => sponsor.name), [
+      `G-Flock ${short}`,
+      `Kobra ${short}`,
+      `Pearl Bay ${short}`,
+    ]);
+    // The promoted row took over the child's logo file, so that file is still
+    // referenced and must not have been swept as an orphan.
+    const gFlock = promoted.find((sponsor) => sponsor.name === `G-Flock ${short}`);
+    assert.equal(gFlock.logoImageName, `kept-${short}.webp`);
+    assert.equal(gFlock.partnershipLabel, "Silver Sponsor");
+
+    // A child tournament now shows the event's sponsors although it owns none.
+    const child = await getPublicTournamentBySlug(`integration-sponsor-0-${suffix}`);
+    assert.deepEqual(child.sponsors.map((sponsor) => sponsor.name), [
+      `G-Flock ${short}`,
+      `Kobra ${short}`,
+      `Pearl Bay ${short}`,
+    ]);
+    assert.equal(child.sponsors[0].logoUrl, `/api/uploads/sponsor-logos/kept-${short}.webp`);
+
+    // Running it again is a no-op rather than a second round of duplicates.
+    const repeat = await promoteTournamentSponsorsToEvent(seriesId);
+    assert.equal(repeat.moved, 0);
+    assert.equal(repeat.removed, 0);
+    assert.equal(await prisma.eventSponsor.count({ where: { seriesId } }), 3);
+  } finally {
+    await prisma.tournamentSponsor.deleteMany({ where: { tournamentId: { in: tournamentIds } } });
+    await prisma.tournament.deleteMany({ where: { id: { in: tournamentIds } } });
+    await prisma.eventSponsor.deleteMany({ where: { seriesId } });
+    await prisma.eventSeries.deleteMany({ where: { id: seriesId } });
+    await prisma.$disconnect();
+  }
+});

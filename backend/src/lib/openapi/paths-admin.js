@@ -400,6 +400,12 @@ const adminPaths = {
       parameters: idParameter("eventId"),
     }),
   },
+  "/api/admin/events/{eventId}/sponsors/promote": {
+    post: createOperation("Admin", "Move every child tournament's sponsors onto the event", {
+      authenticated: true,
+      parameters: idParameter("eventId"),
+    }),
+  },
   "/api/admin/events/{eventId}/sponsors/{sponsorId}": {
     patch: createOperation("Admin", "Update an event sponsor", {
       authenticated: true,

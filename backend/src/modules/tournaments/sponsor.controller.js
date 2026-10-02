@@ -33,6 +33,19 @@ const deleteEventSponsor = asyncHandler(async (req, res) => {
   res.status(200).json({ success: true, message: "Sponsor deleted." });
 });
 
+const promoteEventSponsors = asyncHandler(async (req, res) => {
+  const { moved, removed, sponsors } = await service.promoteTournamentSponsorsToEvent(req.params.eventId);
+  res.status(200).json({
+    success: true,
+    message: removed
+      ? `Moved ${moved} sponsor${moved === 1 ? "" : "s"} to the event from ${removed} tournament entr${removed === 1 ? "y" : "ies"}.`
+      : "No tournament sponsors to move.",
+    moved,
+    removed,
+    sponsors,
+  });
+});
+
 module.exports = {
   listSponsors,
   createSponsor,
@@ -42,4 +55,5 @@ module.exports = {
   createEventSponsor,
   updateEventSponsor,
   deleteEventSponsor,
+  promoteEventSponsors,
 };

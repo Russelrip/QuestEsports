@@ -44,6 +44,26 @@ persisted per tournament and exposed by both mappings with a legacy `true`
 fallback; public bracket consumers require that setting plus a published,
 non-empty native or Challonge source.
 
+## Sponsors
+
+`sponsor.service.js` serves both `tournament_sponsors` and `event_sponsors`
+through one owner table; the rows are identical and only the foreign key and
+not-found wording differ.
+
+An event's sponsors back every game under it, so `mapInheritedSponsors` lists
+them ahead of a child's own on every public tournament projection, collapsed to
+one entry per brand by case-insensitive name. The same rule runs again in the
+frontend's `EventSponsorBelt` over the event payload, so a brand set in both
+places still shows once. Admin reads stay unmerged: `/admin/tournaments/:id/
+sponsors` lists only rows that tournament owns, so staff edit what they set.
+
+`promoteTournamentSponsorsToEvent` is the tidy-up for the common case of one
+sponsor lineup across a whole event: it writes one event row per brand found on
+any child, deletes every child row, and keeps the logo file of each row it
+promoted while sweeping the rest. It is idempotent — a second run finds nothing
+to move — and loses no display, because an event sponsor already reaches every
+child page through the inheritance above.
+
 ## Capacity and waitlist flow
 
 `registration-eligibility.js` is the capacity source of truth. A NULL
