@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import PageLayout from "@/components/PageLayout";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
@@ -95,13 +96,12 @@ const ResultRow = ({ result }: { result: TournamentResult }) => {
 export default async function TournamentResultsPage({ params }: ResultsPageProps) {
   let data: TournamentResults;
   const { slug } = await params;
+  redirectRenamedTournament(slug, "/results");
 
   try {
     data = await fetchTournamentResults(slug);
   } catch (error) {
-    if (error instanceof ApiRequestError && error.status === 404) {
-      redirectRenamedTournament(slug, "/results");
-    }
+    if (error instanceof ApiRequestError && error.status === 404) notFound();
     throw error;
   }
 

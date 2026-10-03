@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { notFound } from "next/navigation";
 import { cache } from "react";
 import StructuredData from "@/components/StructuredData";
 import TournamentDetailsContent from "@/components/tournaments/TournamentDetailsContent";
@@ -45,13 +46,14 @@ export default async function TournamentDetailsPage({
   searchParams: Promise<{ payment?: string }>;
 }) {
   const { slug } = await params;
+  redirectRenamedTournament(slug);
   const { payment } = await searchParams;
   let tournament: Tournament;
   try {
     tournament = await getTournament(slug);
   } catch (error) {
     if (!(error instanceof ApiRequestError) || error.status !== 404) throw error;
-    redirectRenamedTournament(slug);
+    notFound();
   }
 
   return (

@@ -1,10 +1,11 @@
-import { notFound, permanentRedirect } from "next/navigation";
+import { permanentRedirect } from "next/navigation";
 
 // A tournament's slug is its public URL, and nothing in the platform records the
 // one it used to have. Renaming a tournament therefore breaks every link already
 // shared for it -- a Discord post, a bookmark, a tab somebody left open
 // mid-registration -- with no way to tell it happened. Anything renamed is listed
 // here, keyed by the slug that used to work, so the old URL keeps resolving.
+//
 // A Map rather than an object literal: the key is whatever the URL happened to
 // contain, and an object would answer "constructor" or "toString" with something
 // off Object.prototype, turning a 404 into a redirect to a stringified function.
@@ -16,16 +17,20 @@ const RENAMED_TOURNAMENT_SLUGS = new Map<string, string>([
 export const renamedTournamentSlug = (slug: string): string | null =>
   RENAMED_TOURNAMENT_SLUGS.get(slug) ?? null;
 
-// Stands in for notFound() on the routes that take a tournament slug, and is
-// reached only once that slug has already failed to resolve. An entry can
-// therefore be added before the rename lands: while the old slug still answers,
-// nothing gets here, and the moment it stops the old URL redirects instead of
-// going dark. `segment` carries the rest of the path, such as "/register".
-// Declared, not an arrow const: TypeScript only lets a call narrow control flow
-// as never-returning when the callee is a function declaration or an explicitly
-// annotated const, and callers rely on that exactly as they did on notFound().
-export function redirectRenamedTournament(slug: string, segment = ""): never {
+// Called before the tournament is looked up, and deliberately not on the 404
+// path. Reacting to the 404 reads better -- the entry stays inert until the old
+// slug really stops resolving -- but it does not work: these routes fetch with
+// `next: { revalidate }`, and Next's Data Cache serves a stale entry while
+// revalidating without evicting it when that revalidation fails. After a rename
+// every refresh 404s, the eviction never comes, and a warm entry serves the old
+// page indefinitely, so the redirect never engages. Checking first depends on no
+// cache state at all.
+//
+// The cost is ordering: an entry here redirects immediately, so it must be
+// deployed only once the new slug exists. Rename first, then deploy this --
+// the old URL 404s in between, rather than redirecting somewhere that is not
+// there yet. `segment` carries the rest of the path, such as "/register".
+export function redirectRenamedTournament(slug: string, segment = ""): void {
   const renamed = renamedTournamentSlug(slug);
   if (renamed) permanentRedirect(`/tournaments/${renamed}${segment}`);
-  notFound();
 }
