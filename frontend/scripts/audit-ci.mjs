@@ -1,29 +1,23 @@
 import { spawnSync } from "node:child_process";
 
+// The same gate mobile-admin runs, and deliberately a copy rather than a shared
+// module: the two workspaces have separate dependency trees and separate npm
+// installs, so each owns the exceptions it has actually reviewed.
 const minimumSeverity = "high";
 const severityRanks = { info: 0, low: 1, moderate: 2, high: 3, critical: 4 };
 const allowedAdvisories = new Map([
-  // braces has no fixed release either: the advisory covers every published
-  // version, and it arrives under Expo's Metro tooling, so it runs on a build
-  // machine and is never part of the shipped bundle.
+  // braces has no fixed release: the advisory covers every published version,
+  // and the only remedy npm offers is downgrading eslint-config-next from 16 to
+  // 14, which would stop it linting Next 16 at all. It reaches us solely through
+  // @next/eslint-plugin-next -> fast-glob -> micromatch, so it runs in lint on a
+  // developer or CI machine and is never part of a build output or served to a
+  // browser. Revisit when braces publishes a patched release.
   [1240992, {
     packageName: "braces",
     advisory: "GHSA-vfj7-8cjw-p6xm",
     owner: "repository-owner",
     expiresOn: "2027-01-05",
-    scope: "Expo/Metro build tooling only; never bundled into the shipped app.",
-  }],
-  // node-forge has no fixed release at all: the advisory covers every published
-  // version, and the only remedy npm offers is downgrading Expo 57 to 44, which
-  // is not one. It reaches us through @expo/cli and its code-signing
-  // certificates, so it runs on a developer or build machine and never inside
-  // the shipped app. Revisit when node-forge publishes a patched release.
-  [1240912, {
-    packageName: "node-forge",
-    advisory: "GHSA-86w9-cpqp-85rv",
-    owner: "repository-owner",
-    expiresOn: "2027-01-05",
-    scope: "Expo CLI code-signing tooling only; never bundled into the shipped app.",
+    scope: "ESLint tooling only; never bundled or served.",
   }],
 ]);
 
