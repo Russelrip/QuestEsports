@@ -30,7 +30,39 @@ export const renamedTournamentSlug = (slug: string): string | null =>
 // deployed only once the new slug exists. Rename first, then deploy this --
 // the old URL 404s in between, rather than redirecting somewhere that is not
 // there yet. `segment` carries the rest of the path, such as "/register".
-export function redirectRenamedTournament(slug: string, segment = ""): void {
+// Next hands a page every query parameter it was called with, whatever the page
+// declares, so the whole object is rebuilt rather than the one key a route reads.
+// Dropping the query would land somebody on the right page missing the state the
+// link carried -- the detail route reads `payment` to confirm a payment came back.
+type TournamentQuery = Record<string, string | string[] | undefined>;
+
+const toQueryString = (query?: TournamentQuery): string => {
+  if (!query) return "";
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) {
+    if (value === undefined) continue;
+    for (const entry of Array.isArray(value) ? value : [value]) params.append(key, entry);
+  }
+  const search = params.toString();
+  return search ? `?${search}` : "";
+};
+
+// Separated from the redirect so the path can be asserted without standing up
+// Next's navigation machinery.
+export const renamedTournamentPath = (
+  slug: string,
+  segment = "",
+  query?: TournamentQuery,
+): string | null => {
   const renamed = renamedTournamentSlug(slug);
-  if (renamed) permanentRedirect(`/tournaments/${renamed}${segment}`);
+  return renamed ? `/tournaments/${renamed}${segment}${toQueryString(query)}` : null;
+};
+
+export function redirectRenamedTournament(
+  slug: string,
+  segment = "",
+  query?: TournamentQuery,
+): void {
+  const target = renamedTournamentPath(slug, segment, query);
+  if (target) permanentRedirect(target);
 }

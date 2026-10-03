@@ -46,8 +46,9 @@ export default async function TournamentDetailsPage({
   searchParams: Promise<{ payment?: string }>;
 }) {
   const { slug } = await params;
-  redirectRenamedTournament(slug);
-  const { payment } = await searchParams;
+  const search = await searchParams;
+  redirectRenamedTournament(slug, "", search);
+  const { payment } = search;
   let tournament: Tournament;
   try {
     tournament = await getTournament(slug);

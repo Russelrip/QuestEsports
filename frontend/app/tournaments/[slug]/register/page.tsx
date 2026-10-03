@@ -25,11 +25,13 @@ export async function generateMetadata({
 
 export default async function TournamentRegisterPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ slug: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { slug } = await params;
-  redirectRenamedTournament(slug, "/register");
+  redirectRenamedTournament(slug, "/register", await searchParams);
   const tournament = await fetchPublicTournamentBySlug(slug, participantRequest).catch(() => null);
   if (!tournament) notFound();
   return (
