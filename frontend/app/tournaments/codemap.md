@@ -15,7 +15,13 @@ also the only public home for events.
   404, and composes the public event components.
 - `[slug]/` holds the tournament detail, registration, payment, and results
   routes. `events` is a static segment, so it never collides with `[slug]`
-  unless a tournament is literally slugged `events`.
+  unless a tournament is literally slugged `events`. Where those routes would
+  have called `notFound()`, they call `redirectRenamedTournament` from
+  `frontend/lib/tournament-slug-aliases.ts` instead: nothing records a
+  tournament's previous slug, so a rename otherwise breaks every link already
+  shared for it. The map is read only after a slug has failed to resolve, which
+  is what lets an entry be added before the rename lands. The payment route is
+  untouched, because its 404 is a missing order rather than a missing slug.
 - `series/[slug]/page.tsx` is a legacy compatibility route on the older
   event-series API model. Nothing public links to it; it stays alive for old
   links and canonicalises to `/tournaments/events/:slug`.

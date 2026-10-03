@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
 import ConfiguredTournamentRegistrationForm from "@/components/tournament-registration/ConfiguredTournamentRegistrationForm";
 import PageLayout from "@/components/PageLayout";
 import { Container } from "@/components/ui/container";
 import { buildNoIndexMetadata } from "@/lib/site";
 import { fetchPublicTournamentBySlug } from "@/lib/tournaments";
+import { redirectRenamedTournament } from "@/lib/tournament-slug-aliases";
 
 const participantRequest = { participantPage: 1, participantPageSize: 10 };
 
@@ -29,7 +29,7 @@ export default async function TournamentRegisterPage({
 }) {
   const { slug } = await params;
   const tournament = await fetchPublicTournamentBySlug(slug, participantRequest).catch(() => null);
-  if (!tournament) notFound();
+  if (!tournament) redirectRenamedTournament(slug, "/register");
   return (
     <PageLayout
       title="Tournament Registration"
