@@ -1052,7 +1052,9 @@ test("real PostgreSQL moves child tournament sponsors onto the event", {
       ],
     });
 
-    const result = await promoteTournamentSponsorsToEvent(seriesId);
+    const result = await promoteTournamentSponsorsToEvent(seriesId, {
+      audit: { actorUserId: null, source: "admin", requestId: null, ipAddress: null },
+    });
     assert.equal(result.moved, 2);
     assert.equal(result.removed, 4);
 
@@ -1082,11 +1084,38 @@ test("real PostgreSQL moves child tournament sponsors onto the event", {
     assert.equal(child.sponsors[0].logoUrl, `/api/uploads/sponsor-logos/kept-${short}.webp`);
 
     // Running it again is a no-op rather than a second round of duplicates.
-    const repeat = await promoteTournamentSponsorsToEvent(seriesId);
+    const repeat = await promoteTournamentSponsorsToEvent(seriesId, {
+      audit: { actorUserId: null, source: "admin", requestId: null, ipAddress: null },
+    });
     assert.equal(repeat.moved, 0);
     assert.equal(repeat.removed, 0);
     assert.equal(await prisma.eventSponsor.count({ where: { seriesId } }), 3);
+
+    // The child rows are gone, so this entry is the only remaining description
+    // of what was moved -- and it has to have committed with the move itself.
+    const audits = await prisma.auditLog.findMany({
+      where: { action: "sponsor.promoted", targetId: seriesId },
+      orderBy: { createdAt: "asc" },
+    });
+    assert.equal(audits.length, 2, "both runs should be audited, including the no-op");
+    const [moveAudit, noopAudit] = audits;
+    assert.equal(moveAudit.targetType, "EventSeries");
+    assert.equal(moveAudit.source, "admin");
+    assert.equal(moveAudit.beforeData.tournamentSponsors.length, 4);
+    assert.equal(moveAudit.afterData.tournamentSponsorsRemoved, 4);
+    assert.deepEqual(
+      moveAudit.afterData.eventSponsorsCreated.map((sponsor) => sponsor.name).sort(),
+      [`G-Flock ${short}`, `Pearl Bay ${short}`],
+    );
+    // The dropped duplicate is named in beforeData even though nothing replaced
+    // it, which is the only place that row is now recorded at all.
+    assert.ok(
+      moveAudit.beforeData.tournamentSponsors.some((sponsor) => sponsor.name === `kobra ${short} `),
+      "the deduped child row should still be described",
+    );
+    assert.equal(noopAudit.afterData.tournamentSponsorsRemoved, 0);
   } finally {
+    await prisma.auditLog.deleteMany({ where: { action: "sponsor.promoted", targetId: seriesId } });
     await prisma.tournamentSponsor.deleteMany({ where: { tournamentId: { in: tournamentIds } } });
     await prisma.tournament.deleteMany({ where: { id: { in: tournamentIds } } });
     await prisma.eventSponsor.deleteMany({ where: { seriesId } });

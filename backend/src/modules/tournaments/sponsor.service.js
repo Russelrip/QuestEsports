@@ -3,6 +3,7 @@ const { prisma } = require("../../lib/prisma");
 const { HttpError } = require("../../lib/http-error");
 const { removeUploadsQuietly } = require("../../lib/upload-cleanup");
 const { normalizeInteger, normalizeOptionalUrl, normalizeText } = require("../../lib/validation");
+const { recordAuditInTransaction } = require("../../lib/audit");
 const {
   persistSponsorLogoUpload,
   sponsorLogoDirectory,
@@ -20,9 +21,20 @@ const mapSponsor = (sponsor) => ({
 // Tournaments and events carry identical sponsor rows; only the owning table,
 // the foreign key and the not-found wording differ.
 const owners = {
-  tournament: { ownerModel: "tournament", sponsorModel: "tournamentSponsor", ownerField: "tournamentId", notFound: "Tournament not found." },
-  event: { ownerModel: "eventSeries", sponsorModel: "eventSponsor", ownerField: "seriesId", notFound: "Event not found." },
+  tournament: { ownerModel: "tournament", sponsorModel: "tournamentSponsor", ownerField: "tournamentId", targetType: "TournamentSponsor", notFound: "Tournament not found." },
+  event: { ownerModel: "eventSeries", sponsorModel: "eventSponsor", ownerField: "seriesId", targetType: "EventSponsor", notFound: "Event not found." },
 };
+
+// What a sponsor row was, for an audit entry that still means something once the
+// row is gone. The logo is named rather than linked, because the file is deleted
+// alongside it and the URL would resolve to nothing.
+const auditSponsor = (sponsor) => sponsor && ({
+  name: sponsor.name,
+  partnershipLabel: sponsor.partnershipLabel,
+  websiteUrl: sponsor.websiteUrl,
+  displayOrder: sponsor.displayOrder,
+  logoImageName: sponsor.logoImageName,
+});
 
 const listSponsors = async (owner, ownerId) => {
   const exists = await prisma[owner.ownerModel].findUnique({ where: { id: ownerId }, select: { id: true } });
@@ -33,7 +45,7 @@ const listSponsors = async (owner, ownerId) => {
   })).map(mapSponsor);
 };
 
-const saveSponsor = async (owner, { ownerId, sponsorId, body, file }) => {
+const saveSponsor = async (owner, { ownerId, sponsorId, body, file, audit }) => {
   const logContext = { [owner.ownerField]: ownerId, sponsorId };
   if (!sponsorId) {
     const exists = await prisma[owner.ownerModel].findUnique({ where: { id: ownerId }, select: { id: true } });
@@ -62,9 +74,22 @@ const saveSponsor = async (owner, { ownerId, sponsorId, body, file }) => {
     ...(uploaded ? { logoImageName: uploaded.filename } : removeLogo ? { logoImageName: null } : {}),
   };
   try {
-    const saved = sponsorId
-      ? await prisma[owner.sponsorModel].update({ where: { id: sponsorId }, data })
-      : await prisma[owner.sponsorModel].create({ data: { id: crypto.randomUUID(), [owner.ownerField]: ownerId, ...data } });
+    // The row and its audit entry commit together, so the record cannot end up
+    // describing a change that was rolled back, or miss one that was not.
+    const saved = await prisma.$transaction(async (tx) => {
+      const row = sponsorId
+        ? await tx[owner.sponsorModel].update({ where: { id: sponsorId }, data })
+        : await tx[owner.sponsorModel].create({ data: { id: crypto.randomUUID(), [owner.ownerField]: ownerId, ...data } });
+      await recordAuditInTransaction(tx, {
+        ...audit,
+        action: sponsorId ? "sponsor.updated" : "sponsor.created",
+        targetType: owner.targetType,
+        targetId: row.id,
+        beforeData: auditSponsor(existing) || null,
+        afterData: { ...auditSponsor(row), [owner.ownerField]: ownerId },
+      });
+      return row;
+    });
     if (existing?.logoImageName && existing.logoImageName !== saved.logoImageName) {
       await removeUploadsQuietly(
         [{ directory: sponsorLogoDirectory, filename: existing.logoImageName }],
@@ -83,10 +108,22 @@ const saveSponsor = async (owner, { ownerId, sponsorId, body, file }) => {
   }
 };
 
-const deleteSponsor = async (owner, { ownerId, sponsorId }) => {
+const deleteSponsor = async (owner, { ownerId, sponsorId, audit }) => {
   const existing = await prisma[owner.sponsorModel].findFirst({ where: { id: sponsorId, [owner.ownerField]: ownerId } });
   if (!existing) throw new HttpError(404, "Sponsor not found.");
-  await prisma[owner.sponsorModel].delete({ where: { id: sponsorId } });
+  // The row is about to stop existing, so the audit entry is the only remaining
+  // record of what was removed -- hence the full snapshot in beforeData.
+  await prisma.$transaction(async (tx) => {
+    await tx[owner.sponsorModel].delete({ where: { id: sponsorId } });
+    await recordAuditInTransaction(tx, {
+      ...audit,
+      action: "sponsor.deleted",
+      targetType: owner.targetType,
+      targetId: sponsorId,
+      beforeData: { ...auditSponsor(existing), [owner.ownerField]: ownerId },
+      afterData: { removed: true, logoFileRemoved: Boolean(existing.logoImageName) },
+    });
+  });
   if (existing.logoImageName) {
     await removeUploadsQuietly(
       [{ directory: sponsorLogoDirectory, filename: existing.logoImageName }],
@@ -99,7 +136,7 @@ const deleteSponsor = async (owner, { ownerId, sponsorId }) => {
 // per brand. Most events are backed by a single lineup of sponsors rather than
 // a different set per game, and an event sponsor already shows on every child
 // tournament, so holding them once on the event is the tidier shape.
-const promoteTournamentSponsorsToEvent = async (eventId) => {
+const promoteTournamentSponsorsToEvent = async (eventId, { audit } = {}) => {
   const event = await prisma.eventSeries.findUnique({
     where: { id: eventId },
     select: {
@@ -139,10 +176,24 @@ const promoteTournamentSponsorsToEvent = async (eventId) => {
     });
   }
 
-  await prisma.$transaction([
-    ...(promoted.length ? [prisma.eventSponsor.createMany({ data: promoted })] : []),
-    prisma.tournamentSponsor.deleteMany({ where: { id: { in: childSponsors.map((sponsor) => sponsor.id) } } }),
-  ]);
+  // One transaction for the whole move plus its audit entry. This is the only
+  // bulk destructive action on the sponsor surface, and once it commits the
+  // child rows are the audit entry's only remaining description of themselves.
+  await prisma.$transaction(async (tx) => {
+    if (promoted.length) await tx.eventSponsor.createMany({ data: promoted });
+    await tx.tournamentSponsor.deleteMany({ where: { id: { in: childSponsors.map((sponsor) => sponsor.id) } } });
+    await recordAuditInTransaction(tx, {
+      ...audit,
+      action: "sponsor.promoted",
+      targetType: "EventSeries",
+      targetId: eventId,
+      beforeData: { tournamentSponsors: childSponsors.map(auditSponsor) },
+      afterData: {
+        eventSponsorsCreated: promoted.map(auditSponsor),
+        tournamentSponsorsRemoved: childSponsors.length,
+      },
+    });
+  });
 
   const orphanedLogos = childSponsors
     .filter((sponsor) => sponsor.logoImageName && !keptLogos.has(sponsor.logoImageName))
@@ -156,10 +207,10 @@ const promoteTournamentSponsorsToEvent = async (eventId) => {
 
 const listTournamentSponsors = (tournamentId) => listSponsors(owners.tournament, tournamentId);
 const saveTournamentSponsor = ({ tournamentId, ...rest }) => saveSponsor(owners.tournament, { ownerId: tournamentId, ...rest });
-const deleteTournamentSponsor = ({ tournamentId, sponsorId }) => deleteSponsor(owners.tournament, { ownerId: tournamentId, sponsorId });
+const deleteTournamentSponsor = ({ tournamentId, sponsorId, audit }) => deleteSponsor(owners.tournament, { ownerId: tournamentId, sponsorId, audit });
 const listEventSponsors = (eventId) => listSponsors(owners.event, eventId);
 const saveEventSponsor = ({ eventId, ...rest }) => saveSponsor(owners.event, { ownerId: eventId, ...rest });
-const deleteEventSponsor = ({ eventId, sponsorId }) => deleteSponsor(owners.event, { ownerId: eventId, sponsorId });
+const deleteEventSponsor = ({ eventId, sponsorId, audit }) => deleteSponsor(owners.event, { ownerId: eventId, sponsorId, audit });
 
 module.exports = {
   mapSponsor,
