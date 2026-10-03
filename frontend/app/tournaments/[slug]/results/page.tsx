@@ -16,7 +16,10 @@ import {
   type TournamentResults,
 } from "@/lib/valorant-results";
 
-type ResultsPageProps = { params: Promise<{ slug: string }> };
+type ResultsPageProps = {
+  params: Promise<{ slug: string }>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+};
 
 export async function generateMetadata({ params }: ResultsPageProps) {
   try {
@@ -93,10 +96,10 @@ const ResultRow = ({ result }: { result: TournamentResult }) => {
   );
 };
 
-export default async function TournamentResultsPage({ params }: ResultsPageProps) {
+export default async function TournamentResultsPage({ params, searchParams }: ResultsPageProps) {
   let data: TournamentResults;
   const { slug } = await params;
-  redirectRenamedTournament(slug, "/results");
+  redirectRenamedTournament(slug, "/results", await searchParams);
 
   try {
     data = await fetchTournamentResults(slug);
