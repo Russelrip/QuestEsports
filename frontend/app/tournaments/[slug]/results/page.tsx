@@ -1,10 +1,10 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
 import PageLayout from "@/components/PageLayout";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Section } from "@/components/ui/section";
 import { ApiRequestError } from "@/lib/api";
+import { redirectRenamedTournament } from "@/lib/tournament-slug-aliases";
 import { formatSriLankaDateTime } from "@/lib/date-time";
 import { buildPageMetadata } from "@/lib/site";
 import {
@@ -94,12 +94,14 @@ const ResultRow = ({ result }: { result: TournamentResult }) => {
 
 export default async function TournamentResultsPage({ params }: ResultsPageProps) {
   let data: TournamentResults;
+  const { slug } = await params;
 
   try {
-    const { slug } = await params;
     data = await fetchTournamentResults(slug);
   } catch (error) {
-    if (error instanceof ApiRequestError && error.status === 404) notFound();
+    if (error instanceof ApiRequestError && error.status === 404) {
+      redirectRenamedTournament(slug, "/results");
+    }
     throw error;
   }
 

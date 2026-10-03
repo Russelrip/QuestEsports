@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
 import { cache } from "react";
 import StructuredData from "@/components/StructuredData";
 import TournamentDetailsContent from "@/components/tournaments/TournamentDetailsContent";
@@ -11,6 +10,7 @@ import {
 } from "@/lib/site";
 import { Tournament, fetchPublicTournamentBySlug } from "@/lib/tournaments";
 import { ApiRequestError } from "@/lib/api";
+import { redirectRenamedTournament } from "@/lib/tournament-slug-aliases";
 
 const getTournament = cache((slug: string) =>
   fetchPublicTournamentBySlug(slug, { participantPage: 1, participantPageSize: 10 }),
@@ -51,7 +51,7 @@ export default async function TournamentDetailsPage({
     tournament = await getTournament(slug);
   } catch (error) {
     if (!(error instanceof ApiRequestError) || error.status !== 404) throw error;
-    notFound();
+    redirectRenamedTournament(slug);
   }
 
   return (
