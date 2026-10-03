@@ -8,8 +8,11 @@ describe("uploaded sponsor logos", () => {
       resolve(process.cwd(), "components/tournaments/TournamentDetailsContent.tsx"),
       "utf8",
     );
+    // The admin row moved out of TournamentSponsorsManager into its own
+    // component when sponsors became editable in place; the requirement did not
+    // move with it, which is what this guards.
     const adminComponent = readFileSync(
-      resolve(process.cwd(), "components/admin/TournamentSponsorsManager.tsx"),
+      resolve(process.cwd(), "components/admin/SponsorRow.tsx"),
       "utf8",
     );
 
@@ -17,9 +20,13 @@ describe("uploaded sponsor logos", () => {
       /const logoUrl = resolveImageUrl\(sponsor\.logoUrl\);[\s\S]*?<Image[\s\S]*?\/>/,
     )?.[0];
     const adminSponsorImage = adminComponent.match(
-      /resolveImageUrl\(item\.logoUrl\)[\s\S]*?<Image[\s\S]*?\/>/,
+      /resolveImageUrl\(sponsor\.logoUrl\)[\s\S]*?<Image[\s\S]*?\/>/,
     )?.[0];
 
+    // Named rather than bare toContain, so a markup move fails as "not found"
+    // instead of the assertion library's complaint about an undefined argument.
+    expect(publicSponsorImage, "public sponsor <Image> not found").toBeTypeOf("string");
+    expect(adminSponsorImage, "admin sponsor <Image> not found").toBeTypeOf("string");
     expect(publicSponsorImage).toContain("unoptimized");
     expect(adminSponsorImage).toContain("unoptimized");
   });
