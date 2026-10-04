@@ -9,6 +9,11 @@ import { permanentRedirect } from "next/navigation";
 // A Map rather than an object literal: the key is whatever the URL happened to
 // contain, and an object would answer "constructor" or "toString" with something
 // off Object.prototype, turning a 404 into a redirect to a stringified function.
+// The platform records retired slugs itself now, and the API resolves them: a
+// request for one answers with the tournament, carrying its current slug, which
+// `redirectToCanonicalSlug` below acts on. This map is only the rename that
+// predates that table, applied directly to the database with no row to show for
+// it. Nothing new belongs here -- rename through the admin and it is recorded.
 const RENAMED_TOURNAMENT_SLUGS = new Map<string, string>([
   // 2026-10-03: "acension" was a misspelling of "ascension".
   ["quest-acension-valorant-dm", "quest-ascension-valorant-dm"],
@@ -65,4 +70,19 @@ export function redirectRenamedTournament(
 ): void {
   const target = renamedTournamentPath(slug, segment, query);
   if (target) permanentRedirect(target);
+}
+
+// The API answers a retired slug with the tournament that now owns it, so a
+// mismatch between what was asked for and what came back is the rename showing
+// through. Unlike the map above this needs no deploy per rename, and unlike
+// reacting to a 404 it is not defeated by a stale cache entry: the fetch
+// succeeds, so the entry refreshes and carries the new slug with it.
+export function redirectToCanonicalSlug(
+  requestedSlug: string,
+  canonicalSlug: string,
+  segment = "",
+  query?: TournamentQuery,
+): void {
+  if (requestedSlug === canonicalSlug) return;
+  permanentRedirect(`/tournaments/${canonicalSlug}${segment}${toQueryString(query)}`);
 }

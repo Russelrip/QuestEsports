@@ -4,6 +4,31 @@ const path = require("node:path");
 
 const { loadModuleWithMocks } = require("./helpers/load-module-with-mocks");
 
+// A rename retires the outgoing slug, so every path that saves a tournament now
+// touches tournament_slug_history -- including the availability check, which
+// refuses a slug another tournament retired. These cases are about the tournament
+// row rather than that table, so the model answers "nothing retired" unless a
+// case says otherwise.
+//
+// The admin update is also transactional unconditionally now. It used to open a
+// transaction only when there was an audit entry to write; a retired slug has to
+// commit with the update that caused it, so there is always one. The interactive
+// form hands back the same client, which is all these cases need -- the
+// real-database suite is where atomicity is actually demonstrated.
+const withSlugHistory = (mock) => {
+  const prisma = {
+    tournamentSlugHistory: {
+      findFirst: async () => null,
+      findUnique: async () => null,
+      create: async ({ data }) => data,
+      deleteMany: async () => ({ count: 0 }),
+    },
+    ...mock.prisma,
+  };
+  if (!prisma.$transaction) prisma.$transaction = async (run) => run(prisma);
+  return { ...mock, prisma };
+};
+
 const servicePath = path.join(__dirname, "../src/modules/tournaments/tournament.service.js");
 const prismaModulePath = path.join(__dirname, "../src/lib/prisma.js");
 const uploadModulePath = path.join(__dirname, "../src/middleware/upload.js");
@@ -32,7 +57,7 @@ const buildAdminTournamentBody = (overrides = {}) => ({
 
 test("Challonge URLs are restricted and normalized for safe module embeds", () => {
   const { module: tournamentService, restore } = loadModuleWithMocks(servicePath, {
-    [prismaModulePath]: { prisma: {} },
+    [prismaModulePath]: withSlugHistory({ prisma: {} }),
     [uploadModulePath]: {},
     [teamServiceModulePath]: {},
   });
@@ -56,7 +81,7 @@ test("Challonge URLs are restricted and normalized for safe module embeds", () =
 
 test("admin tournament listing rejects unsupported status filters", async () => {
   const { module: tournamentService, restore } = loadModuleWithMocks(servicePath, {
-    [prismaModulePath]: { prisma: {} },
+    [prismaModulePath]: withSlugHistory({ prisma: {} }),
     [uploadModulePath]: {},
     [teamServiceModulePath]: {},
   });
@@ -104,7 +129,7 @@ test("registration status includes coach invitations in verification and payment
     },
   };
   const { module: tournamentService, restore } = loadModuleWithMocks(servicePath, {
-    [prismaModulePath]: { prisma },
+    [prismaModulePath]: withSlugHistory({ prisma }),
     [uploadModulePath]: {},
     [teamServiceModulePath]: {
       ensureTeamRegistrationSaved: async (registrationId) => {
@@ -158,7 +183,7 @@ test("admin tournaments can store optional descriptions and TBA/TBD dates", asyn
     },
   };
   const { module: tournamentService, restore } = loadModuleWithMocks(servicePath, {
-    [prismaModulePath]: prismaMock,
+    [prismaModulePath]: withSlugHistory(prismaMock),
     [uploadModulePath]: {
       persistTeamLogoUpload: async () => null,
       persistTournamentBannerUpload: async () => null,
@@ -198,7 +223,7 @@ test("admin tournaments can store optional descriptions and TBA/TBD dates", asyn
 
 test("coach settings normalize missing and boolean flags", () => {
   const { module: tournamentService, restore } = loadModuleWithMocks(servicePath, {
-    [prismaModulePath]: { prisma: {} },
+    [prismaModulePath]: withSlugHistory({ prisma: {} }),
     [uploadModulePath]: {},
     [teamServiceModulePath]: {},
     [paymentServiceModulePath]: { isPayHereConfigured: () => false },
@@ -250,7 +275,7 @@ test("coach settings normalize missing and boolean flags", () => {
 
 test("public tournament output maps coach settings", () => {
   const { module: tournamentService, restore } = loadModuleWithMocks(servicePath, {
-    [prismaModulePath]: { prisma: {} },
+    [prismaModulePath]: withSlugHistory({ prisma: {} }),
     [uploadModulePath]: {},
     [teamServiceModulePath]: {},
     [paymentServiceModulePath]: { isPayHereConfigured: () => false },
@@ -295,7 +320,7 @@ test("public tournament output maps coach settings", () => {
 
 test("admin tournament registration counts exclude coach rows", () => {
   const { module: tournamentService, restore } = loadModuleWithMocks(servicePath, {
-    [prismaModulePath]: { prisma: {} },
+    [prismaModulePath]: withSlugHistory({ prisma: {} }),
     [uploadModulePath]: {},
     [teamServiceModulePath]: {},
     [paymentServiceModulePath]: { isPayHereConfigured: () => false },
@@ -387,7 +412,7 @@ test("coach settings persist through admin create and update responses", async (
     },
   };
   const { module: tournamentService, restore } = loadModuleWithMocks(servicePath, {
-    [prismaModulePath]: prismaMock,
+    [prismaModulePath]: withSlugHistory(prismaMock),
     [uploadModulePath]: {
       persistTournamentBannerUpload: async () => null,
       persistTournamentScheduleUpload: async () => null,
@@ -468,7 +493,7 @@ test("admin tournament discord requirement normalizes, persists, preserves, and 
     },
   };
   const { module: tournamentService, restore } = loadModuleWithMocks(servicePath, {
-    [prismaModulePath]: prismaMock,
+    [prismaModulePath]: withSlugHistory(prismaMock),
     [uploadModulePath]: {
       persistTournamentBannerUpload: async () => null,
       persistTournamentScheduleUpload: async () => null,
@@ -576,7 +601,7 @@ test("a blank max teams means unlimited capacity, while an omitted one keeps the
     },
   };
   const { module: tournamentService, restore } = loadModuleWithMocks(servicePath, {
-    [prismaModulePath]: prismaMock,
+    [prismaModulePath]: withSlugHistory(prismaMock),
     [uploadModulePath]: {
       persistTournamentBannerUpload: async () => null,
       persistTournamentScheduleUpload: async () => null,
@@ -646,7 +671,7 @@ test("a blank max teams means unlimited capacity, while an omitted one keeps the
 
 test("slot fee tiers are refused for a tournament with unlimited capacity", () => {
   const { module: tournamentService, restore } = loadModuleWithMocks(servicePath, {
-    [prismaModulePath]: { prisma: {} },
+    [prismaModulePath]: withSlugHistory({ prisma: {} }),
     [uploadModulePath]: {},
     [teamServiceModulePath]: {},
   });
@@ -710,7 +735,7 @@ test("automatic approval normalizes, persists, preserves, and maps for admins", 
     },
   };
   const { module: tournamentService, restore } = loadModuleWithMocks(servicePath, {
-    [prismaModulePath]: prismaMock,
+    [prismaModulePath]: withSlugHistory(prismaMock),
     [uploadModulePath]: {
       persistTournamentBannerUpload: async () => null,
       persistTournamentScheduleUpload: async () => null,
@@ -779,7 +804,7 @@ test("child tournament create and attachment audit series relationship evidence 
     auditLog: { create: async ({ data }) => { audits.push(data); return data; } },
   });
   const { module: tournamentService, restore } = loadModuleWithMocks(servicePath, {
-    [prismaModulePath]: { prisma },
+    [prismaModulePath]: withSlugHistory({ prisma }),
     [uploadModulePath]: { persistTournamentBannerUpload: async () => null, persistTournamentScheduleUpload: async () => null },
     [teamServiceModulePath]: { syncSavedTeamFromRegistration: async () => [], sendTeamInvites: async () => undefined },
     [paymentServiceModulePath]: { isPayHereConfigured: () => false },
@@ -823,7 +848,7 @@ test("child tournament attachment fails closed when its transaction audit fails"
     $transaction: async (work) => work(prisma),
   };
   const { module: tournamentService, restore } = loadModuleWithMocks(servicePath, {
-    [prismaModulePath]: { prisma },
+    [prismaModulePath]: withSlugHistory({ prisma }),
     [uploadModulePath]: {},
     [teamServiceModulePath]: {},
     [auditModulePath]: { recordAuditInTransaction: async () => { throw new Error("child tournament audit unavailable"); } },
@@ -865,7 +890,7 @@ test("admin tournament update reads its forensic before state inside the mutatio
     },
   };
   const { module: tournamentService, restore } = loadModuleWithMocks(servicePath, {
-    [prismaModulePath]: { prisma },
+    [prismaModulePath]: withSlugHistory({ prisma }),
     [uploadModulePath]: { persistTournamentBannerUpload: async () => null, persistTournamentScheduleUpload: async () => null, removeUploadFiles: async () => undefined },
     [teamServiceModulePath]: {},
     [paymentServiceModulePath]: { isPayHereConfigured: () => false },
@@ -894,7 +919,7 @@ test("admin tournament creation carries request context and fails closed on audi
     $transaction: async (work) => work(prisma),
   };
   const { module: tournamentService, restore } = loadModuleWithMocks(servicePath, {
-    [prismaModulePath]: { prisma },
+    [prismaModulePath]: withSlugHistory({ prisma }),
     [uploadModulePath]: { persistTournamentBannerUpload: async () => null, persistTournamentScheduleUpload: async () => null, removeUploadFiles: async () => undefined },
     [teamServiceModulePath]: { syncSavedTeamFromRegistration: async () => [], sendTeamInvites: async () => undefined },
     [paymentServiceModulePath]: { isPayHereConfigured: () => false },
@@ -939,7 +964,7 @@ test("admin tournaments can save an editable schedule without a spreadsheet", as
     },
   };
   const { module: tournamentService, restore } = loadModuleWithMocks(servicePath, {
-    [prismaModulePath]: prismaMock,
+    [prismaModulePath]: withSlugHistory(prismaMock),
     [uploadModulePath]: {
       persistTeamLogoUpload: async () => null,
       persistTournamentBannerUpload: async () => null,
@@ -1011,7 +1036,7 @@ test("updating a bank-transfer tournament returns its bank details to the editor
     },
   };
   const { module: tournamentService, restore } = loadModuleWithMocks(servicePath, {
-    [prismaModulePath]: prismaMock,
+    [prismaModulePath]: withSlugHistory(prismaMock),
     [uploadModulePath]: {
       persistTeamLogoUpload: async () => null,
       persistTournamentBannerUpload: async () => null,
@@ -1057,7 +1082,7 @@ test("editable schedule columns must be unique", async () => {
     },
   };
   const { module: tournamentService, restore } = loadModuleWithMocks(servicePath, {
-    [prismaModulePath]: prismaMock,
+    [prismaModulePath]: withSlugHistory(prismaMock),
     [uploadModulePath]: {
       persistTeamLogoUpload: async () => null,
       persistTournamentBannerUpload: async () => null,
@@ -1096,7 +1121,7 @@ test("scheduled tournament dates still require valid values", async () => {
     },
   };
   const { module: tournamentService, restore } = loadModuleWithMocks(servicePath, {
-    [prismaModulePath]: prismaMock,
+    [prismaModulePath]: withSlugHistory(prismaMock),
     [uploadModulePath]: {
       persistTeamLogoUpload: async () => null,
       persistTournamentBannerUpload: async () => null,
@@ -1222,7 +1247,7 @@ test("getPublicTournamentBySlug exposes approved public team card data", async (
   };
 
   const { module: tournamentService, restore } = loadModuleWithMocks(servicePath, {
-    [prismaModulePath]: prismaMock,
+    [prismaModulePath]: withSlugHistory(prismaMock),
     [uploadModulePath]: {
       persistTeamLogoUpload: async () => null,
       persistTournamentBannerUpload: async () => null,
@@ -1326,7 +1351,7 @@ test("public tournament participant pagination keeps full registration totals", 
     },
   };
   const { module: tournamentService, restore } = loadModuleWithMocks(servicePath, {
-    [prismaModulePath]: { prisma },
+    [prismaModulePath]: withSlugHistory({ prisma }),
     [uploadModulePath]: {},
     [teamServiceModulePath]: {},
   });
@@ -1399,7 +1424,7 @@ test("public tournament detail bounds the default participant projection", async
     },
   };
   const { module: tournamentService, restore } = loadModuleWithMocks(servicePath, {
-    [prismaModulePath]: { prisma },
+    [prismaModulePath]: withSlugHistory({ prisma }),
     [uploadModulePath]: {},
     [teamServiceModulePath]: {},
   });
@@ -1447,7 +1472,7 @@ test("page-only participant pagination preserves the shared default page size", 
     },
   };
   const { module: tournamentService, restore } = loadModuleWithMocks(servicePath, {
-    [prismaModulePath]: { prisma },
+    [prismaModulePath]: withSlugHistory({ prisma }),
     [uploadModulePath]: {},
     [teamServiceModulePath]: {},
   });
@@ -1473,7 +1498,7 @@ test("page-only participant pagination preserves the shared default page size", 
 
 test("admin tournament detail overlays live logos on its bracket field", () => {
   const { module: tournamentService, restore } = loadModuleWithMocks(servicePath, {
-    [prismaModulePath]: { prisma: {} },
+    [prismaModulePath]: withSlugHistory({ prisma: {} }),
     [uploadModulePath]: {},
     [teamServiceModulePath]: {},
   });
@@ -1551,7 +1576,7 @@ test("future registrationOpenAt keeps an otherwise open tournament closed", asyn
   };
 
   const { module: tournamentService, restore } = loadModuleWithMocks(servicePath, {
-    [prismaModulePath]: prismaMock,
+    [prismaModulePath]: withSlugHistory(prismaMock),
     [uploadModulePath]: {
       persistTeamLogoUpload: async () => null,
       persistTournamentBannerUpload: async () => null,
@@ -1576,7 +1601,7 @@ test("future registrationOpenAt keeps an otherwise open tournament closed", asyn
 
 test("public slot count shows confirmed teams and does not count pending holds", () => {
   const { module: tournamentService, restore } = loadModuleWithMocks(servicePath, {
-    [prismaModulePath]: { prisma: {} },
+    [prismaModulePath]: withSlugHistory({ prisma: {} }),
     [uploadModulePath]: {},
     [teamServiceModulePath]: {},
   });
@@ -1613,7 +1638,7 @@ test("public slot count shows confirmed teams and does not count pending holds",
 
 test("parent event registration windows constrain child state even when the child override is open", () => {
   const { module: tournamentService, restore } = loadModuleWithMocks(servicePath, {
-    [prismaModulePath]: { prisma: {} },
+    [prismaModulePath]: withSlugHistory({ prisma: {} }),
     [uploadModulePath]: {},
     [teamServiceModulePath]: {},
   });
@@ -1648,7 +1673,7 @@ test("parent event registration windows constrain child state even when the chil
 
 test("public slot count does not present a private admin hold as a confirmed team", () => {
   const { module: tournamentService, restore } = loadModuleWithMocks(servicePath, {
-    [prismaModulePath]: { prisma: {} },
+    [prismaModulePath]: withSlugHistory({ prisma: {} }),
     [uploadModulePath]: {},
     [teamServiceModulePath]: {},
   });
@@ -1720,7 +1745,7 @@ test("a TBA registration deadline does not close an otherwise open tournament", 
     },
   };
   const { module: tournamentService, restore } = loadModuleWithMocks(servicePath, {
-    [prismaModulePath]: prismaMock,
+    [prismaModulePath]: withSlugHistory(prismaMock),
     [uploadModulePath]: {
       persistTeamLogoUpload: async () => null,
       persistTournamentBannerUpload: async () => null,
@@ -1787,7 +1812,7 @@ test("deleteAdminTournament removes private proofs and only unreferenced registr
     try { return await work(prisma); } finally { transactionActive = false; }
   };
   const { module: tournamentService, restore } = loadModuleWithMocks(servicePath, {
-    [prismaModulePath]: { prisma },
+    [prismaModulePath]: withSlugHistory({ prisma }),
     [uploadModulePath]: {
       removeUploadFiles: async (uploads) => removedUploads.push(...uploads),
       tournamentBannerDirectory: "uploads/tournament-banners",
@@ -1860,7 +1885,7 @@ test("the default public projection still resolves bracket teams outside the par
     },
   };
   const { module: tournamentService, restore } = loadModuleWithMocks(servicePath, {
-    [prismaModulePath]: { prisma },
+    [prismaModulePath]: withSlugHistory({ prisma }),
     [uploadModulePath]: {},
     [teamServiceModulePath]: {},
   });
@@ -1913,7 +1938,7 @@ test("the default public projection skips the bracket read when no bracket is pu
     },
   };
   const { module: tournamentService, restore } = loadModuleWithMocks(servicePath, {
-    [prismaModulePath]: { prisma },
+    [prismaModulePath]: withSlugHistory({ prisma }),
     [uploadModulePath]: {},
     [teamServiceModulePath]: {},
   });

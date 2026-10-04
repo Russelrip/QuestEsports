@@ -1094,3 +1094,87 @@ test("real PostgreSQL moves child tournament sponsors onto the event", {
     await prisma.$disconnect();
   }
 });
+
+// The slug history table is almost entirely database behaviour: a unique index
+// across retired slugs, a cascade that cleans them up with the tournament, and a
+// rename-back that has to free the slug it is reclaiming. A mocked client accepts
+// every one of those regardless of whether the schema agrees.
+test("real PostgreSQL keeps a renamed tournament's old URL resolving", {
+  skip: waitlistIntegrationSkip,
+}, async () => {
+  const { prisma } = require("../src/lib/prisma");
+  const { recordRetiredSlug } = require("../src/modules/tournaments/tournament-shared");
+  const { getPublicTournamentBySlug } = require("../src/modules/tournaments/tournament-public.service");
+
+  const suffix = crypto.randomUUID();
+  const tournamentId = crypto.randomUUID();
+  const otherId = crypto.randomUUID();
+  const first = `integration-slug-a-${suffix}`;
+  const second = `integration-slug-b-${suffix}`;
+  const third = `integration-slug-c-${suffix}`;
+
+  const tournamentData = (id, slug) => ({
+    id,
+    slug,
+    title: "Slug History Integration",
+    game: "integration",
+    shortDescription: "Slug history integration test",
+    fullDescription: "Slug history integration test",
+    format: "5v5",
+    teamSize: 5,
+    maxTeams: 8,
+    prizePool: "Testing",
+    isPublished: true,
+  });
+
+  try {
+    await prisma.$connect();
+    await prisma.tournament.create({ data: tournamentData(tournamentId, first) });
+
+    // Rename once: the old slug resolves, and answers with the new one.
+    await prisma.tournament.update({ where: { id: tournamentId }, data: { slug: second } });
+    await recordRetiredSlug(prisma, { tournamentId, previousSlug: first, currentSlug: second });
+
+    const viaOldSlug = await getPublicTournamentBySlug(first);
+    assert.equal(viaOldSlug.slug, second, "the old URL should answer with the current slug");
+    assert.equal(viaOldSlug.id, tournamentId);
+    assert.equal((await getPublicTournamentBySlug(second)).slug, second);
+
+    // Rename again: both retired slugs resolve to the same tournament.
+    await prisma.tournament.update({ where: { id: tournamentId }, data: { slug: third } });
+    await recordRetiredSlug(prisma, { tournamentId, previousSlug: second, currentSlug: third });
+    assert.equal((await getPublicTournamentBySlug(first)).slug, third);
+    assert.equal((await getPublicTournamentBySlug(second)).slug, third);
+
+    // Rename back to the first slug. It is live again, so it must not also sit in
+    // history -- the unique index would refuse the next rename onto it, and the
+    // row would describe a URL that already resolves on its own.
+    await prisma.tournament.update({ where: { id: tournamentId }, data: { slug: first } });
+    await recordRetiredSlug(prisma, { tournamentId, previousSlug: third, currentSlug: first });
+    const retiredSlugs = (await prisma.tournamentSlugHistory.findMany({
+      where: { tournamentId },
+      select: { slug: true },
+    })).map((row) => row.slug).sort();
+    assert.deepEqual(retiredSlugs, [second, third].sort());
+    assert.equal((await getPublicTournamentBySlug(first)).slug, first);
+
+    // A retired slug belongs to one tournament: a second row claiming it is
+    // refused by the index, not merely by application code.
+    await prisma.tournament.create({ data: tournamentData(otherId, `integration-slug-other-${suffix}`) });
+    await assert.rejects(
+      prisma.tournamentSlugHistory.create({
+        data: { id: crypto.randomUUID(), tournamentId: otherId, slug: second },
+      }),
+      /Unique constraint failed/,
+    );
+
+    // Deleting the tournament takes its retired slugs with it, so nothing is left
+    // resolving to a row that is gone.
+    await prisma.tournament.delete({ where: { id: tournamentId } });
+    assert.equal(await prisma.tournamentSlugHistory.count({ where: { tournamentId } }), 0);
+  } finally {
+    await prisma.tournamentSlugHistory.deleteMany({ where: { tournamentId: { in: [tournamentId, otherId] } } });
+    await prisma.tournament.deleteMany({ where: { id: { in: [tournamentId, otherId] } } });
+    await prisma.$disconnect();
+  }
+});

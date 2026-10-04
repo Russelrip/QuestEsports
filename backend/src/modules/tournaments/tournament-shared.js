@@ -1,3 +1,4 @@
+const crypto = require("crypto");
 const { prisma } = require("../../lib/prisma");
 const { HttpError } = require("../../lib/http-error");
 const {
@@ -222,6 +223,32 @@ const ensureSlugAvailable = async (slug, excludedTournamentId) => {
   if (existingTournament) {
     throw new HttpError(400, "A tournament with this slug already exists.");
   }
+
+  // A retired slug still resolves, so handing it to a different tournament would
+  // silently redirect links shared for the old one somewhere unrelated -- worse
+  // than a 404, because it looks like it worked. The tournament that retired it
+  // may take it back, which is just a rename undone.
+  const retired = await prisma.tournamentSlugHistory.findFirst({
+    where: {
+      slug,
+      ...(excludedTournamentId ? { tournamentId: { not: excludedTournamentId } } : {}),
+    },
+    select: { id: true },
+  });
+
+  if (retired) {
+    throw new HttpError(400, "Another tournament used this slug before; links still point at it.");
+  }
+};
+
+// A rename retires the outgoing slug. Renaming back frees the incoming one,
+// which is live again and must not also sit in history -- the unique index would
+// refuse the next rename, and the row would describe a URL that already resolves.
+const recordRetiredSlug = async (database, { tournamentId, previousSlug, currentSlug }) => {
+  await database.tournamentSlugHistory.deleteMany({ where: { slug: currentSlug } });
+  await database.tournamentSlugHistory.create({
+    data: { id: crypto.randomUUID(), tournamentId, slug: previousSlug },
+  });
 };
 
 const getUploadedFile = (files, key) =>
@@ -244,4 +271,5 @@ module.exports = {
   parseTournamentStatus,
   ensureSlugAvailable,
   getUploadedFile,
+  recordRetiredSlug,
 };
