@@ -58,11 +58,8 @@ const getPublicTournamentBySlug = async (slug, query = {}) => {
       ? query.participantPageSize
       : PUBLIC_PARTICIPANT_PAGE_SIZE,
   });
-  const tournament = await prisma.tournament.findFirst({
-    where: {
-      slug: normalizedSlug,
-      isPublished: true,
-    },
+  const findPublishedTournament = (identity) => prisma.tournament.findFirst({
+    where: { ...identity, isPublished: true },
     include: {
       ...buildRegistrationCountInclude(),
       teamRegistrations: {
@@ -138,6 +135,21 @@ const getPublicTournamentBySlug = async (slug, query = {}) => {
       },
     },
   });
+
+  let tournament = await findPublishedTournament({ slug: normalizedSlug });
+
+  // Only once the live slugs have missed. A slug the tournament used to have is
+  // still resolved through the row that retired it, and the projection carries
+  // the current slug, so the caller can see the URL has moved and send the
+  // visitor to the live one. Checking history first would put an extra query on
+  // every page load to serve the rare request that needs it.
+  if (!tournament) {
+    const retired = await prisma.tournamentSlugHistory.findUnique({
+      where: { slug: normalizedSlug },
+      select: { tournamentId: true },
+    });
+    if (retired) tournament = await findPublishedTournament({ id: retired.tournamentId });
+  }
 
   if (!tournament) {
     throw new HttpError(404, "Tournament not found.");

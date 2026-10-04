@@ -11,7 +11,7 @@ import {
 } from "@/lib/site";
 import { Tournament, fetchPublicTournamentBySlug } from "@/lib/tournaments";
 import { ApiRequestError } from "@/lib/api";
-import { redirectRenamedTournament } from "@/lib/tournament-slug-aliases";
+import { redirectRenamedTournament, redirectToCanonicalSlug } from "@/lib/tournament-slug-aliases";
 
 const getTournament = cache((slug: string) =>
   fetchPublicTournamentBySlug(slug, { participantPage: 1, participantPageSize: 10 }),
@@ -56,6 +56,9 @@ export default async function TournamentDetailsPage({
     if (!(error instanceof ApiRequestError) || error.status !== 404) throw error;
     notFound();
   }
+  // The API resolves a retired slug to its tournament, so a slug that came back
+  // different is a rename the platform recorded itself.
+  redirectToCanonicalSlug(slug, tournament.slug, "", search);
 
   return (
     <PageTransition>

@@ -20,6 +20,7 @@ const {
   normalizeBooleanFlag,
   ensureSlugAvailable,
   getUploadedFile,
+  recordRetiredSlug,
 } = require("./tournament-shared");
 const {
   mapTournament,
@@ -260,11 +261,26 @@ const updateAdminTournament = async ({ tournamentId, body, files, auditContext =
       },
       include: buildRegistrationCountInclude(),
     });
-    tournament = auditContext.actorUserId || auditContext.requestId || auditContext.ipAddress
-      ? await prisma.$transaction(async (tx) => {
-        const before = await tx.tournament.findUnique({ where: { id: tournamentId } });
-        if (!before) throw new HttpError(404, "Tournament not found.");
-        const updated = await persist(tx);
+    // Always transactional now. It used to open one only when there was an audit
+    // entry to write, but a rename has to retire the outgoing slug in the same
+    // breath as the update -- a history row written separately could survive an
+    // update that rolled back, leaving a URL pointing at a rename that never
+    // happened.
+    const hasAuditContext = Boolean(
+      auditContext.actorUserId || auditContext.requestId || auditContext.ipAddress
+    );
+    tournament = await prisma.$transaction(async (tx) => {
+      const before = await tx.tournament.findUnique({ where: { id: tournamentId } });
+      if (!before) throw new HttpError(404, "Tournament not found.");
+      const updated = await persist(tx);
+      if (before.slug !== updated.slug) {
+        await recordRetiredSlug(tx, {
+          tournamentId: updated.id,
+          previousSlug: before.slug,
+          currentSlug: updated.slug,
+        });
+      }
+      if (hasAuditContext) {
         await recordAuditInTransaction(tx, {
           ...auditContext,
           action: "tournament.updated",
@@ -273,9 +289,9 @@ const updateAdminTournament = async ({ tournamentId, body, files, auditContext =
           beforeData: { slug: before.slug, status: before.status, isPublished: before.isPublished },
           afterData: { slug: updated.slug, status: updated.status, isPublished: updated.isPublished },
         });
-        return updated;
-      })
-      : await persist(prisma);
+      }
+      return updated;
+    });
   } catch (error) {
     await removeUploadsQuietly(assetUpdates.uploadedFiles, {
       operation: "updateAdminTournament",
