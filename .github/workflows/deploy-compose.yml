@@ -504,7 +504,10 @@ jobs:
             normal)
               main_head_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
               [[ "$main_head_sha" =~ ^[0-9a-f]{40}$ ]] || exit 1
-              test "$main_head_sha" = "$RELEASE_SHA"
+              test "$main_head_sha" = "$RELEASE_SHA" || {
+                printf 'release %s is no longer the main head (%s); re-run the deployment for the current head.\n' "$RELEASE_SHA" "$main_head_sha" >&2
+                exit 1
+              }
               ;;
             rollback)
               ;;
