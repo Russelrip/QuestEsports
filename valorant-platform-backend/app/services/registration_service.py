@@ -6,7 +6,9 @@ the standard layering. ``preview`` 409s on an already-registered PUUID, then
 mirrors the upstream preview (MMR + last competitive match -> ``PlayerPreview``);
 an unranked player (Henrik 200 with no ``current``) still previews as
 ``current_rank="Unrated"`` / ``elo=0`` — exactly like valorantsl-new, never a
-404. ``submit`` 409s on a duplicate discord id or PUUID, upserts the
+404. ``submit`` 409s on a duplicate discord id, discord username or PUUID
+(the username carries its own unique constraint, so leaving it unchecked
+turned a conflict into a 500), upserts the
 ``leaderboard_players`` row, and returns the ``{success, message, player}``
 envelope (R13). Henrik failures map to stable ``AppError`` codes (R14) instead
 of valorantsl-new's blank ``None``-then-404 / generic 500. Every path refuses a
@@ -17,6 +19,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.errors import AppError
@@ -99,6 +102,20 @@ class RegistrationService:
         await self._refuse_banned(puuid=puuid, discord_id=discord_id)
         if await self._repo.get_by_discord_id(discord_id) is not None:
             raise AppError("DISCORD_ALREADY_REGISTERED", 409, "discord already registered")
+        # `discord_username` carries its own unique constraint, so a row holding
+        # this username under a different discord id makes the write fail. Only
+        # the discord id and puuid were checked, so that arrived as an
+        # unhandled IntegrityError and the registrant saw "internal server
+        # error". The lookup is case-insensitive while the constraint is not,
+        # which refuses a case variant the database would have accepted — the
+        # stricter answer, and the one that keeps two spellings of one username
+        # from both holding entries.
+        if await self._repo.get_by_discord_username(discord_username) is not None:
+            raise AppError(
+                "DISCORD_USERNAME_ALREADY_REGISTERED",
+                409,
+                "this Discord username is already registered to another entry",
+            )
         if await self._repo.get_by_puuid(puuid) is not None:
             raise AppError("PUUID_ALREADY_REGISTERED", 409, "puuid already registered")
         return await self._register(
@@ -153,23 +170,36 @@ class RegistrationService:
         await self._refuse_banned(puuid=puuid, discord_id=discord_id)
         if release_puuid:
             await self._repo.release_discord(release_puuid)
-        player = await self._repo.upsert(
-            puuid=puuid,
-            name=mmr["name"],
-            tag=mmr["tag"],
-            region=settings.leaderboard_affinity,
-            discord_id=discord_id,
-            discord_username=discord_username,
-            elo=mmr["rank_details"]["elo"],
-            currenttierpatched=mmr["rank_details"]["currenttierpatched"],
-            rank_details=mmr["rank_details"],
-            peak_rank=mmr["peak_rank"],
-            seasonal_ranks=mmr["seasonal_ranks"],
-            last_played_match=_parse_last_played(last_played),
-            update_source="registration_service",
-            **(hidden or {}),
-        )
-        await self._session.commit()
+        try:
+            player = await self._repo.upsert(
+                puuid=puuid,
+                name=mmr["name"],
+                tag=mmr["tag"],
+                region=settings.leaderboard_affinity,
+                discord_id=discord_id,
+                discord_username=discord_username,
+                elo=mmr["rank_details"]["elo"],
+                currenttierpatched=mmr["rank_details"]["currenttierpatched"],
+                rank_details=mmr["rank_details"],
+                peak_rank=mmr["peak_rank"],
+                seasonal_ranks=mmr["seasonal_ranks"],
+                last_played_match=_parse_last_played(last_played),
+                update_source="registration_service",
+                **(hidden or {}),
+            )
+            await self._session.commit()
+        except IntegrityError as exc:
+            # The guards above read before this write, and Henrik is called in
+            # between, so two registrations racing on the same username or puuid
+            # both pass them and the second one lands here. A lost race is a
+            # conflict, not a server fault; report it as one instead of letting
+            # the constraint escape as a 500.
+            await self._session.rollback()
+            raise AppError(
+                "REGISTRATION_CONFLICT",
+                409,
+                "this Discord account or Riot account was registered by another request",
+            ) from exc
         return RegistrationSubmitResponse(
             success=True,
             message="Registration successful",

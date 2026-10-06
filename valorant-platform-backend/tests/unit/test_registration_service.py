@@ -14,6 +14,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
+from sqlalchemy.exc import IntegrityError
 
 from app.api.errors import AppError
 from app.config import Settings
@@ -100,9 +101,17 @@ class FakeRepo:
         *,
         by_puuid: dict[str, object] | None = None,
         by_discord_id: dict[str, object] | None = None,
+        by_discord_username: dict[str, object] | None = None,
+        upsert_raises: Exception | None = None,
     ) -> None:
         self.by_puuid = by_puuid or {}
         self.by_discord_id = by_discord_id or {}
+        # Keyed lowercase, because the real lookup matches on ``lower()`` while
+        # the column's unique index does not.
+        self.by_discord_username = {
+            key.lower(): value for key, value in (by_discord_username or {}).items()
+        }
+        self.upsert_raises = upsert_raises
         self.upserted: dict | None = None
         self.released: list[str] = []
 
@@ -112,10 +121,15 @@ class FakeRepo:
     async def get_by_discord_id(self, discord_id: str) -> object | None:
         return self.by_discord_id.get(str(discord_id))
 
+    async def get_by_discord_username(self, discord_username: str) -> object | None:
+        return self.by_discord_username.get(discord_username.strip().lower())
+
     async def release_discord(self, puuid: str) -> None:
         self.released.append(puuid)
 
     async def upsert(self, **fields) -> _Player:
+        if self.upsert_raises is not None:
+            raise self.upsert_raises
         self.upserted = fields
         return _Player(
             puuid=fields["puuid"],
@@ -341,6 +355,63 @@ async def test_submit_409_when_puuid_already_registered(
 
     assert excinfo.value.code == "PUUID_ALREADY_REGISTERED"
     assert excinfo.value.status == 409
+
+
+async def test_submit_409_when_the_discord_username_belongs_to_another_entry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The username carries its own unique constraint, so this has to be a 409.
+
+    Unchecked, the write reached the database and the registrant was shown
+    "internal server error" by an unhandled IntegrityError.
+    """
+    repo = FakeRepo(by_discord_username={"shenux_g": object()})
+    svc = _service(repo, FakeHenrik(mmr=MMR), monkeypatch)
+
+    with pytest.raises(AppError) as excinfo:
+        await svc.submit(discord_id="999", discord_username="shenux_g", puuid="puuid-1")
+
+    assert excinfo.value.code == "DISCORD_USERNAME_ALREADY_REGISTERED"
+    assert excinfo.value.status == 409
+    assert repo.upserted is None
+
+
+async def test_submit_409_when_the_username_differs_only_by_case(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Two spellings of one username must not both hold entries.
+
+    The unique index is case-sensitive, so the database would accept this pair;
+    production already carries one. Refusing it is the stricter answer.
+    """
+    repo = FakeRepo(by_discord_username={"Podigura": object()})
+    svc = _service(repo, FakeHenrik(mmr=MMR), monkeypatch)
+
+    with pytest.raises(AppError) as excinfo:
+        await svc.submit(discord_id="999", discord_username="podigura", puuid="puuid-1")
+
+    assert excinfo.value.code == "DISCORD_USERNAME_ALREADY_REGISTERED"
+    assert repo.upserted is None
+
+
+async def test_submit_409_when_the_write_loses_a_race(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The guards read before the write, and Henrik is called in between.
+
+    A second registration that passes the guards and then loses the race is a
+    conflict, not a server fault.
+    """
+    repo = FakeRepo(upsert_raises=IntegrityError("INSERT", {}, Exception("duplicate key")))
+    session = FakeSession()
+    svc = _service(repo, FakeHenrik(mmr=MMR), monkeypatch, session=session)
+
+    with pytest.raises(AppError) as excinfo:
+        await svc.submit(discord_id="123", discord_username="fresh", puuid="puuid-1")
+
+    assert excinfo.value.code == "REGISTRATION_CONFLICT"
+    assert excinfo.value.status == 409
+    assert (session.committed, session.rolled_back) == (0, 1)
 
 
 # ---------------------------------------------------------- submit + upsert
