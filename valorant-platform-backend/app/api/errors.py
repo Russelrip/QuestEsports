@@ -128,13 +128,22 @@ def register_error_handlers(app: FastAPI) -> None:
         # (free text may embed secrets the key-based redactor cannot scrub);
         # the full traceback remains in the ASGI server's own log channel.
         request_id = getattr(request.state, "request_id", None)
-        logger.error(
-            "unhandled exception",
-            extra={
-                "exception_type": type(exc).__name__,
-                "request_id": request_id,
-            },
+        details: dict[str, object] = {
+            "exception_type": type(exc).__name__,
+            "request_id": request_id,
+        }
+        # The traceback channel above is empty in the deployed stack: a
+        # registration failing on a unique constraint logged `IntegrityError`
+        # and nothing else, and the failing constraint had to be recovered by
+        # reading the schema instead. A constraint name is a fixed schema
+        # identifier rather than request data, so naming it costs none of the
+        # free-text exposure this handler is written to avoid.
+        constraint = getattr(
+            getattr(getattr(exc, "orig", None), "diag", None), "constraint_name", None
         )
+        if constraint:
+            details["constraint"] = constraint
+        logger.error("unhandled exception", extra=details)
         headers = {"X-Request-ID": request_id} if request_id else None
         return JSONResponse(
             status_code=500,

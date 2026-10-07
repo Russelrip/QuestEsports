@@ -16,6 +16,7 @@ import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from pydantic import BaseModel, field_validator
+from sqlalchemy.exc import IntegrityError
 
 import app.main as main_module
 from app.api.dependencies import get_import_service, get_player_service
@@ -95,6 +96,16 @@ def _make_app() -> FastAPI:
     @app.get("/crash")
     async def crash() -> None:
         raise RuntimeError("internal secret detail")
+
+    @app.get("/crash-integrity")
+    async def crash_integrity() -> None:
+        class _Diag:
+            constraint_name = "leaderboard_players_discord_username_key"
+
+        class _Orig(Exception):
+            diag = _Diag()
+
+        raise IntegrityError("INSERT INTO secret_table", {}, _Orig("internal secret detail"))
 
     @app.post("/echo")
     async def echo(item: _EchoIn) -> dict:
@@ -248,6 +259,31 @@ def test_unhandled_exception_logged_once_and_safely() -> None:
     assert diag["msg"] == "unhandled exception"
     assert diag["extra"]["exception_type"] == "RuntimeError"
     assert diag["extra"]["request_id"] == resp.headers["x-request-id"]
+    assert "internal secret detail" not in diag_stream.getvalue()
+    assert "Traceback" not in diag_stream.getvalue()
+
+
+def test_unhandled_integrity_error_names_the_constraint() -> None:
+    """A bare exception type is not enough to act on.
+
+    A registration failing on a unique constraint logged ``IntegrityError`` and
+    nothing else, so the failing constraint had to be recovered from the schema.
+    The constraint name is a schema identifier, so it is carried while the
+    statement text and the driver message still are not.
+    """
+    app = _make_app()
+    diag_stream, diag_handler = _attach_handler("app.api.errors")
+    try:
+        resp = TestClient(app).get("/crash-integrity")
+    finally:
+        logging.getLogger("app.api.errors").removeHandler(diag_handler)
+
+    assert resp.status_code == 500
+    diag = json.loads(diag_stream.getvalue().splitlines()[0])
+    assert diag["extra"]["exception_type"] == "IntegrityError"
+    assert diag["extra"]["constraint"] == "leaderboard_players_discord_username_key"
+    # The statement and the driver's own message stay out of the record.
+    assert "secret_table" not in diag_stream.getvalue()
     assert "internal secret detail" not in diag_stream.getvalue()
     assert "Traceback" not in diag_stream.getvalue()
 
