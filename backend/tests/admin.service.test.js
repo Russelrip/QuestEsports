@@ -3029,6 +3029,128 @@ test("correctTeamRegistrationRoster approves a roster it leaves fully accepted w
   }
 });
 
+const loadDiscordGapRoster = ({ discordRequired = false } = {}) => {
+  const createdMembers = [];
+  const currentMembers = [
+    { id: "captain-1", role: "CAPTAIN", memberOrder: 0, name: "Captain", email: "captain@example.com", emailNormalized: "captain@example.com", discord: "captain", riotId: "Captain#001", additionalData: {}, inviteStatus: "accepted" },
+    { id: "player-1", role: "PLAYER", memberOrder: 1, name: "Player", email: "player@example.com", emailNormalized: "player@example.com", discord: null, riotId: "Player#001", additionalData: {}, inviteStatus: "accepted" },
+    { id: "expired-sub", role: "SUBSTITUTE", memberOrder: 1, name: "Gone", email: "gone@example.com", emailNormalized: "gone@example.com", discord: null, riotId: "Gone#001", additionalData: {}, inviteStatus: "expired" },
+  ];
+  // The admin form sends a blank Discord for a member who never linked one.
+  const requestedMembers = [
+    { id: "captain-1", role: "CAPTAIN", name: "Captain", email: "captain@example.com", discord: "captain", gameId: "Captain#001" },
+    { id: "player-1", role: "PLAYER", name: "Player", email: "player@example.com", discord: "", gameId: "Player#001" },
+  ];
+  const row = {
+    id: "registration-1",
+    tournamentId: "tournament-1",
+    savedTeamId: null,
+    entryType: "team",
+    status: "pending",
+    paymentStatus: "free",
+    verificationStatus: "pending",
+    captainEmail: "captain@example.com",
+    captainPhone: "0770000000",
+    contactEmail: "captain@example.com",
+    additionalData: {},
+    tournament: {
+      id: "tournament-1",
+      title: "Quest Cup",
+      game: "Chess",
+      autoApproveRegistrations: false,
+      discordRequired,
+      registrationFields: [],
+      minRosterSize: 2,
+      maxRosterSize: 2,
+      maxSubstitutes: 1,
+    },
+    members: currentMembers,
+    savedTeam: null,
+  };
+  const tx = {
+    teamRegistration: {
+      findUnique: async () => ({ ...row }),
+      update: async (args) => ({ ...row, ...args.data }),
+    },
+    user: {
+      findMany: async () => requestedMembers.map((member, index) => ({
+        id: `user-${index + 1}`,
+        email: member.email,
+        emailNormalized: member.email,
+        emailVerified: true,
+        phone: null,
+      })),
+    },
+    registrationMember: {
+      findMany: async () => [],
+      deleteMany: async () => undefined,
+      createMany: async ({ data }) => { createdMembers.push(...data); },
+    },
+    auditLog: { create: async ({ data }) => data },
+  };
+  const detail = {
+    ...row,
+    teamName: "Cozmic",
+    reservedUntil: null,
+    country: "Sri Lanka",
+    teamTag: "COZ",
+    organizationRequested: false,
+    adminSlotReservation: null,
+    createdAt: new Date("2026-09-29T10:00:00.000Z"),
+    teamLogoName: null,
+    tournament: { ...row.tournament, slug: "quest-cup", status: "registration_open", isPublished: true },
+    captainName: "Captain",
+    captainDiscord: "captain",
+    captainRiotId: "Captain#001",
+    members: currentMembers.map((member) => ({ ...member, inviteRespondedAt: new Date(), user: null })),
+  };
+  const { module: adminService, restore } = loadAdminService({
+    $transaction: async (work) => work(tx),
+    teamRegistration: { findUnique: async () => detail },
+  });
+  return { adminService, restore, requestedMembers, createdMembers };
+};
+
+test("correctTeamRegistrationRoster removes a member when others have no linked Discord", async () => {
+  const { adminService, restore, requestedMembers, createdMembers } = loadDiscordGapRoster();
+
+  try {
+    await adminService.correctTeamRegistrationRoster(
+      "registration-1",
+      { members: requestedMembers },
+      { actorUserId: "admin-1" }
+    );
+
+    assert.deepEqual(createdMembers.map((member) => member.email), ["captain@example.com", "player@example.com"]);
+    assert.equal(createdMembers[1].discord, null);
+  } finally {
+    restore();
+  }
+});
+
+test("correctTeamRegistrationRoster still requires Discord where the tournament does, and always for the captain", async () => {
+  const required = loadDiscordGapRoster({ discordRequired: true });
+  try {
+    await assert.rejects(
+      required.adminService.correctTeamRegistrationRoster("registration-1", { members: required.requestedMembers }),
+      (error) => error.statusCode === 400 && /requires a Discord username/.test(error.message)
+    );
+  } finally {
+    required.restore();
+  }
+
+  const optional = loadDiscordGapRoster();
+  try {
+    const members = optional.requestedMembers.map((member) => (member.role === "CAPTAIN" ? { ...member, discord: "" } : member));
+    await assert.rejects(
+      optional.adminService.correctTeamRegistrationRoster("registration-1", { members }),
+      (error) => error.statusCode === 400 && /captain needs a Discord/.test(error.message)
+    );
+  } finally {
+    optional.restore();
+  }
+});
+
 test("correctTeamRegistrationRoster preserves pending and declined invites when syncing the saved team", async () => {
   const registrationCreates = [];
   const savedTeamCreates = [];

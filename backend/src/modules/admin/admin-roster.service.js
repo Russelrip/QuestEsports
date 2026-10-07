@@ -67,14 +67,13 @@ const normalizeAdminRosterMembers = (body = {}) => {
   if (members.some((member) =>
     !member.name ||
     !isValidEmail(member.email) ||
-    !member.discord ||
     !member.riotId ||
     member.name.length > 100 ||
     member.email.length > 254 ||
     member.discord.length > 100 ||
     member.riotId.length > 100
   )) {
-    throw new HttpError(400, "Every roster member needs a valid name, email, Discord username, and Game ID.");
+    throw new HttpError(400, "Every roster member needs a valid name, email, and Game ID.");
   }
 
   if (new Set(members.map((member) => member.email)).size !== members.length) {
@@ -82,6 +81,11 @@ const normalizeAdminRosterMembers = (body = {}) => {
   }
   if (roleCounts.CAPTAIN !== 1) {
     throw new HttpError(400, "The corrected roster must include exactly one captain.");
+  }
+  // Registering requires the captain's own linked Discord, so the captain row
+  // always has one; only the rest of the roster may be without.
+  if (!members.find((member) => member.role === "CAPTAIN").discord) {
+    throw new HttpError(400, "The captain needs a Discord username.");
   }
 
   return members;
@@ -107,6 +111,7 @@ const correctTeamRegistrationRoster = async (registrationId, body = {}, auditCon
             maxSubstitutes: true,
             allowCoach: true,
             coachRequired: true,
+            discordRequired: true,
           },
         },
         members: { orderBy: [{ role: "asc" }, { memberOrder: "asc" }] },
@@ -124,6 +129,14 @@ const correctTeamRegistrationRoster = async (registrationId, body = {}, auditCon
     }
     if (syncSavedTeam && !registration.savedTeam) {
       throw new HttpError(409, "This registration is not linked to a saved team.");
+    }
+
+    // A registration only collects a Discord handle for members whose Quest
+    // account has one linked, so most rosters carry gaps there. Demanding one
+    // here would make those rosters uncorrectable, down to removing a member
+    // who never accepted. `discordRequired` stays the one rule that decides it.
+    if (registration.tournament.discordRequired && requestedMembers.some((member) => !member.discord)) {
+      throw new HttpError(400, "This tournament requires a Discord username for every roster member.");
     }
 
     const currentCaptain = registration.members.find((member) => member.role === "CAPTAIN");
@@ -245,7 +258,7 @@ const correctTeamRegistrationRoster = async (registrationId, body = {}, auditCon
         name: member.name,
         email: account.email,
         emailNormalized: account.emailNormalized,
-        discord: member.discord,
+        discord: member.discord || null,
         riotId: member.riotId,
         additionalData: memberData.data,
         ...getInviteState(existingMember),

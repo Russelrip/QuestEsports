@@ -786,7 +786,7 @@ export function RegistrationDetail({
                       <label className="grid gap-1 text-sm text-slate-300">
                         Discord
                         <Input
-                          required
+                          required={member.role === "CAPTAIN"}
                           value={member.discord}
                           onChange={(event) =>
                             updateRosterMember(
