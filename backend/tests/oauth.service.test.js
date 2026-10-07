@@ -44,6 +44,14 @@ const buildService = ({
       return { ...existingUser, ...args.data };
     },
   };
+  // Connecting Discord fills blank handles on rosters this person is on.
+  const rosterFills = [];
+  const registrationMemberModel = {
+    updateMany: async (args) => {
+      rosterFills.push(args);
+      return { count: 0 };
+    },
+  };
   const tokenRequestBodies = [];
 
   const { module, restore } = loadModuleWithMocks(
@@ -53,10 +61,15 @@ const buildService = ({
         prisma: {
           oAuthAccount: oAuthAccountModel,
           user: userModel,
+          registrationMember: registrationMemberModel,
           // The link writes the account row and the Discord tag together, so
           // the transaction hands back the same models the assertions read.
           $transaction: async (callback) =>
-            callback({ oAuthAccount: oAuthAccountModel, user: userModel }),
+            callback({
+              oAuthAccount: oAuthAccountModel,
+              user: userModel,
+              registrationMember: registrationMemberModel,
+            }),
         },
       },
       [require.resolve("../src/config/env")]: {
@@ -132,6 +145,7 @@ const buildService = ({
     existingUser,
     oAuthAccountModel,
     userModel,
+    rosterFills,
     service: module,
     tokenRequestBodies,
     restore: () => {
@@ -203,11 +217,23 @@ const buildLinkService = ({
     },
   };
   const userUpdates = [];
+  const rosterFills = [];
+  const registrationMember = {
+    updateMany: async (args) => {
+      rosterFills.push(args);
+      return { count: 1 };
+    },
+  };
   const tx = {
+    registrationMember,
     user: {
       findUnique: async () => {
         loginMethodReads += 1;
-        return { id: "user-1", passwordHash: hasPassword ? "hash" : null };
+        return {
+          id: "user-1",
+          emailNormalized: "player@example.com",
+          passwordHash: hasPassword ? "hash" : null,
+        };
       },
       // Linking writes the verified Discord tag and unlinking clears it, both
       // in the same transaction as the account row.
@@ -253,7 +279,9 @@ const buildLinkService = ({
           oAuthLinkNonce: oauthLinkNonce,
           // Re-linking a connection this user already owns writes the tag
           // outside the transaction, since there is no account row to create.
+          registrationMember,
           user: {
+            findUnique: async () => ({ id: "user-1", emailNormalized: "player@example.com" }),
             update: async (args) => {
               userUpdates.push(args);
               return { id: "user-1", ...args.data };
@@ -346,6 +374,7 @@ const buildLinkService = ({
     userUpdates,
     deleteCalls,
     linkNonces,
+    rosterFills,
     tokenRequestBodies,
     transactionOptions,
     getLoginMethodReads: () => loginMethodReads,
@@ -833,6 +862,81 @@ test("linking Discord again backfills a tag the first link never wrote", async (
     assert.equal(createCalls.length, 0);
     assert.equal(userUpdates.length, 1);
     assert.deepEqual(userUpdates[0].data, { discordTag: "questplayer" });
+  } finally {
+    restore();
+  }
+});
+
+test("linking Discord fills the blank Discord on rosters the person is already on", async () => {
+  const { service, rosterFills, getLinkState, restore } = buildLinkService();
+  try {
+    await service.handleOAuthLinkCallback({
+      provider: "discord",
+      code: "code",
+      ...(await getLinkState("discord")),
+      userId: "user-1",
+    });
+
+    // Only blanks, so a handle already committed to a tournament is never
+    // rewritten; matched by account or by the roster email the account owns.
+    assert.equal(rosterFills.length, 1);
+    assert.deepEqual(rosterFills[0], {
+      where: {
+        AND: [
+          { OR: [{ discord: null }, { discord: "" }] },
+          { OR: [{ userId: "user-1" }, { emailNormalized: "player@example.com" }] },
+        ],
+      },
+      data: { discord: "questplayer" },
+    });
+  } finally {
+    restore();
+  }
+});
+
+test("re-linking Discord also fills blank roster handles", async () => {
+  const { service, rosterFills, getLinkState, restore } = buildLinkService({
+    existingAccount: { userId: "user-1" },
+  });
+  try {
+    await service.handleOAuthLinkCallback({
+      provider: "discord",
+      code: "code",
+      ...(await getLinkState("discord")),
+      userId: "user-1",
+    });
+
+    assert.equal(rosterFills.length, 1);
+    assert.deepEqual(rosterFills[0].data, { discord: "questplayer" });
+  } finally {
+    restore();
+  }
+});
+
+test("linking Google leaves roster Discord handles alone", async () => {
+  const { service, rosterFills, getLinkState, restore } = buildLinkService();
+  try {
+    await service.handleOAuthLinkCallback({
+      provider: "google",
+      code: "code",
+      ...(await getLinkState("google")),
+      userId: "user-1",
+    });
+
+    assert.equal(rosterFills.length, 0);
+  } finally {
+    restore();
+  }
+});
+
+test("auto-linking Discord at sign-in fills blank roster handles", async () => {
+  const { service, rosterFills, restore } = buildService({ emailVerified: true });
+  try {
+    const { flowToken, state } = getState(service, "discord");
+    await service.handleOAuthCallback({ provider: "discord", code: "oauth-code", state, flowToken });
+
+    assert.equal(rosterFills.length, 1);
+    assert.deepEqual(rosterFills[0].data, { discord: "questplayer" });
   } finally {
     restore();
   }

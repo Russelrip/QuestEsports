@@ -5,6 +5,7 @@ const { prisma } = require("../../lib/prisma");
 const { env } = require("../../config/env");
 const { HttpError } = require("../../lib/http-error");
 const { logger } = require("../../lib/logger");
+const { fillMissingRosterDiscord } = require("./discord-link.service");
 const {
   normalizeEmail,
   normalizeSafeRedirectPath,
@@ -712,6 +713,14 @@ const findOrCreateOAuthUser = async ({ provider, profile }) => {
           data: { discordTag: profile.discordTag },
         });
       }
+      if (provider === "discord") {
+        await fillMissingRosterDiscord({
+          client: tx,
+          userId: existingUser.id,
+          discordTag: profile.discordTag,
+          discordId: profile.providerUserId,
+        });
+      }
     });
 
     return provider === "discord" && profile.discordTag
@@ -761,6 +770,17 @@ const findOrCreateOAuthUser = async ({ provider, profile }) => {
         email: profile.email,
       },
     });
+
+    // A captain can put someone on a roster before they have an account, so
+    // the rows are already waiting under this email.
+    if (provider === "discord") {
+      await fillMissingRosterDiscord({
+        client: tx,
+        userId: createdUser.id,
+        discordTag: profile.discordTag,
+        discordId: profile.providerUserId,
+      });
+    }
 
     return createdUser;
   });
@@ -948,6 +968,14 @@ const handleOAuthLinkCallback = async ({
             data: { discordTag: profile.discordTag },
           });
         }
+        if (provider === "discord") {
+          await fillMissingRosterDiscord({
+            client: tx,
+            userId: normalizedUserId,
+            discordTag: profile.discordTag,
+            discordId: profile.providerUserId,
+          });
+        }
       });
     } catch (error) {
       if (error?.code === "P2002") {
@@ -955,13 +983,20 @@ const handleOAuthLinkCallback = async ({
       }
       throw error;
     }
-  } else if (provider === "discord" && profile.discordTag) {
+  } else if (provider === "discord") {
     // The connection already belongs to this user, so there is no row to
     // create — but a link made before the tag was recorded still has an empty
     // profile field, and skipping the write here left it empty for good.
-    await prisma.user.update({
-      where: { id: normalizedUserId },
-      data: { discordTag: profile.discordTag },
+    if (profile.discordTag) {
+      await prisma.user.update({
+        where: { id: normalizedUserId },
+        data: { discordTag: profile.discordTag },
+      });
+    }
+    await fillMissingRosterDiscord({
+      userId: normalizedUserId,
+      discordTag: profile.discordTag,
+      discordId: profile.providerUserId,
     });
   }
 
