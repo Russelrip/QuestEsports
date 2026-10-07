@@ -76,12 +76,15 @@ test("team and admin team mutations invalidate both local projection tags", () =
       ["tournaments", "foundation"],
       ["tournaments", "foundation"],
     ]);
-    assert.deepEqual(adminInvalidations, Array.from({ length: 13 }, () => ["tournaments", "foundation"]));
+    assert.deepEqual(adminInvalidations, Array.from({ length: 14 }, () => ["tournaments", "foundation"]));
     assert.ok(captainPatch.includes(teamInvalidationMiddleware));
     assert.ok(adminPatch.includes(adminInvalidationMiddleware));
     for (const route of [
       "PATCH /admin/team-registrations/:registrationId/status",
       "PATCH /admin/team-registrations/:registrationId/game-ids",
+      // A team name is shown on public brackets and registration lists,
+      // so correcting one has to drop the same projections.
+      "PATCH /admin/team-registrations/:registrationId/team-name",
       "PATCH /admin/team-registrations/:registrationId/logo",
       "PATCH /admin/team-registrations/:registrationId/roster",
       "DELETE /admin/team-registrations/:registrationId",

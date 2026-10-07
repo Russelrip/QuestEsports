@@ -140,6 +140,12 @@ const adminPaths = {
       parameters: idParameter("registrationId"),
     }),
   },
+  "/api/admin/team-registrations/{registrationId}/team-name": {
+    patch: createOperation("Admin", "Rename a registered team", {
+      authenticated: true,
+      parameters: idParameter("registrationId"),
+    }),
+  },
   "/api/admin/team-registrations/{registrationId}/logo": {
     patch: createOperation("Admin", "Replace or remove an unlinked registration logo", {
       authenticated: true,

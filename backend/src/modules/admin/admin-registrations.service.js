@@ -258,6 +258,63 @@ const updateTeamRegistrationGameIds = async (registrationId, body = {}, auditCon
   return getAdminTeamRegistrationById(registrationId);
 };
 
+// Registrations arrive with names their captains chose, and some of them are
+// not fit to show on a public bracket. Correcting one after the fact is a
+// moderation act, so unlike the edits above the audit entry is written
+// unconditionally: a public-facing name changing without a durable record of
+// who changed it and why is the thing this endpoint must not allow.
+//
+// Only the team name on this registration moves. The roster's
+// `usernameSnapshot` values stay as they were, because what was committed to
+// the tournament is a separate fact from what the team is now called.
+const renameTeamRegistration = async (registrationId, body = {}, auditContext = {}) => {
+  const teamName = normalizeText(body.teamName);
+  const reason = normalizeText(body.reason);
+
+  if (!teamName) {
+    throw new HttpError(400, "A team needs a name.");
+  }
+  if (teamName.length > 100) {
+    throw new HttpError(400, "A team name must be 100 characters or fewer.");
+  }
+
+  await runAdminSerializable(async (tx) => {
+    const registration = await tx.teamRegistration.findUnique({
+      where: { id: registrationId },
+      select: { id: true, teamName: true, entryType: true },
+    });
+    if (!registration) throw new HttpError(404, "Team registration not found.");
+    // A solo entry carries the player's own name in this column, so renaming
+    // one is a different act from correcting a team name and is not offered here.
+    if (registration.entryType === "solo") {
+      throw new HttpError(400, "A solo entry is named after its player and cannot be renamed here.");
+    }
+    if (registration.teamName === teamName) {
+      throw new HttpError(409, "That is already this team's name.");
+    }
+
+    await tx.teamRegistration.update({
+      where: { id: registrationId },
+      data: { teamName },
+    });
+
+    await recordAuditInTransaction(tx, {
+      actorUserId: auditContext.actorUserId || null,
+      action: "team_registration.renamed",
+      targetType: "TeamRegistration",
+      targetId: registrationId,
+      beforeData: { teamName: registration.teamName },
+      afterData: { teamName },
+      requestId: auditContext.requestId || null,
+      ipAddress: auditContext.ipAddress || null,
+      source: auditContext.source || null,
+      reason,
+    });
+  });
+
+  return getAdminTeamRegistrationById(registrationId);
+};
+
 const exportTeamRegistrations = async (query = {}) => {
   const where = buildRegistrationWhere(query);
   const registrations = await prisma.teamRegistration.findMany({
@@ -626,6 +683,7 @@ module.exports = {
   listTeamRegistrations,
   getAdminTeamRegistrationById,
   updateTeamRegistrationGameIds,
+  renameTeamRegistration,
   exportTeamRegistrations,
   getRegistrationsByTournament,
   deleteTeamRegistration,

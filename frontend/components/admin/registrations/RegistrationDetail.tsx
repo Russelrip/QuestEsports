@@ -37,6 +37,8 @@ export function RegistrationDetail({
 }) {
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [captainGameId, setCaptainGameId] = useState("");
+  const [teamNameDraft, setTeamNameDraft] = useState("");
+  const [renameReason, setRenameReason] = useState("");
   const [teamLogo, setTeamLogo] = useState<File | null>(null);
   const [memberGameIds, setMemberGameIds] = useState<Record<string, string>>(
     {},
@@ -50,6 +52,8 @@ export function RegistrationDetail({
   useEffect(() => {
     if (!registration) return;
     setCaptainGameId(registration.captain.riotId || "");
+    setTeamNameDraft(registration.teamName || "");
+    setRenameReason("");
     setMemberGameIds(
       Object.fromEntries(
         registration.members.map((member) => [
@@ -334,6 +338,32 @@ export function RegistrationDetail({
       showToast({
         tone: "error",
         title: "Unable to update the registration logo",
+        description:
+          nextError instanceof Error ? nextError.message : "Request failed.",
+      });
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
+  const saveTeamName = async () => {
+    if (!registration) return;
+    setBusyAction("team-name");
+    try {
+      await adminRequest(
+        `/api/admin/team-registrations/${registration.id}/team-name`,
+        {
+          method: "PATCH",
+          json: { teamName: teamNameDraft, reason: renameReason },
+        },
+      );
+      showToast({ tone: "success", title: "Team name updated" });
+      setRenameReason("");
+      await onChanged();
+    } catch (nextError) {
+      showToast({
+        tone: "error",
+        title: "Unable to rename the team",
         description:
           nextError instanceof Error ? nextError.message : "Request failed.",
       });
@@ -882,6 +912,52 @@ export function RegistrationDetail({
               )}
             </div>
           </div>
+
+          {registration.entryType === "solo" ? null : (
+            <div className="mt-7 border border-purple-300/20 bg-purple-400/[0.06] p-4 sm:p-5">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <h4 className="text-sm font-semibold uppercase tracking-wide text-purple-100">
+                    Team name
+                  </h4>
+                  <p className="mt-1 text-sm text-slate-400">
+                    Correct a name that is not fit to publish. Only this registration
+                    changes; the saved team keeps its own name.
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  disabled={
+                    busyAction !== null ||
+                    !teamNameDraft.trim() ||
+                    teamNameDraft.trim() === registration.teamName
+                  }
+                  onClick={() => void saveTeamName()}
+                >
+                  {busyAction === "team-name" ? "Saving..." : "Save name"}
+                </Button>
+              </div>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <label className="grid min-w-0 gap-1 text-sm text-slate-300">
+                  <span>Team name</span>
+                  <Input
+                    required
+                    value={teamNameDraft}
+                    maxLength={100}
+                    onChange={(event) => setTeamNameDraft(event.target.value)}
+                  />
+                </label>
+                <label className="grid min-w-0 gap-1 text-sm text-slate-300">
+                  <span>Reason (recorded in the audit log)</span>
+                  <Input
+                    value={renameReason}
+                    placeholder="Why this name is being changed"
+                    onChange={(event) => setRenameReason(event.target.value)}
+                  />
+                </label>
+              </div>
+            </div>
+          )}
 
           <div className="mt-7 border border-purple-300/20 bg-purple-400/[0.06] p-4 sm:p-5">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">

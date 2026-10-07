@@ -4034,3 +4034,108 @@ test("only a super admin can delete an admin, and nobody can delete a super admi
   await service.deleteAdminUser({ userId: "admin-2", currentUser: OWNER });
   assert.deepEqual(prisma.deletes.map((call) => call.where.id), ["user-1", "admin-2"]);
 });
+
+// --------------------------------------------------- renameTeamRegistration
+
+const renameHarness = ({ entryType = "team", teamName = "Quest Five" } = {}) => {
+  const registrationUpdates = [];
+  const auditWrites = [];
+  const detail = { id: "registration-1", entryType, teamName, members: [] };
+  const tx = {
+    teamRegistration: {
+      findUnique: async () => ({ id: "registration-1", teamName, entryType }),
+      update: async (args) => registrationUpdates.push(args),
+    },
+    auditLog: { create: async (args) => auditWrites.push(args) },
+  };
+  const loaded = loadAdminService({
+    teamRegistration: { findUnique: async () => ({ ...detail, teamName: "Quest Squad" }) },
+    $transaction: async (work) => work(tx),
+  });
+  return { ...loaded, registrationUpdates, auditWrites };
+};
+
+test("renameTeamRegistration renames the team and records who changed it and why", async () => {
+  const { module: adminService, restore, registrationUpdates, auditWrites } = renameHarness();
+
+  try {
+    await adminService.renameTeamRegistration(
+      "registration-1",
+      { teamName: "  Quest Squad  ", reason: "original name was not fit to publish" },
+      { actorUserId: "11111111-1111-4111-8111-111111111111", requestId: "req-1", ipAddress: "10.0.0.1", source: "admin" },
+    );
+
+    assert.deepEqual(registrationUpdates, [{
+      where: { id: "registration-1" },
+      data: { teamName: "Quest Squad" },
+    }]);
+    assert.equal(auditWrites.length, 1);
+    const audit = auditWrites[0].data;
+    assert.equal(audit.action, "team_registration.renamed");
+    assert.equal(audit.targetType, "TeamRegistration");
+    assert.equal(audit.targetId, "registration-1");
+    assert.deepEqual(audit.beforeData, { teamName: "Quest Five" });
+    assert.deepEqual(audit.afterData, { teamName: "Quest Squad" });
+    assert.equal(audit.reason, "original name was not fit to publish");
+    assert.equal(audit.actorUserId, "11111111-1111-4111-8111-111111111111");
+  } finally {
+    restore();
+  }
+});
+
+test("renameTeamRegistration records the rename even when no actor is attached", async () => {
+  // The edits beside this one skip the audit when the request carries no actor.
+  // A public-facing name must not change without a record either way.
+  const { module: adminService, restore, auditWrites } = renameHarness();
+
+  try {
+    await adminService.renameTeamRegistration("registration-1", { teamName: "Quest Squad" }, {});
+    assert.equal(auditWrites.length, 1);
+    assert.equal(auditWrites[0].data.actorUserId, null);
+  } finally {
+    restore();
+  }
+});
+
+test("renameTeamRegistration refuses a solo entry, which is named after its player", async () => {
+  const { module: adminService, restore, registrationUpdates } = renameHarness({ entryType: "solo" });
+
+  try {
+    await assert.rejects(
+      adminService.renameTeamRegistration("registration-1", { teamName: "Someone Else" }, {}),
+      (error) => error.statusCode === 400,
+    );
+    assert.deepEqual(registrationUpdates, []);
+  } finally {
+    restore();
+  }
+});
+
+test("renameTeamRegistration refuses a name that is already the team's name", async () => {
+  const { module: adminService, restore, auditWrites } = renameHarness();
+
+  try {
+    await assert.rejects(
+      adminService.renameTeamRegistration("registration-1", { teamName: "Quest Five" }, {}),
+      (error) => error.statusCode === 409,
+    );
+    assert.deepEqual(auditWrites, []);
+  } finally {
+    restore();
+  }
+});
+
+test("renameTeamRegistration refuses an empty or oversized name", async () => {
+  const { module: adminService, restore } = renameHarness();
+
+  try {
+    for (const teamName of ["", "   ", "x".repeat(101)]) {
+      await assert.rejects(
+        adminService.renameTeamRegistration("registration-1", { teamName }, {}),
+        (error) => error.statusCode === 400,
+      );
+    }
+  } finally {
+    restore();
+  }
+});
