@@ -13,6 +13,7 @@ const {
   listTeamRegistrations,
   getAdminTeamRegistrationById,
   updateTeamRegistrationGameIds,
+  renameTeamRegistration,
   updateTeamRegistrationLogo,
   correctTeamRegistrationRoster,
   exportTeamRegistrations,
@@ -219,6 +220,20 @@ const updateRegistrationGameIds = asyncHandler(async (req, res) => {
   res.status(200).json({
     success: true,
     message: "Registration Game IDs updated successfully.",
+    registration,
+  });
+});
+
+const renameRegistrationTeam = asyncHandler(async (req, res) => {
+  const registration = await renameTeamRegistration(
+    req.params.registrationId,
+    req.body,
+    requestAuditContext(req)
+  );
+
+  res.status(200).json({
+    success: true,
+    message: "Team name updated successfully.",
     registration,
   });
 });
@@ -459,6 +474,7 @@ module.exports = {
   downloadTeamRegistrations,
   updateRegistrationStatus,
   updateRegistrationGameIds,
+  renameRegistrationTeam,
   updateRegistrationLogo,
   correctRegistrationRoster,
   removeRegistration,
