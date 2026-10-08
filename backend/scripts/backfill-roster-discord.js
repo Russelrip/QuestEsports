@@ -25,15 +25,21 @@ const main = async () => {
 
   const userIds = [...new Set(blankMembers.map((member) => member.userId).filter(Boolean))];
   const emails = [...new Set(blankMembers.map((member) => member.emailNormalized).filter(Boolean))];
+  // Matching by email only counts when that email is verified, for the same
+  // reason as fillMissingRosterDiscord: an unverified account holding a roster
+  // address proves nothing about who that roster member is.
   const linkedAccounts = await prisma.oAuthAccount.findMany({
     where: {
       provider: "discord",
-      OR: [{ userId: { in: userIds } }, { user: { emailNormalized: { in: emails } } }],
+      OR: [
+        { userId: { in: userIds } },
+        { user: { emailNormalized: { in: emails }, emailVerified: true } },
+      ],
     },
     select: {
       userId: true,
       providerUserId: true,
-      user: { select: { emailNormalized: true, discordTag: true } },
+      user: { select: { emailNormalized: true, emailVerified: true, discordTag: true } },
     },
   });
 
@@ -41,7 +47,7 @@ const main = async () => {
   const handleByUserId = new Map(linkedAccounts.map((account) => [account.userId, handleFor(account)]));
   const handleByEmail = new Map(
     linkedAccounts
-      .filter((account) => account.user.emailNormalized)
+      .filter((account) => account.user.emailNormalized && account.user.emailVerified)
       .map((account) => [account.user.emailNormalized, handleFor(account)])
   );
 

@@ -99,6 +99,11 @@ const getLinkedDiscordForUsers = async (userIds) => {
 // that tournament, and a later rename on Discord is not a reason to rewrite it.
 // Rows are matched by account or, for members added before they had an
 // account, by the roster email that account owns.
+//
+// "Owns" has to mean verified. A captain can list an address before anyone has
+// an account for it, so an unverified account carrying that address proves
+// nothing about who reads its mail; matching on it would let anyone put their
+// own Discord into someone else's roster slot.
 const fillMissingRosterDiscord = async ({ client = prisma, userId, discordTag, discordId }) => {
   const normalizedUserId = normalizeUserId(userId);
   // The snowflake is the fallback for the same reason registration uses it: it
@@ -108,9 +113,10 @@ const fillMissingRosterDiscord = async ({ client = prisma, userId, discordTag, d
 
   const user = await client.user.findUnique({
     where: { id: normalizedUserId },
-    select: { emailNormalized: true },
+    select: { emailNormalized: true, emailVerified: true },
   });
   if (!user) return 0;
+  const ownedEmail = user.emailVerified ? user.emailNormalized : null;
 
   const result = await client.registrationMember.updateMany({
     where: {
@@ -119,7 +125,7 @@ const fillMissingRosterDiscord = async ({ client = prisma, userId, discordTag, d
         {
           OR: [
             { userId: normalizedUserId },
-            ...(user.emailNormalized ? [{ emailNormalized: user.emailNormalized }] : []),
+            ...(ownedEmail ? [{ emailNormalized: ownedEmail }] : []),
           ],
         },
       ],

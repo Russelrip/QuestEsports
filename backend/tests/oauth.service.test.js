@@ -179,6 +179,7 @@ const buildLinkService = ({
   transactionFailures = 0,
   onTransactionFailure = null,
   transactionFailureAfterCallback = false,
+  emailVerified = true,
 } = {}) => {
   const linkedAccounts = [...accounts];
   const linkNonces = [];
@@ -232,6 +233,7 @@ const buildLinkService = ({
         return {
           id: "user-1",
           emailNormalized: "player@example.com",
+          emailVerified,
           passwordHash: hasPassword ? "hash" : null,
         };
       },
@@ -281,7 +283,7 @@ const buildLinkService = ({
           // outside the transaction, since there is no account row to create.
           registrationMember,
           user: {
-            findUnique: async () => ({ id: "user-1", emailNormalized: "player@example.com" }),
+            findUnique: async () => ({ id: "user-1", emailNormalized: "player@example.com", emailVerified }),
             update: async (args) => {
               userUpdates.push(args);
               return { id: "user-1", ...args.data };
@@ -888,6 +890,30 @@ test("linking Discord fills the blank Discord on rosters the person is already o
         ],
       },
       data: { discord: "questplayer" },
+    });
+  } finally {
+    restore();
+  }
+});
+
+test("linking Discord matches roster rows by email only when that email is verified", async () => {
+  // A captain can list an address before anyone has an account for it, so an
+  // unverified account holding that address must not claim the roster slot.
+  const { service, rosterFills, getLinkState, restore } = buildLinkService({ emailVerified: false });
+  try {
+    await service.handleOAuthLinkCallback({
+      provider: "discord",
+      code: "code",
+      ...(await getLinkState("discord")),
+      userId: "user-1",
+    });
+
+    assert.equal(rosterFills.length, 1);
+    assert.deepEqual(rosterFills[0].where, {
+      AND: [
+        { OR: [{ discord: null }, { discord: "" }] },
+        { OR: [{ userId: "user-1" }] },
+      ],
     });
   } finally {
     restore();
