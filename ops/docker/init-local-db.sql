@@ -8,10 +8,15 @@
 -- Passwords here are LOCAL-ONLY fixtures for a container that listens on
 -- 127.0.0.1. They are deliberately not secrets and must never be reused.
 
+-- The Quest runtime role. Prisma migrations apply the `public` schema grants
+-- and RLS policies to this role before the local API starts using it.
+CREATE ROLE quest_runtime LOGIN PASSWORD 'local_quest_runtime';
+
 -- The FastAPI runtime role. Its migration runner creates the `valorant` schema
 -- and applies the grants and RLS policies to this role.
 CREATE ROLE val_runtime LOGIN PASSWORD 'local_val_runtime';
 
 -- Quest connects as the owner locally, matching the documented local setup
 -- where Quest runs as the project owner on `public`.
+GRANT ALL ON DATABASE quest TO quest_runtime;
 GRANT ALL ON DATABASE quest TO val_runtime;
