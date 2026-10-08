@@ -54,6 +54,10 @@ jobs:
         shell: bash
         run: bash ops/tests/portainer-contract.test.sh
 
+      - name: Test the local database bootstrap creates both runtime roles
+        shell: bash
+        run: bash ops/tests/local-compose-contract.test.sh
+
       - name: Assert the Compose-only production authority
         shell: bash
         run: |
