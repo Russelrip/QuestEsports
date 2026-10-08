@@ -20,6 +20,7 @@ const authRoutes = require("../modules/auth/auth.routes");
 const challongeController = require("../modules/challonge/challonge.controller");
 const staffController = require("../modules/permissions/staff.controller");
 const staffPermissionController = require("../modules/permissions/staff-permission.controller");
+const serviceAccountController = require("../modules/service-accounts/service-account.controller");
 const auditLogController = require("../modules/audit/audit-log.controller");
 const { getRealtimeEvents } = require("../modules/realtime/realtime.controller");
 const {
@@ -315,6 +316,15 @@ router.patch("/admin/staff-roles/:roleId", requireAuth, requireSuperAdmin, staff
 router.delete("/admin/staff-roles/:roleId", requireAuth, requireSuperAdmin, staffPermissionController.removeStaffRole);
 router.get("/admin/users/:userId/staff-roles", requireAuth, requireAdmin, staffPermissionController.getUserStaffRoles);
 router.put("/admin/users/:userId/staff-roles", requireAuth, requireSuperAdmin, staffPermissionController.updateUserStaffRoles);
+
+// Service accounts for bots and agents. Every route is super-admin only: a token
+// is a standing credential, so issuing one is handing out access, and a
+// service account can never reach these itself because it is never an admin.
+// What a bot may open is set with the staff-roles route above, as for a person.
+router.get("/admin/service-accounts", requireAuth, requireSuperAdmin, serviceAccountController.getServiceAccounts);
+router.post("/admin/service-accounts", requireAuth, requireSuperAdmin, serviceAccountController.postServiceAccount);
+router.post("/admin/service-accounts/:userId/tokens", requireAuth, requireSuperAdmin, serviceAccountController.postServiceToken);
+router.delete("/admin/service-accounts/:userId/tokens/:tokenId", requireAuth, requireSuperAdmin, serviceAccountController.deleteServiceToken);
 
 router.use("/admin/valorant", requireAdmin);
 router.get("/admin/valorant/teams", valorantController.listTeams);

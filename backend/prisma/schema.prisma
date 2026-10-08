@@ -414,6 +414,11 @@ model User {
   // admin can make or unmake admins and hand out staff roles. Set from the
   // server with scripts/set-super-admin.js, never from the dashboard.
   isSuperAdmin                 Boolean                     @default(false) @map("is_super_admin")
+  // An account for automation — a bot or an agent — rather than a person. It
+  // authenticates only with a ServiceToken, never a password or OAuth, and a
+  // database check keeps it off the admin role: what it may open comes from the
+  // staff roles it holds, so its reach is exactly what was granted.
+  isServiceAccount             Boolean                     @default(false) @map("is_service_account")
   phone                        String?
   discordTag                   String?                     @map("discord_tag")
   avatarImageName              String?                     @map("avatar_image_name")
@@ -424,6 +429,9 @@ model User {
   createdAt                    DateTime                    @default(now()) @map("created_at")
   updatedAt                    DateTime                    @updatedAt @map("updated_at")
   sessions                     Session[]
+  serviceTokens                ServiceToken[]              @relation("ServiceTokenOwner")
+  issuedServiceTokens          ServiceToken[]              @relation("ServiceTokenIssuer")
+  revokedServiceTokens         ServiceToken[]              @relation("ServiceTokenRevoker")
   verificationTokens           VerificationToken[]
   emailChangeTokens            EmailChangeToken[]
   passwordResetTokens          PasswordResetToken[]
@@ -673,6 +681,32 @@ model Session {
   @@index([userId])
   @@index([expiresAt])
   @@map("sessions")
+}
+
+// A bearer credential for a service account. Only the hash is stored; the token
+// itself is shown once, when issued. Every token expires, and revoking one is a
+// timestamp rather than a delete so the audit trail keeps what it pointed at.
+model ServiceToken {
+  id              String    @id @default(uuid()) @db.Uuid
+  userId          String    @map("user_id") @db.Uuid
+  name            String
+  tokenHash       String    @unique @map("token_hash")
+  // The first characters of the token, kept so staff can tell tokens apart
+  // without the secret ever being readable again.
+  tokenPrefix     String    @map("token_prefix")
+  expiresAt       DateTime  @map("expires_at")
+  lastUsedAt      DateTime? @map("last_used_at")
+  lastUsedIp      String?   @map("last_used_ip")
+  revokedAt       DateTime? @map("revoked_at")
+  createdByUserId String?   @map("created_by_user_id") @db.Uuid
+  revokedByUserId String?   @map("revoked_by_user_id") @db.Uuid
+  createdAt       DateTime  @default(now()) @map("created_at")
+  user            User      @relation("ServiceTokenOwner", fields: [userId], references: [id], onDelete: Cascade)
+  createdBy       User?     @relation("ServiceTokenIssuer", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  revokedBy       User?     @relation("ServiceTokenRevoker", fields: [revokedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@map("service_tokens")
 }
 
 model MobileOAuthGrant {

@@ -265,6 +265,20 @@ delete guards protect children during normal admin operations. OAuth link
 nonces are claimed atomically and password markers distinguish a real password
 login method from OAuth-only random password hashes.
 
+## Service accounts
+
+- `20261008120000_add_service_accounts` adds `users.is_service_account`
+  (non-null, default `false`, so every existing row is a person) and the
+  `service_tokens` table: a SHA-256 `token_hash` (unique), a display-only
+  `token_prefix`, a required `expires_at`, `last_used_at`/`last_used_ip`, and
+  `revoked_at` with the revoking user. Revoking sets a timestamp rather than
+  deleting the row, so the audit trail keeps what each token was.
+  `users_service_account_not_admin_check` makes a service account holding the
+  admin role impossible, so its reach is only ever the staff roles it holds.
+  RLS, the runtime policy, and the Data API revokes follow every other
+  application table. Wholly additive: nothing is backfilled and no existing
+  column changes.
+
 ## Deployment boundary
 
 The release controller applies migrations as part of the release: it compares

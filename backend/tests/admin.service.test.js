@@ -4061,6 +4061,14 @@ test("listAdminUsers reports each user's staff roles and filters to staff", asyn
     assert.equal(args.where.role, "user");
     assert.deepEqual(args.where.staffRoles, { some: {} });
   }
+
+  // Service accounts hold staff roles too, but they have their own page and
+  // the user editor refuses them, so no filter or search ever lists one here.
+  for (const query of [{}, { role: "Staff" }, { role: "user" }, { search: "bot" }]) {
+    calls.length = 0;
+    await service.listAdminUsers({ page: 1, pageSize: 10, ...query });
+    for (const [, args] of calls) assert.equal(args.where.isServiceAccount, false, JSON.stringify(query));
+  }
 });
 
 const OWNER = { id: "owner-1", role: "admin", isSuperAdmin: true };
@@ -4138,6 +4146,23 @@ test("only a super admin can change admin access or edit another admin's account
     return true;
   });
   assert.deepEqual(prisma.updates.slice(2).map((call) => [call.where.id, call.data.role]), [["user-1", "admin"], ["admin-2", "user"]]);
+});
+
+test("the user editor refuses service accounts, even for a super admin", async () => {
+  const prisma = userManagementPrisma({
+    "bot-1": { id: "bot-1", role: "user", isSuperAdmin: false, isServiceAccount: true },
+  });
+  const { module: service } = loadAdminService(prisma);
+
+  // An email or password set here would let a bot sign in like a person, and a
+  // role change would widen what it reaches.
+  for (const overrides of [{ role: "user" }, { role: "admin" }]) {
+    await assert.rejects(
+      service.updateAdminUser({ userId: "bot-1", currentUser: OWNER, body: userForm(overrides) }),
+      { statusCode: 409 }
+    );
+  }
+  assert.equal(prisma.updates.length, 0);
 });
 
 test("only a super admin can delete an admin, and nobody can delete a super admin from the dashboard", async () => {

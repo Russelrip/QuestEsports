@@ -1,5 +1,6 @@
 const { HttpError } = require("../lib/http-error");
 const { env } = require("../config/env");
+const { isServiceTokenFormat } = require("../lib/service-token-format");
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 const allowedOrigins = new Set(env.CORS_ORIGINS);
@@ -59,11 +60,17 @@ const hasSessionCookie = (req) => {
   });
 };
 
-const hasNativeBearerCredential = (req) =>
-  !hasSessionCookie(req) &&
-  /^Bearer\s+[a-f0-9]{96}$/i.test(
-    String(req.headers.authorization || "").trim(),
-  );
+// A service token is the same kind of credential here: sent deliberately by a
+// non-browser client and never attached by a browser on its own, so it carries
+// no cross-site risk and has no origin to report. The token itself is still
+// verified by the session lookup; this only decides whether an origin is owed.
+const hasNativeBearerCredential = (req) => {
+  if (hasSessionCookie(req)) return false;
+  const authorization = String(req.headers.authorization || "").trim();
+  if (/^Bearer\s+[a-f0-9]{96}$/i.test(authorization)) return true;
+  const match = /^Bearer\s+(\S+)$/i.exec(authorization);
+  return Boolean(match && isServiceTokenFormat(match[1]));
+};
 
 const getRequestOrigin = (req) =>
   extractOrigin(req.headers.origin) || extractOrigin(req.headers.referer);

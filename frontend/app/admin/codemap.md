@@ -35,6 +35,13 @@ transactionally by the backend rather than by route UI alone.
   inside a Suspense boundary, because the manager reads its opening filters
   from the URL.
 
+## Service accounts route
+
+- `service-accounts/page.tsx` renders `/admin/service-accounts`, where super
+  admins manage bot and agent accounts. The link is in People and, like any
+  link without a staff area, admin-only; the page itself tells a non-super
+  admin it is super admin only, and the backend refuses them regardless.
+
 ## Support route
 
 - `support/page.tsx` renders the authenticated staff support queue at

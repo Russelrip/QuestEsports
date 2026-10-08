@@ -64,6 +64,7 @@ Participant roles are not grants. They come from the data itself:
 | **Tournament admin** | Assigned to a tournament by an admin | Everything a referee does, plus bracket/Challonge, veto config and registration review for that tournament |
 | **Area staff** | Granted a staff area by an admin | One admin area: `valorant_leaderboard` today, `media` proposed |
 | **Admin** | `users.role = admin`, set by another admin | Everything, including money, users and granting access |
+| **Service account** | Created by a super admin at `/admin/service-accounts` | A bot or an agent. Holds staff roles like area staff; never an admin (database check). Signs in only with a service token |
 
 ## The five questions
 
@@ -149,6 +150,7 @@ destroy data or copy personal contact data out of the site.
 | Rulebooks, games and categories | Admin | **Admin** |
 | VALORANT leaderboard admin | Admin + `valorant_leaderboard` | Unchanged |
 | Android admin app | Admin only (`mobile-admin/src/auth.tsx`) | **Admin** |
+| Service accounts and their tokens | Super admin | **Super admin** (a token is a standing credential) |
 
 ## Gaps in the current code
 

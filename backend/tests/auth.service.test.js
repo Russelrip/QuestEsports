@@ -142,6 +142,34 @@ test("authenticateUser performs a dummy password comparison for unknown accounts
   }
 });
 
+test("authenticateUser never matches a service account", async () => {
+  const lookups = [];
+  const { module: authService, restore } = loadAuthService({
+    prismaOverride: {
+      user: {
+        findFirst: async (args) => {
+          lookups.push(args);
+          return null;
+        },
+      },
+    },
+  });
+
+  try {
+    await assert.rejects(
+      authService.authenticateUser({
+        body: { emailOrUsername: "bot-roster-bot-abc123", password: "password" },
+      }),
+      (error) => error.statusCode === 401
+    );
+    // Excluded in the query itself, so a service account answers exactly like
+    // an unknown account: same dummy comparison, same message.
+    assert.equal(lookups[0].where.isServiceAccount, false);
+  } finally {
+    restore();
+  }
+});
+
 test("authenticateUser returns a direct login result after valid credentials", async () => {
   const updates = [];
   const { module: authService, restore } = loadAuthService({

@@ -3,6 +3,8 @@ const { prisma } = require("../../lib/prisma");
 const { env } = require("../../config/env");
 const { logger } = require("../../lib/logger");
 const { PUBLIC_USER_SELECT } = require("./auth.service");
+const { isServiceTokenFormat } = require("../../lib/service-token-format");
+const { authenticateServiceToken } = require("../service-accounts/service-account.service");
 
 const SESSION_COOKIE_NAME = env.SESSION_COOKIE_NAME;
 const LAST_SEEN_UPDATE_INTERVAL_MS = 5 * 60 * 1000;
@@ -183,9 +185,36 @@ const mapSessionSummary = (session, currentSessionId = null) => ({
   isCurrent: session.id === currentSessionId,
 });
 
+const getServiceBearerToken = (authorizationHeader = "") => {
+  const match = /^Bearer\s+(\S+)$/i.exec(String(authorizationHeader).trim());
+  return match && isServiceTokenFormat(match[1]) ? match[1] : null;
+};
+
 const getSessionFromRequest = async (req) => {
   const cookies = parseCookies(req.headers.cookie || "");
   const cookieToken = cookies[SESSION_COOKIE_NAME];
+
+  // A service token belongs to a bot or an agent, not a browser, so it is only
+  // honoured without a session cookie, by the same rule as a native bearer.
+  const serviceToken = cookieToken ? null : getServiceBearerToken(req.headers.authorization);
+  if (serviceToken) {
+    const service = await authenticateServiceToken(serviceToken, { ipAddress: req.ip || null });
+    if (!service) return null;
+    return {
+      token: null,
+      source: "service_token",
+      sessionId: null,
+      serviceTokenId: service.serviceTokenId,
+      createdAt: null,
+      lastSeenAt: null,
+      expiresAt: service.expiresAt,
+      userAgent: null,
+      ipAddress: null,
+      rememberMe: false,
+      user: service.user,
+    };
+  }
+
   const bearerToken = getBearerToken(req.headers.authorization);
   // Never let an Authorization header silently override an authenticated
   // browser cookie. Native clients deliberately send no session cookie.

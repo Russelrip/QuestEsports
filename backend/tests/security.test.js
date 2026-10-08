@@ -277,6 +277,60 @@ test("native bearer sessions can call protected APIs without a browser origin", 
   }
 });
 
+test("service tokens can call protected APIs without a browser origin", async () => {
+  const { module: security, restore } = loadSecurityMiddleware();
+  try {
+    const request = buildRequest({
+      path: "/api/admin/team-registrations/registration-1/roster",
+      method: "PATCH",
+      headers: { authorization: `Bearer qsa_${"A".repeat(64)}` },
+    });
+
+    assert.equal(await runMiddleware(security.requireAllowedApiOrigin, request), null);
+    assert.equal(await runMiddleware(security.protectAgainstCsrf, request), null);
+  } finally {
+    restore();
+  }
+});
+
+test("only the exact service token shape is exempt from origin checks", async () => {
+  const { module: security, restore } = loadSecurityMiddleware();
+  try {
+    for (const authorization of [
+      `Bearer qsa_${"A".repeat(63)}`,
+      `Bearer qsa_${"A".repeat(65)}`,
+      `Bearer qsb_${"A".repeat(64)}`,
+      `Bearer qsa_${"A".repeat(60)}!!!!`,
+      `qsa_${"A".repeat(64)}`,
+    ]) {
+      const request = buildRequest({ path: "/api/admin/orders", method: "PATCH", headers: { authorization } });
+      assert.equal((await runMiddleware(security.protectAgainstCsrf, request)), null, "no cookie, no origin: CSRF has nothing to protect");
+      assert.equal((await runMiddleware(security.requireAllowedApiOrigin, request))?.statusCode, 403, authorization);
+    }
+  } finally {
+    restore();
+  }
+});
+
+test("a service token cannot bypass browser protections when a session cookie is present", async () => {
+  const { module: security, restore } = loadSecurityMiddleware();
+  try {
+    const request = buildRequest({
+      path: "/api/admin/orders",
+      method: "PATCH",
+      headers: {
+        cookie: "quest_session=browser-token",
+        authorization: `Bearer qsa_${"A".repeat(64)}`,
+      },
+    });
+
+    assert.equal((await runMiddleware(security.requireAllowedApiOrigin, request))?.statusCode, 403);
+    assert.equal((await runMiddleware(security.protectAgainstCsrf, request))?.statusCode, 403);
+  } finally {
+    restore();
+  }
+});
+
 test("bearer headers cannot bypass browser protections when a session cookie is present", async () => {
   const { module: security, restore } = loadSecurityMiddleware();
   try {
