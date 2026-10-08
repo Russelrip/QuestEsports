@@ -90,10 +90,56 @@ const getLinkedDiscordForUsers = async (userIds) => {
   );
 };
 
+// A roster's Discord handles are copied from linked accounts once, when the
+// captain submits, so a member who connects Discord afterwards stays blank on
+// that registration for good, and staff see a hole where the account plainly
+// has a handle. Connecting is the moment that hole can be filled honestly.
+//
+// Only blanks are filled. A handle already on a roster is what was committed to
+// that tournament, and a later rename on Discord is not a reason to rewrite it.
+// Rows are matched by account or, for members added before they had an
+// account, by the roster email that account owns.
+//
+// "Owns" has to mean verified. A captain can list an address before anyone has
+// an account for it, so an unverified account carrying that address proves
+// nothing about who reads its mail; matching on it would let anyone put their
+// own Discord into someone else's roster slot.
+const fillMissingRosterDiscord = async ({ client = prisma, userId, discordTag, discordId }) => {
+  const normalizedUserId = normalizeUserId(userId);
+  // The snowflake is the fallback for the same reason registration uses it: it
+  // always resolves to the right person.
+  const handle = String(discordTag || "").trim() || String(discordId || "").trim();
+  if (!normalizedUserId || !handle) return 0;
+
+  const user = await client.user.findUnique({
+    where: { id: normalizedUserId },
+    select: { emailNormalized: true, emailVerified: true },
+  });
+  if (!user) return 0;
+  const ownedEmail = user.emailVerified ? user.emailNormalized : null;
+
+  const result = await client.registrationMember.updateMany({
+    where: {
+      AND: [
+        { OR: [{ discord: null }, { discord: "" }] },
+        {
+          OR: [
+            { userId: normalizedUserId },
+            ...(ownedEmail ? [{ emailNormalized: ownedEmail }] : []),
+          ],
+        },
+      ],
+    },
+    data: { discord: handle },
+  });
+  return result.count;
+};
+
 module.exports = {
   DISCORD_LINK_REQUIRED,
   createDiscordLinkRequiredError,
   getLinkedDiscord,
   requireLinkedDiscord,
   getLinkedDiscordForUsers,
+  fillMissingRosterDiscord,
 };
