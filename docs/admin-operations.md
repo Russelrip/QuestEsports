@@ -36,6 +36,7 @@ Admin routes require a valid session and either `user.role === "admin"` or a sta
 - `/admin/contact-messages` for the contact inbox
 - `/admin/teams` for saved-team details, logos, organization labels, and deletion
 - `/admin/audit-log` for the read-only history of recorded changes
+- `/admin/service-accounts` for bot and agent accounts and their tokens (super admin only)
 
 ## Audit Log
 
@@ -144,6 +145,56 @@ Add `--revoke` after the email to remove it. The script refuses to revoke the la
 and writes `admin.user.super_admin.granted` or `.revoked` to the audit log with
 source `system`. A super admin cannot be demoted or deleted from the dashboard
 until the flag is revoked.
+
+## Service Accounts for Bots and Agents
+
+A bot or an agent that works in the admin API gets its own **service account**.
+It must not borrow a person's login: the audit log would then credit that person
+with everything the bot did, and the bot would have that person's full reach.
+
+A service account is never an admin, and the database enforces that. It can open
+only what its staff roles grant, and it signs in only with a service token.
+Everything it does is logged with source **bot** and the service account as the
+actor.
+
+People → **Service Accounts** (`/admin/service-accounts`) is super admin only.
+
+### Setting one up
+
+1. **Create the account.** Name it after what it is, for example "Roster Agent".
+   It starts with no roles and can reach nothing.
+2. **Give it staff roles** from the same page. Prefer a role made for the job,
+   such as one granting only `registrations`, over a broad one. The bot's reach
+   is exactly the union of its roles' areas.
+3. **Issue a token.** Name it after where it will live (for example
+   `claude-code on russel-pc` or `discord-bot prod`), and pick an expiry of up
+   to 365 days (default 90). **The token is shown once.** Copy it straight into
+   the bot's secret store. It cannot be shown again; if it is lost, revoke it and
+   issue another.
+4. **Configure the bot** to send `Authorization: Bearer <token>` to
+   `https://api.questesports.lk`. It must not send a session cookie; a cookie
+   always takes precedence over the token.
+
+```bash
+curl -H "Authorization: Bearer $QUEST_SERVICE_TOKEN" https://api.questesports.lk/api/me
+```
+
+### Running one safely
+
+- **One token per place it runs.** Revoking one machine's token then leaves the
+  others working, and the audit log shows which token was used.
+- **Revoke on any doubt.** Revoking takes effect on the token's next request.
+  Each token shows when it was last used and from which IP.
+- **Rotate before expiry.** Issue the new token, deploy it, then revoke the old
+  one. An expired token simply stops working; nothing warns the bot first.
+- **Narrow, then widen.** Add a role when the bot needs more access. Do not
+  pre-grant areas it might need later.
+
+Service accounts are not in the general user editor. Saving one there is refused,
+because an email or password set on it would let it sign in like a person.
+Creating, issuing and revoking are audited as `service_account.created`,
+`service_account.token_issued` and `service_account.token_revoked`. Role changes
+are audited as `admin.user.staff_roles.updated`, as for anyone else.
 
 ## Media Library
 

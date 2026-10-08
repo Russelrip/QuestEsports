@@ -108,6 +108,16 @@ const valorantAndStaffPaths = {
     get: createOperation("Admin", "List the staff roles a user holds (admin only)", { authenticated: true }),
     put: createOperation("Admin", "Replace the staff roles a user holds (super admin only, audited)", { authenticated: true }),
   },
+  "/api/v1/admin/service-accounts": {
+    get: createOperation("Admin", "List service accounts for bots and agents, with their staff roles and token metadata; never token values (super admin only)", { authenticated: true }),
+    post: createOperation("Admin", "Create a service account; it holds no access until it is given staff roles (super admin only, audited)", { authenticated: true }),
+  },
+  "/api/v1/admin/service-accounts/{userId}/tokens": {
+    post: createOperation("Admin", "Issue an expiring service token; the token is returned once and only its hash is stored (super admin only, audited)", { authenticated: true }),
+  },
+  "/api/v1/admin/service-accounts/{userId}/tokens/{tokenId}": {
+    delete: createOperation("Admin", "Revoke a service token; it stops authenticating immediately (super admin only, audited)", { authenticated: true }),
+  },
   "/api/v1/admin/valorant/rankings": {
     get: createOperation("valorant", "List VALORANT team rankings", { authenticated: true }),
   },

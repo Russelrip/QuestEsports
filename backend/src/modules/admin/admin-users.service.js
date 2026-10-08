@@ -40,6 +40,9 @@ const listAdminUsers = async ({ page, pageSize, search, role }) => {
         ],
       }
     : {};
+  // Bots and agents are listed and managed on their own page; here they would
+  // only offer an editor that refuses them.
+  where.isServiceAccount = false;
 
   if (USER_ROLES.has(normalizedRole)) {
     where.role = normalizedRole;
@@ -187,11 +190,18 @@ const updateAdminUser = async ({ userId, body, currentUser }) => {
       id: true,
       role: true,
       isSuperAdmin: true,
+      isServiceAccount: true,
     },
   });
 
   if (!existingUser) {
     throw new HttpError(404, "User not found.");
+  }
+  // Giving a service account an email or password here would let it sign in
+  // like a person, and a role change would widen what it can reach. Its name,
+  // tokens, and staff roles are managed from the service accounts page.
+  if (existingUser.isServiceAccount) {
+    throw new HttpError(409, "Service accounts are managed from the service accounts page.");
   }
 
   const editingAnotherAdmin = existingUser.role === "admin" && currentUser?.id !== userId;

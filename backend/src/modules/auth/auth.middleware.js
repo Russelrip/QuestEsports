@@ -12,6 +12,8 @@ const attachSession = asyncHandler(async (req, res, next) => {
   const session = await getSessionFromRequest(req);
   req.session = session;
   req.user = session ? session.user : null;
+  // Read by the audit log, which records these requests as `bot`.
+  req.serviceToken = session?.serviceTokenId || null;
   next();
 });
 
@@ -74,10 +76,19 @@ const requireVerifiedEmail = (req, res, next) => {
 // role structure rather than through a registration row, and gating the admin
 // dashboard on a Discord link is how an operator locks themselves out of the
 // tool they would use to investigate the lockout.
+//
+// A service account is exempt for the same reason: it is automation acting
+// through staff roles it was granted, not a player anyone reaches on Discord,
+// and it has no way to link an account.
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
 const requireDiscordLinked = (req, res, next) => {
-  if (!req.user || SAFE_METHODS.has(req.method) || req.user.role === "admin") {
+  if (
+    !req.user ||
+    SAFE_METHODS.has(req.method) ||
+    req.user.role === "admin" ||
+    req.user.isServiceAccount === true
+  ) {
     next();
     return;
   }

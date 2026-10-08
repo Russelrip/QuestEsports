@@ -14,7 +14,8 @@ This document describes the implemented HTTP API in `backend/src`. All routes ar
 - Browser session auth uses an `HttpOnly` cookie.
 - The frontend sends cookies with `credentials: "include"`.
 - The private Android admin client sends its opaque session token as `Authorization: Bearer <token>`.
-- Protected routes accept either a valid browser cookie or a valid mobile bearer session.
+- Bots and agents send a service token as `Authorization: Bearer qsa_<64 characters>`. See [Service accounts](#service-accounts).
+- Protected routes accept a valid browser cookie, a valid mobile bearer session, or a valid service token.
 - Admin routes require `user.role === "admin"`.
 - Tournament registration additionally requires `emailVerified === true`.
 - The cookie name comes from the required `SESSION_COOKIE_NAME` environment variable.
@@ -132,7 +133,7 @@ When site maintenance is enabled, normal API routes return `503 Service Unavaila
 ## Security And Request Rules
 
 - CSRF protection checks `Origin` or `Referer` on non-safe methods.
-- A correctly formed native bearer credential without a session cookie bypasses browser-only Origin/CSRF enforcement. Cookie-bearing requests never receive this exemption.
+- A correctly formed native bearer credential without a session cookie bypasses browser-only Origin/CSRF enforcement. This covers both a mobile session token (96 hex characters) and a service token (`qsa_` followed by 64 base64url characters). Only the shape decides the exemption; the token is still verified before the request is authenticated. Cookie-bearing requests never receive this exemption.
 - Allowed origins come from `CORS_ORIGIN`.
 - Rate limiting is applied to login, signup, contact, password reset, invite response, and tournament registration endpoints.
 - Team-logo uploads accept JPEG, PNG, and WebP with a 5 MB per-file limit.
@@ -1333,6 +1334,33 @@ admin too) can change a role or who holds one.
 `GET /api/me` (and `/api/mobile/auth/me`) include `user.isSuperAdmin` and
 `user.permissions`: every area for an admin, the union of their roles' areas
 otherwise.
+
+### Service accounts
+
+A service account is how a bot or an agent uses the admin API without borrowing a
+person's login. It is a `users` row with `is_service_account = true`. It is never
+an admin (a database check refuses it), so it can open exactly the areas granted
+by the staff roles it holds. Grant those with `PUT /api/v1/admin/users/{userId}/staff-roles`,
+the same as for a person. A new service account holds no roles and can reach nothing.
+
+It authenticates only with a service token, sent as `Authorization: Bearer qsa_…`
+and without a session cookie (a cookie always wins). It cannot use password login,
+password reset, or OAuth, and the admin user editor refuses it. Its writes are
+exempt from the Discord-link requirement and are recorded in the audit log with
+source `bot` and the service account as the actor.
+
+Every route is super admin only. A service account can never manage service accounts.
+
+| Method | Route | Notes |
+|---|---|---|
+| `GET` | `/api/v1/admin/service-accounts` | `{ accounts: [account], tokenDays: { default: 90, max: 365 } }`. An account is `{ id, name, username, createdAt, staffRoles: [{ id, name, color, permissions }], tokens: [token] }`. A token is `{ id, name, tokenPrefix, createdAt, expiresAt, lastUsedAt, lastUsedIp, revokedAt, status, createdBy }`, where `status` is `active`, `expired`, or `revoked`. Token values are never returned |
+| `POST` | `/api/v1/admin/service-accounts` | Body `{ name }`, 1–60 characters. Creates the account with no roles, a generated `bot-…` username, an address on the reserved `service.questesports.invalid` domain, and a random password nobody holds. `201` with the account. Audited as `service_account.created` |
+| `POST` | `/api/v1/admin/service-accounts/{userId}/tokens` | Body `{ name, expiresInDays? }`. `name` (1–60) says where the token is used. `expiresInDays` is a whole number from 1 to 365, default 90. `201` with `{ token, account }`, sent with `Cache-Control: no-store`. **`token` is returned only here.** Only its SHA-256 hash is stored. `404` when `userId` is not a service account. Audited as `service_account.token_issued` with the prefix and expiry, never the token |
+| `DELETE` | `/api/v1/admin/service-accounts/{userId}/tokens/{tokenId}` | Revokes the token; it stops authenticating on its next request. The row is kept for the audit trail. `409` if already revoked, `404` if not found. Audited as `service_account.token_revoked` |
+
+A revoked, expired, or unknown token is treated as anonymous (`401` from route
+guards), the same as an expired session. `lastUsedAt` and `lastUsedIp` are refreshed
+at most every five minutes and not at all under `WRITE_FREEZE_MODE=validation`.
 
 Areas and the admin routes they open (`requireStaffPermission`, which admins
 always pass). Anything not listed stays `requireAdmin`:

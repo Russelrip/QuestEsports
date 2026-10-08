@@ -36,6 +36,19 @@ The cookie name comes from `SESSION_COOKIE_NAME`.
 
 Only the SHA-256 token hash is stored in PostgreSQL. Native bearer requests must not carry the browser session cookie; if both are present, cookie precedence preserves browser Origin and CSRF enforcement.
 
+## Service Tokens
+
+Bots and agents authenticate as **service accounts** (`users.is_service_account`), using a service token instead of a session.
+
+1. A super admin issues the token from `/admin/service-accounts`. The raw token (`qsa_` followed by 64 base64url characters) is returned once. Only its SHA-256 hash is stored in `service_tokens`.
+2. The bot sends `Authorization: Bearer qsa_…` with no session cookie.
+3. `getSessionFromRequest` recognises the token by its shape before trying it as a session. It resolves the token with `authenticateServiceToken`, which returns nothing for a revoked or expired token, or for one whose account is no longer a non-admin service account. A rejected token makes the request anonymous; it never falls back to a session lookup.
+4. `attachSession` sets `req.user` to the service account and `req.serviceToken` to the token id. The audit log records the request's source as `bot`.
+
+A service account has no session to log out of: a token is revoked, not signed out. Password login and password reset treat a service account as an unknown account. Its address is on the reserved `.invalid` domain, so no OAuth provider can match it. The admin user editor refuses it, so it can never be given a password.
+
+The service account is never an admin (database check `users_service_account_not_admin_check`), so `requireAdmin` and `requireSuperAdmin` always refuse it. It passes `requireStaffPermission` only for areas its staff roles grant. It is exempt from `requireDiscordLinked`, as admins are, because it has no way to link Discord.
+
 ## Login Flow
 
 1. The user submits `emailOrUsername` and `password` to `POST /api/login`.
@@ -226,7 +239,8 @@ Routine sign-ins do not send security-alert emails, including sign-ins from a ne
 ### `attachSession`
 
 - Runs on routes that need optional or required auth.
-- Loads `req.user` from the session cookie if possible.
+- Loads `req.user` from the session cookie, a mobile bearer session, or a service token.
+- Sets `req.serviceToken` when a service token authenticated the request.
 
 ### `requireAuth`
 
@@ -257,6 +271,7 @@ Unsafe methods are guarded by backend origin checks:
 - Safe methods: `GET`, `HEAD`, `OPTIONS`
 - Unsafe methods require an allowed `Origin` or `Referer`
 - If a session cookie is present and no trusted origin is supplied, the request is blocked
+- A request with no session cookie and a correctly shaped mobile session token or service token needs no origin, because a browser never attaches either on its own. The token is still verified before the request is authenticated.
 
 This is especially important because authentication is cookie-based.
 

@@ -39,6 +39,7 @@ describe("admin navigation", () => {
         links: [
           { href: "/admin/users", label: "Users", icon: "users" },
           { href: "/admin/roles", label: "Roles", icon: "shield" },
+          { href: "/admin/service-accounts", label: "Service Accounts", icon: "monitor" },
           { href: "/admin/teams", label: "Teams", icon: "users", permission: "teams" },
           { href: "/admin/recruitment", label: "Recruitment", icon: "user-plus", permission: "recruitment" },
           { href: "/admin/contact-messages", label: "Messages", icon: "message", permission: "contact_messages" },

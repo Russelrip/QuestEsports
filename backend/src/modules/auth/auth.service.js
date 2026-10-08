@@ -428,8 +428,11 @@ const authenticateUser = async ({ body, requestMeta = {} }) => {
     .digest("hex")
     .slice(0, 16);
 
+  // A service account signs in only with a service token, so to a password
+  // login it is indistinguishable from an account that does not exist.
   const user = await prisma.user.findFirst({
     where: {
+      isServiceAccount: false,
       OR: [
         { emailNormalized: normalizedEmail },
         { usernameNormalized: normalizedLookup },
@@ -738,10 +741,11 @@ const requestPasswordReset = async ({ body }) => {
 
   const user = await prisma.user.findUnique({
     where: { emailNormalized: email },
-    select: PUBLIC_USER_SELECT,
+    select: { ...PUBLIC_USER_SELECT, isServiceAccount: true },
   });
 
-  if (!user) {
+  // A service account has no password to reset; answered like an unknown address.
+  if (!user || user.isServiceAccount) {
     return;
   }
 

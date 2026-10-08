@@ -53,6 +53,18 @@ test("admins are exempt", () => {
   assert.equal(run({ id: "admin-1", role: "admin", discordId: null }), null);
 });
 
+test("service accounts are exempt", () => {
+  // Automation acting through staff roles it was granted; it has no way to
+  // link a Discord account, so gating it would leave every bot read-only.
+  assert.equal(run({ id: "bot-1", role: "user", discordId: null, isServiceAccount: true }), null);
+});
+
+test("only a true service-account flag exempts a user", () => {
+  for (const isServiceAccount of [false, "true", 1, undefined]) {
+    assert.equal(run({ id: "user-1", role: "user", discordId: null, isServiceAccount })?.statusCode, 403);
+  }
+});
+
 test("the gate is mounted after the routes needed to satisfy it", () => {
   const routerSource = fs.readFileSync(
     path.join(__dirname, "../src/routes/index.js"),

@@ -102,6 +102,19 @@ records are loaded only in the existing admin detail workflow.
   the diff live in `frontend/lib/audit-log.ts` so they are unit-tested without
   rendering. Read-only; admin-only on both sides.
 
+## Service accounts
+
+- `AdminServiceAccountsManager.tsx` renders `/admin/service-accounts`: a list of
+  bot and agent accounts, a create form, and for the selected account its staff
+  roles (reusing `AdminUserStaffRoles`, since a service account's reach is only
+  its roles) and its tokens. Issuing a token shows it once in a copy box held
+  in component state alone. It is not refetched, not stored, and is dropped on
+  dismissal or when another account is opened, because the server cannot show
+  it again. Requests and types are in `frontend/lib/service-accounts.ts`.
+  Super admin only on both sides.
+- Service accounts are left out of `/admin/users`, whose editor refuses them,
+  so that page never offers an action that cannot succeed.
+
 ## Support queue
 
 - `AdminSupportManager.tsx` owns queue loading, responsive selection, filters,
