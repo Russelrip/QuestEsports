@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import AdminGuard from "@/components/admin/AdminGuard";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { Icon, NavIcon } from "@/components/ui/icon";
@@ -13,6 +13,10 @@ import {
   type AdminNavigationLink,
 } from "@/lib/admin";
 import { adminHomeFor, canSeeAdminLink } from "@/lib/staff-permissions";
+
+// Every admin page mounts its own shell, so the sidebar would jump back to the
+// top on each navigation. Remember its scroll position for the browser tab.
+const SIDEBAR_SCROLL_KEY = "quest-admin-sidebar-scroll";
 
 const AdminNavigationItem = ({
   link,
@@ -53,6 +57,22 @@ export default function AdminShell({ title, description, actions, children }: { 
     .map((group) => ({ ...group, links: group.links.filter((link) => canSeeAdminLink(user, link)) }))
     .filter((group) => group.links.length > 0);
   const adminHome = adminHomeFor(user) ?? "/admin";
+
+  // Runs when the sidebar mounts (after AdminGuard lets it render), before paint.
+  const restoreSidebarScroll = useCallback((sidebar: HTMLDivElement | null) => {
+    if (!sidebar) return;
+    try {
+      const saved = Number(sessionStorage.getItem(SIDEBAR_SCROLL_KEY));
+      if (saved > 0) sidebar.scrollTop = saved;
+    } catch {}
+    sidebar.querySelector<HTMLElement>('[aria-current="page"]')?.scrollIntoView({ block: "nearest" });
+  }, []);
+
+  const rememberSidebarScroll = (event: React.UIEvent<HTMLDivElement>) => {
+    try {
+      sessionStorage.setItem(SIDEBAR_SCROLL_KEY, String(event.currentTarget.scrollTop));
+    } catch {}
+  };
 
   useEffect(() => {
     if (mobileOpen) {
@@ -113,7 +133,7 @@ export default function AdminShell({ title, description, actions, children }: { 
     <div data-admin-shell className="flex min-h-dvh bg-[#08070d] text-slate-200">
       <aside className="sticky top-0 hidden h-dvh w-72 shrink-0 flex-col border-r border-white/10 bg-[#0d0c14] px-5 py-6 lg:flex">
         <Link href={adminHome} className="mb-8 flex items-center gap-3 px-2"><span className="flex size-9 items-center justify-center rounded-xl bg-violet-500 font-black text-white">Q</span><span className="text-sm font-bold tracking-wide text-white">QUEST ADMIN</span></Link>
-        <div className="min-h-0 flex-1 overflow-y-auto pr-1">{navigation()}</div>{account}
+        <div ref={restoreSidebarScroll} onScroll={rememberSidebarScroll} className="min-h-0 flex-1 overflow-y-auto pr-1">{navigation()}</div>{account}
       </aside>
       <div className="min-w-0 flex-1">
         <header className="sticky top-0 z-30 flex min-h-16 items-center justify-between border-b border-white/10 bg-[#0d0c14]/95 px-4 backdrop-blur-xl lg:hidden"><Link href={adminHome} className="flex items-center gap-2"><span className="flex size-8 items-center justify-center rounded-lg bg-violet-500 text-sm font-black text-white">Q</span><span className="text-sm font-bold tracking-wide text-white">QUEST ADMIN</span></Link><button ref={triggerRef} type="button" aria-label={mobileOpen ? "Close admin navigation" : "Open admin navigation"} aria-expanded={mobileOpen} aria-controls="admin-mobile-drawer" onClick={() => setMobileOpen((open) => !open)} className="rounded-lg p-2 text-slate-300 hover:bg-white/10"><Icon><path d={mobileOpen ? "m5 5 10 10M15 5 5 15" : "M3 5h14M3 10h14M3 15h14"} /></Icon></button></header>
