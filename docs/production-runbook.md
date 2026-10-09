@@ -78,12 +78,25 @@ The canonical values, read from `ops/deploy/release.sh` and
 | Compose env | `/opt/quest-esports/current/.env` (image manifest) |
 | Backend runtime env | `/etc/quest-esports/quest.production.env` |
 | VALORANT runtime env | `/etc/quest-esports/valorant.production.env` |
+| Compose template | `/etc/quest-esports/deploy-assets/compose.production.yml` (`QUEST_COMPOSE_TEMPLATE` in `/etc/quest-esports/release.env`) |
+| Frontend runtime env | `/etc/quest-esports/quest.frontend.env` (optional, secret-free) |
+
+Every release copies its `compose.production.yml` from the host template, not
+from the commit being deployed. A merged change to
+`ops/docker/compose.production.yml` therefore has no effect until the template
+is reinstalled: diff it against the template, validate it with
+`docker compose --env-file "$(readlink -f /opt/quest-esports/current)/.env" -f <new file> --project-name quest-prod config --quiet`,
+back up the old template, install the new one root-owned `0644`, and let the
+next release apply it. Do not recreate containers from the template path; see
+the helper note below.
 
 Every read-only inspection below uses one invocation:
 
 ```bash
 quest_compose() {
-  docker compose     --env-file /opt/quest-esports/current/.env     -f /opt/quest-esports/current/compose.production.yml     --project-name quest-prod "$@"
+  local release
+  release="$(readlink -f /opt/quest-esports/current)" || return 1
+  docker compose --env-file "$release/.env" -f "$release/compose.production.yml"     --project-name quest-prod "$@"
 }
 
 quest_compose ps                 # what is running, and its health
@@ -95,6 +108,15 @@ A release is immutable and root-owned: `deploy-compose.yml` stages a new
 release directory and moves the symlink. Recreating a container by hand is for
 a runtime-environment change that must take effect before the next release —
 it does not change the release, and the next deployment replaces it either way.
+
+Always resolve `current` before passing it to Compose, as the helper does.
+Compose records the compose-file path it was given on each container, and the
+release hooks (`running_bundle` in `ops/deploy/host-hooks.sh`) require that path
+to sit under `/opt/quest-esports/releases/`. A container recreated through the
+`current` symlink path makes the next deployment refuse with "the release
+bundle is outside the immutable release root" (seen 2026-10-10; the release
+rolled back cleanly and a re-run succeeded once the containers were recreated
+from the real release directory).
 
 ## Required Ownership And Permissions
 
@@ -929,8 +951,9 @@ A host without it starts normally with maintenance and analytics off. Both files
 serves normally while the API refuses, or the reverse, which is worse than either
 state on its own.
 
-The frontend `env_file` entry ships with the release that contains it. Confirm
-the running release includes it (`quest_compose config frontend` lists
+The frontend `env_file` entry reaches production through the host compose
+template (installed 2026-10-10), so it applies from the next release onward.
+Confirm the running release includes it (`quest_compose config frontend` lists
 `quest.frontend.env`) before relying on the frontend half.
 
 Create the frontend file once, owned by root and readable only by root (Compose
