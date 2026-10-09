@@ -186,16 +186,7 @@ Ship `/rank` first and see whether anyone asks. Never per-rank roles.
 
 ## Deploying any of this
 
-Backend CD is approved by the **`Production` environment's required reviewer**:
-the job pauses before its first step and the owner approves it under
-`Actions -> the run -> Review deployments`. There is no approval secret to set;
-`BACKEND_MIGRATION_APPROVAL_SHA` was removed because it had to equal the exact
-deploying commit, so any push to `main` invalidated it, and an environment
-secret silently shadowed the repository one.
-
-Destructive or backward-incompatible migrations still require
-`BACKEND_DESTRUCTIVE_MIGRATION_APPROVAL_SHA` to equal the deploying commit SHA,
-set on the `Production` environment and cleared afterwards.
+Production CD: there is no GitHub required reviewer (the `production-compose` environment has only a branch policy, verified 2026-10-10), so a release with no pending migration deploys automatically once CI passes. A release with a pending Quest or VALORANT migration is refused by `ops/deploy/release.sh` unless the host's `/etc/quest-esports/release.env` sets `BACKUP_APPROVAL=BACKUP_QUEST_PRODUCTION` and `QUEST_MIGRATION_OWNER_APPROVAL_SHA` (or `VALORANT_MIGRATION_OWNER_APPROVAL_SHA`) to that exact release commit; it then takes and verifies a release-bound backup before migrating.
 
 When migrations are pending, CD runs `ops/backup-production.sh` first. Confirm
 the log line

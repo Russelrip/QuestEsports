@@ -68,11 +68,11 @@ a dedicated Supabase test project, which is not a production target:
    subsequent deploy. Never drop a column/table in the same deploy that
    populates it.
 4. Rollback = revert the app deployment. Newly added columns must stay nullable
-   or defaulted so the previous app version remains compatible; the CD gate
-   (the `Production` environment's required reviewer, plus
-   `BACKEND_DESTRUCTIVE_MIGRATION_APPROVAL_SHA` for destructive SQL)
-   applies to Quest, and FastAPI production migrations follow the same manual
-   approval + backup discipline.
+   or defaulted so the previous app version remains compatible; the CD gate is
+   the host-side, SHA-bound `QUEST_MIGRATION_OWNER_APPROVAL_SHA` /
+   `VALORANT_MIGRATION_OWNER_APPROVAL_SHA` plus `BACKUP_APPROVAL` in
+   `/etc/quest-esports/release.env`, after which the release takes a verified
+   backup before migrating. There is no GitHub required reviewer.
 5. `prisma migrate reset` / `db drop` and the FastAPI reset harness remain
    forbidden against shared/remote databases.
 6. Take and verify a restorable two-schema backup before any production

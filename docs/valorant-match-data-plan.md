@@ -346,8 +346,10 @@ production.
   opt-in; assume anything that polls is being counted.
 - **Read the nearest `codemap.md` before changing a directory, and update it**
   — required by `AGENTS.md`.
-- **Deploying**: backend CD pauses for the `Production` environment's required
-  reviewer; approve under `Actions -> the run -> Review deployments`. When
+- **Deploying**: there is no GitHub approval step. A release with a pending
+  migration needs `BACKUP_APPROVAL` and the exact-SHA
+  `QUEST_MIGRATION_OWNER_APPROVAL_SHA` / `VALORANT_MIGRATION_OWNER_APPROVAL_SHA`
+  in `/etc/quest-esports/release.env` on the VPS. When
   migrations are pending, confirm the log prints
   `Encrypted production backup uploaded successfully:` **before** the first
   `Applying migration`. Migrations are forward-only.
