@@ -4,6 +4,7 @@ import { AuthProvider } from "@/components/auth/AuthProvider";
 import DiscordConnectionGate from "@/components/auth/DiscordConnectionGate";
 import Footer from "@/components/Footer";
 import Navbar from "@/components/Navbar";
+import WebAnalytics from "@/components/WebAnalytics";
 import { SupportProvider } from "@/components/support/SupportProvider";
 import { ToastProvider } from "@/components/ui/toast-provider";
 import { designTokenCssVariables } from "@/lib/design-tokens";
@@ -51,6 +52,7 @@ export default function RootLayout({
           <ToastProvider />
           </SupportProvider>
         </AuthProvider>
+        <WebAnalytics />
       </body>
     </html>
   );

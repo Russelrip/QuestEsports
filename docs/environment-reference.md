@@ -72,9 +72,9 @@ The interim and restored backup services use `BACKUP_CLIENT_CERT_FILE` and
 | --- | --- | --- | --- | --- | --- | --- |
 | `JOB_WORKER_ENABLED` | Conditional | Backend/operations owner | L/D/P | Public/non-secret | `true`; production requires it while queued password email is enabled | Restart backend |
 | `COMMERCE_MAINTENANCE_ENABLED` | No | Backend | L/D/P | Public/non-secret | `true` | Restart backend |
-| `SITE_MAINTENANCE_MODE` | No — defaults to disabled | Backend and frontend release owner | L/D/P | Public/non-secret | `false` | Backend restart; frontend redeploy when its copy changes |
-| `SITE_MAINTENANCE_MESSAGE` | No — has a built-in fallback | Backend and frontend release owner | L/D/P | Public/non-secret | `We’re carrying out scheduled maintenance. Please try again shortly.` | Backend restart; frontend redeploy when its copy changes |
-| `SITE_MAINTENANCE_RETRY_AFTER_SECONDS` | No — defaults to `900` | Backend and frontend release owner | L/D/P | Public/non-secret | `900` | Backend restart; frontend redeploy when its copy changes |
+| `SITE_MAINTENANCE_MODE` | No — defaults to disabled | Backend and frontend release owner | L/D/P | Public/non-secret | `false` | Backend restart; the frontend copy lives in `quest.frontend.env` (see Frontend) |
+| `SITE_MAINTENANCE_MESSAGE` | No — has a built-in fallback | Backend and frontend release owner | L/D/P | Public/non-secret | `We’re carrying out scheduled maintenance. Please try again shortly.` | Backend restart; the frontend copy lives in `quest.frontend.env` (see Frontend) |
+| `SITE_MAINTENANCE_RETRY_AFTER_SECONDS` | No — defaults to `900` | Backend and frontend release owner | L/D/P | Public/non-secret | `900` | Backend restart; the frontend copy lives in `quest.frontend.env` (see Frontend) |
 | `JOB_WORKER_POLL_MS` | No — defaults to `15000` | Backend | L/D/P | Public/non-secret | `15000`; the worker polls whether or not there is work, so this is a floor on database traffic. Lower it only if job latency actually matters | Restart backend |
 | `JOB_WORKER_MAX_ATTEMPTS` | No — defaults to `5` | Backend | L/D/P | Public/non-secret | `5` | Restart backend |
 | `DATA_HYGIENE_MAINTENANCE_ENABLED` | No | Backend/operations owner | L/D/P | Public/non-secret | `true` | Restart backend |
@@ -242,9 +242,10 @@ isolation.
 | --- | --- | --- | --- | --- | --- | --- |
 | `NEXT_PUBLIC_API_URL` | Conditional — required for production builds and CI/mock builds | Frontend/web owner | L/D/CI/P | Public/non-secret | `http://localhost:5001` locally; CI mock is `http://127.0.0.1:5011`; `<API origin>` otherwise | Restart dev server; redeploy built frontend |
 | `NEXT_PUBLIC_SITE_URL` | Conditional — required for production builds and CI/mock builds | Frontend/web owner | L/D/CI/P | Public/non-secret | `http://localhost:3000` locally; `<frontend origin>` otherwise | Restart dev server; redeploy built frontend |
-| `SITE_MAINTENANCE_MODE` | No — defaults to disabled | Frontend/release owner | L/D/P | Public/non-secret | `false` | Restart dev server; redeploy frontend |
-| `SITE_MAINTENANCE_MESSAGE` | No — has a built-in fallback | Frontend/release owner | L/D/P | Public/non-secret | `We’re carrying out scheduled maintenance. Please try again shortly.` | Restart dev server; redeploy frontend |
-| `SITE_MAINTENANCE_RETRY_AFTER_SECONDS` | No — defaults to `900` | Frontend/release owner | L/D/P | Public/non-secret | `900` | Restart dev server; redeploy frontend |
+| `SITE_MAINTENANCE_MODE` | No — defaults to disabled | Frontend/release owner | L/D/P | Public/non-secret | `false` | Restart dev server; in production set in `/etc/quest-esports/quest.frontend.env` and recreate `frontend` |
+| `SITE_MAINTENANCE_MESSAGE` | No — has a built-in fallback | Frontend/release owner | L/D/P | Public/non-secret | `We’re carrying out scheduled maintenance. Please try again shortly.` | Restart dev server; in production set in `/etc/quest-esports/quest.frontend.env` and recreate `frontend` |
+| `SITE_MAINTENANCE_RETRY_AFTER_SECONDS` | No — defaults to `900` | Frontend/release owner | L/D/P | Public/non-secret | `900` | Restart dev server; in production set in `/etc/quest-esports/quest.frontend.env` and recreate `frontend` |
+| `CLOUDFLARE_WEB_ANALYTICS_TOKEN` | No — analytics off when unset | Frontend/release owner | P | Public/non-secret (shipped in every page) | `<32-character hex token from the Cloudflare Web Analytics snippet>` | Read at runtime; in production set in `/etc/quest-esports/quest.frontend.env` and recreate `frontend`. A malformed value disables analytics with a warning instead of failing |
 | `NEXT_PUBLIC_VALORANT_SL_REGISTER_URL` | No | Frontend/VALORANT owner | D/P | Public/non-secret | `<public VALORANT registration URL>` | Restart dev server; redeploy frontend |
 
 ## Mobile-admin

@@ -11,8 +11,11 @@ Each tournament remains independently operable when linked to an event.
 `tournament.service.js` and `registration.service.js` are the public surfaces;
 the code lives in siblings:
 
-- `tournament-shared.js` — status and mode constants, date parsing, slugs, and
-  the registration-count and asset selects.
+- `tournament-shared.js` — status and mode constants, date parsing, slugs
+  (including retiring a renamed slug to `TournamentSlugHistory` and refusing a
+  retired slug to another tournament), and the registration-count and asset
+  selects. `tournament-public.service.js` falls back to that history only after
+  a live slug misses, so old links resolve to the current tournament.
 - `tournament-mapping.js` — public and admin tournament mappers, Challonge embed
   URLs, public ordering.
 - `tournament-schedule.js` — parsing an uploaded or edited schedule sheet.

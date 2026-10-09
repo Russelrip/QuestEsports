@@ -21,7 +21,7 @@ specified, just needs building.
 | 3 | Durable Discord identity (`discord_identities`) | `20260824234500_add_discord_identity` |
 | 4 | Layered, versioned rulebooks | `20260825010000_add_rulebook_versioning` |
 | 6 | Public player profiles (`GET /api/players/:publicId`) | none |
-| 7 | Cached player rankings (`player_rankings`) | `20260825030000_add_player_rankings` |
+| 7 | Cached player rankings (`player_rankings`) and their sync scheduler | `20260825030000_add_player_rankings` |
 
 Every migration is **expand-only**: legacy columns are retained and still
 authoritative, and no read path depends on the new ones. The contract step —
@@ -48,19 +48,16 @@ cap slot, or does the cap count players only?**
 
 ## Small, ready to build
 
-### Ranking sync scheduler — **Open**
+### Ranking sync scheduler — **Live**
 
-`modules/players/ranking-sync.service.js` exists and is tested, but nothing
-calls it, so `player_rankings` stays empty and every profile reports
-`rankings: []`.
-
-Wiring it to `BackgroundJob` is small. The blocker is a number, not code: **how
-often does the SL leaderboard actually move?** The sync pages the whole board
-in one pass against a rate-limited upstream, so the interval has to match
-reality — too frequent hammers `valorant-platform-backend`, too rare serves
-day-old ranks under a `syncedAt` that admits it.
-
-Start hourly if unsure; the cache degrades safely either way.
+Shipped 25 August 2026 (`feat: schedule the player ranking sync`).
+`modules/players/ranking.jobs.js` enqueues `players.ranking-sync` on the
+`BackgroundJob` queue, deciding due-ness from `player_rankings.syncedAt` so a
+restart or a second instance does not trigger an extra sync. It is controlled by
+`PLAYER_RANKING_SYNC_ENABLED` (off by default) and `PLAYER_RANKING_SYNC_MINUTES`
+(default 15, matching the upstream leaderboard refresh) — see
+`docs/environment-reference.md`. If profiles still report `rankings: []`, check
+that the flag is enabled in that environment.
 
 ### Team profiles — **Open**
 
@@ -189,16 +186,7 @@ Ship `/rank` first and see whether anyone asks. Never per-rank roles.
 
 ## Deploying any of this
 
-Backend CD is approved by the **`Production` environment's required reviewer**:
-the job pauses before its first step and the owner approves it under
-`Actions -> the run -> Review deployments`. There is no approval secret to set;
-`BACKEND_MIGRATION_APPROVAL_SHA` was removed because it had to equal the exact
-deploying commit, so any push to `main` invalidated it, and an environment
-secret silently shadowed the repository one.
-
-Destructive or backward-incompatible migrations still require
-`BACKEND_DESTRUCTIVE_MIGRATION_APPROVAL_SHA` to equal the deploying commit SHA,
-set on the `Production` environment and cleared afterwards.
+Production CD: there is no GitHub required reviewer (the `production-compose` environment has only a branch policy, verified 2026-10-10), so a release with no pending migration deploys automatically once CI passes. A release with a pending Quest or VALORANT migration is refused by `ops/deploy/release.sh` unless the host's `/etc/quest-esports/release.env` sets `BACKUP_APPROVAL=BACKUP_QUEST_PRODUCTION` and `QUEST_MIGRATION_OWNER_APPROVAL_SHA` (or `VALORANT_MIGRATION_OWNER_APPROVAL_SHA`) to that exact release commit; it then takes and verifies a release-bound backup before migrating.
 
 When migrations are pending, CD runs `ops/backup-production.sh` first. Confirm
 the log line
