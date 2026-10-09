@@ -14,6 +14,15 @@ services:
     # implement the loopback-only publication; Docker 29 does not activate a
     # published port when every attached network is internal. The frontend is
     # not attached to database or quest-shared.
+    #
+    # Operator-set, secret-free frontend runtime values (the SITE_MAINTENANCE_*
+    # switches and CLOUDFLARE_WEB_ANALYTICS_TOKEN). Kept apart from
+    # quest.production.env so the frontend never receives backend secrets;
+    # optional so a host without the file starts normally with maintenance and
+    # analytics off.
+    env_file:
+      - path: /etc/quest-esports/quest.frontend.env
+        required: false
     environment:
       NEXT_TELEMETRY_DISABLED: "1"
       API_EGRESS_ALLOWED: "true"

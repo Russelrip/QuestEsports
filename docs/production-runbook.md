@@ -923,33 +923,43 @@ SITE_MAINTENANCE_RETRY_AFTER_SECONDS=900
 
 The message is limited to 240 characters. The retry window is an integer from 1 to 86400 seconds. Invalid values are rejected at startup instead of silently choosing an unsafe state. `COMMERCE_MAINTENANCE_ENABLED` is unrelated: it controls scheduled commerce cleanup jobs, not visitor maintenance mode.
 
-> **The frontend half is not wired into the Compose stack.**
-> `readSiteMaintenanceConfig` reads `SITE_MAINTENANCE_MODE` from `process.env`
-> in `frontend/app/layout.tsx`, but the `frontend` service in
-> `ops/docker/compose.production.yml` declares no such variable, so there is
-> nowhere for an operator to set it. Enabling the branded page requires adding
-> the three variables to that service first. Until then only the API half of
-> this procedure takes effect, and the site keeps serving normally while the API
-> refuses — which is a worse experience than either state on its own.
->
-> This was missed because the pre-cutover procedure set the frontend values in
-> Vercel, which no longer builds anything. Worth closing before the next
-> maintenance window rather than during one.
+The backend reads these from `/etc/quest-esports/quest.production.env`. The
+frontend reads its own copy from `/etc/quest-esports/quest.frontend.env`, which
+the `frontend` service in `ops/docker/compose.production.yml` loads as an
+optional `env_file`. The frontend file is separate so the frontend container
+never receives backend secrets. It holds only these three values and the
+optional `CLOUDFLARE_WEB_ANALYTICS_TOKEN` (see `docs/environment-reference.md`).
+A host without it starts normally with maintenance and analytics off. Both files must agree. Otherwise the site
+serves normally while the API refuses, or the reverse, which is worse than either
+state on its own.
+
+The frontend `env_file` entry ships with the release that contains it. Confirm
+the running release includes it (`quest_compose config frontend` lists
+`quest.frontend.env`) before relying on the frontend half.
+
+Create the frontend file once, owned by root and readable only by root (Compose
+reads it on the host):
+
+```bash
+sudo install -o root -g root -m 0600 /dev/null /etc/quest-esports/quest.frontend.env
+```
 
 ### Enable maintenance safely
 
 1. Announce the window. Confirm the latest scheduled backup succeeded; create a manual full backup first if the work can change data.
-2. Set `SITE_MAINTENANCE_MODE=true` and the two companion values in the backend runtime environment, without printing it:
+2. Set `SITE_MAINTENANCE_MODE=true` and the two companion values in both
+   runtime files, without printing them:
 
    ```bash
    sudoedit /etc/quest-esports/quest.production.env
+   sudoedit /etc/quest-esports/quest.frontend.env
    ```
 
-3. Recreate the backend so it reads them. This does not change the release; the
-   next deployment applies the same file either way:
+3. Recreate both services so they read them. This does not change the release;
+   the next deployment applies the same files either way:
 
    ```bash
-   quest_compose up -d --force-recreate backend
+   quest_compose up -d --force-recreate backend frontend
    quest_compose ps
    ```
 
@@ -963,14 +973,14 @@ The message is limited to 240 characters. The retry window is an integer from 1 
    curl --silent --show-error --dump-header - https://api.questesports.lk/api/tournaments
    ```
 
-   Expected: liveness `200` with `maintenance.enabled=true`; readiness and ordinary API requests `503` with `X-Maintenance-Mode: active` and `Retry-After`. The frontend still answers `200` until the gap above is closed.
+   Expected: the site `503` with the branded maintenance page; liveness `200` with `maintenance.enabled=true`; readiness and ordinary API requests `503` with `X-Maintenance-Mode: active` and `Retry-After`.
 
 CD uses liveness to confirm the container came back and recognizes the explicit maintenance header on readiness, so an intentional maintenance window does not trigger a false rollback.
 
 ### Disable maintenance safely
 
 1. Finish and verify the backend work while the window is still in force.
-2. Set `SITE_MAINTENANCE_MODE=false` in `/etc/quest-esports/quest.production.env`, recreate the backend the same way, and confirm readiness is `200`.
+2. Set `SITE_MAINTENANCE_MODE=false` in both `/etc/quest-esports/quest.production.env` and `/etc/quest-esports/quest.frontend.env`, recreate `backend frontend` the same way, and confirm the site and readiness both return `200`.
 3. Run the normal production smoke checks and watch `quest_compose logs -f backend`.
 
 ### An immediate shutdown

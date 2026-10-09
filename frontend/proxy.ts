@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 import { parseApiOrigin } from "./lib/api";
 import { readSiteMaintenanceConfig } from "./lib/maintenance";
+import { CLOUDFLARE_BEACON_REPORT_ORIGIN, readWebAnalyticsToken } from "./lib/web-analytics";
 
 const isProduction = process.env.NODE_ENV === "production";
 const allowInsecureLoopbackUrls = process.env.ALLOW_INSECURE_LOOPBACK_URLS === "true";
@@ -26,7 +27,11 @@ export function proxy(request: NextRequest) {
   const nonce = Buffer.from(randomUUID()).toString("base64");
   // CSP is consumed by browsers, even when this proxy runs inside Docker.
   const apiOrigin = parseApiOrigin(process.env.NEXT_PUBLIC_API_URL);
-  const connectSources = ["'self'", ...(apiOrigin ? [apiOrigin] : [])];
+  const connectSources = [
+    "'self'",
+    ...(apiOrigin ? [apiOrigin] : []),
+    ...(readWebAnalyticsToken() ? [CLOUDFLARE_BEACON_REPORT_ORIGIN] : []),
+  ];
   const imageSources = [
     "'self'",
     "data:",

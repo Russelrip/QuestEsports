@@ -4,6 +4,7 @@
 
 - Populate `/admin/games` with approved 4:3 category artwork and transparent game logos. The migration creates published artwork-free records for Valorant, PUBG Mobile, MLBB, and CODM.
 - Set organizer, country, location, category, hero, and an HTTPS Challonge tournament link in the tournament editor. Use 1600×1200 card artwork.
+- Changing a tournament's slug keeps its old URL working: the old slug is retired to tournament slug history and redirects to the new one. A retired slug cannot be given to a different tournament, because links shared for the old one would silently land somewhere unrelated; the tournament that retired it may take it back.
 - Add ordered sponsor logos after saving the tournament. Sponsor websites must use HTTPS.
 - Sponsors of a whole event go on the event dashboard's **Sponsors** tab (`/admin/events/{id}`). The public event page shows them first in the scrolling sponsor belt, followed by any sponsors set on its tournaments; a brand listed in both places appears once. Deleting an event also removes its sponsor logo files.
 - Use `/admin/teams` to review rosters, verify organization labels, and replace or remove team logos. Captains cannot self-assign labels; blank labels display as `Independent`.

@@ -99,7 +99,7 @@ const policySections = [
     paragraphs: [
       "Quest E-sports uses cookies or similar technologies that are necessary to keep you signed in, remember sessions, protect account security, and support basic site functionality.",
       "If you enable browser notifications, the site installs a service worker in your browser to deliver them. It is not installed otherwise, and you can remove it by clearing this site's data in your browser settings.",
-      "We may also use performance tools to understand traffic, reliability, and usage trends. We do not sell personal information and we do not run third-party behavioural advertising.",
+      "We may also use performance tools to understand traffic, reliability, and usage trends. When enabled, this is Cloudflare Web Analytics, which counts page views and measures page load performance without setting cookies or building a profile of you. It does not see your account, form contents, or payment details. We do not sell personal information and we do not run third-party behavioural advertising.",
     ],
   },
   {
@@ -187,7 +187,7 @@ export default function PrivacyPolicyContent() {
       <div className="grid gap-6">
         <Card className="p-6 sm:p-8">
           <p className="text-xs uppercase tracking-[0.28em] text-purple-200/80">Last Updated</p>
-          <h2 className="mt-3 text-3xl text-white">September 26, 2026</h2>
+          <h2 className="mt-3 text-3xl text-white">October 10, 2026</h2>
           <p className="mt-4 max-w-4xl text-sm leading-7 text-slate-300">
             This policy applies to the Quest E-sports website at <span className="text-white">questesports.lk</span> and related
             tournament, competitive ranking, and account services.
