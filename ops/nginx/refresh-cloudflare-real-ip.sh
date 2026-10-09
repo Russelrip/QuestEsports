@@ -2,10 +2,11 @@
 # Regenerate /etc/nginx/cloudflare-real-ip.conf from Cloudflare's published
 # ranges.
 #
-# The VALORANT vhost trusts these ranges to restore the real client address
-# from CF-Connecting-IP. The list is a snapshot: when Cloudflare publishes a
-# new range, requests arriving from it keep the edge address instead of the
-# client's, silently and without error. This refreshes the snapshot.
+# The Quest and VALORANT vhosts trust these ranges to restore the real client
+# address from CF-Connecting-IP. The list is a snapshot: when Cloudflare
+# publishes a new range, requests arriving from it keep the edge address
+# instead of the client's, silently and without error. This refreshes the
+# snapshot.
 #
 # Fail closed. A partial fetch, an empty list, or anything that is not a CIDR
 # leaves the existing file untouched, because trusting a truncated list is
