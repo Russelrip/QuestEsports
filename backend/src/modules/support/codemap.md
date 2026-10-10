@@ -64,3 +64,7 @@ audit row with the subject, owner, status and counts, never message bodies.
 `{ archived: boolean }` sets or clears `archivedAt`. The staff queue excludes
 archived conversations unless `?archived=true`; the player inbox ignores the
 flag, and a player reply un-archives the thread so staff see it again.
+
+Message bodies keep their line breaks (CRLF becomes LF); spaces within a line
+are collapsed and trimmed, and runs of blank lines are capped at one. Subjects
+are still single-line.

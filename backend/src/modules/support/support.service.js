@@ -126,7 +126,15 @@ const parseCursor = (cursor) => {
 };
 
 const normalizeSubject = (subject) => normalizeText(subject).replace(/\s+/g, " ");
-const normalizeBody = (body) => normalizeText(body).replace(/\s+/g, " ");
+// Line breaks are kept: replies and the topic templates are written in lines,
+// and both thread views render them. Spaces within a line are still tidied,
+// and runs of blank lines are capped at one.
+const normalizeBody = (body) => normalizeText(body)
+  .replace(/\r\n?/g, "\n")
+  .split("\n")
+  .map((line) => line.replace(/[^\S\n]+/g, " ").trim())
+  .join("\n")
+  .replace(/\n{3,}/g, "\n\n");
 
 const requireUserId = (value, label = "userId") => {
   const userId = normalizeText(value);
