@@ -129,6 +129,9 @@ const buildSeriesTournamentInclude = ({ includeDrafts = false } = {}) => ({
   ],
   include: {
     ...buildRegistrationCountInclude(),
+    // The event page labels its game filters from the category; without it
+    // the filter falls back to the raw game key ("mk11", "codm").
+    gameCategory: true,
     sponsors: { orderBy: [{ displayOrder: "asc" }, { createdAt: "asc" }] },
   },
 });
