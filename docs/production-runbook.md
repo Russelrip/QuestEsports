@@ -139,9 +139,17 @@ intact as a fallback; switching the nameservers back at Register.lk restores it.
 | `send` | TXT | `v=spf1 include:amazonses.com ~all` | DNS only (leftover, harmless) |
 | `_dmarc` | TXT | `v=DMARC1; p=none;` | DNS only |
 | `questesports.lk` | TXT | `google-site-verification=...` | DNS only (Search Console) |
+| `questesports.lk` | MX | `route1/2/3.mx.cloudflare.net` (50/96/34) | DNS only (Email Routing, managed by Cloudflare) |
+| `questesports.lk` | TXT | `v=spf1 include:_spf.mx.cloudflare.net ~all` | DNS only (Email Routing SPF) |
+| `cf2024-1._domainkey` | TXT | Cloudflare Email Routing DKIM key | DNS only |
 
-There is no apex MX: nothing receives mail at `@questesports.lk`. Email must
-stay DNS only; MX targets cannot be proxied.
+Cloudflare Email Routing (enabled 2026-10-10) receives mail for
+`@questesports.lk` and forwards `russel@`, `admin@` and `contact@` to the
+owner's Gmail; the catch-all is off, so other addresses are rejected. It only
+receives and forwards: outbound application mail still goes through Resend on
+the `mail.questesports.lk` subdomain, whose records are separate. Routing rules
+and destinations live in the Cloudflare dashboard under Email → Email Routing.
+Mail records must stay DNS only; MX targets cannot be proxied.
 
 Zone settings that the site depends on:
 

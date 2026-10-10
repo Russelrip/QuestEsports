@@ -14,8 +14,9 @@ to application email code.
 > than Vercel. Section 1.1 below is the 2026-08-22 snapshot. The current
 > records and Cloudflare settings are in
 > [`docs/production-runbook.md`](../../production-runbook.md#dns-and-cloudflare-edge).
-> The stray apex MX (`0 questesports.lk`) was dropped during the move. Cloudflare
-> Email Routing is now available, but not configured.
+> The stray apex MX (`0 questesports.lk`) was dropped during the move, and
+> Cloudflare Email Routing was enabled the same day: `russel@`, `admin@` and
+> `contact@` forward to the owner's Gmail (Option A, inbound only).
 
 ---
 
