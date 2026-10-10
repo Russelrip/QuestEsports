@@ -19,6 +19,12 @@ an optional `label` names the action, as the VALORANT registration's ownership
 dispute link does ("This is my account — open a dispute").
 It can seed editable public tournament context in account-scoped memory,
 without overwriting an existing draft or putting private data into URLs.
+A new conversation starts with topic cards from `supportTopics.ts` (tournament
+registration, match problems, teams, VALORANT, payments, account, reports,
+other). A topic fills the subject and a short fill-in template, but only while
+those fields are empty or still hold untouched topic text, so it never replaces
+what the player wrote. Topics are frontend-only; staff see them as the subject.
+
 The composer retains drafts on failed sends and in-site navigation, clears on
 success or explicit Clear draft, and warns before closing an active draft.
 
