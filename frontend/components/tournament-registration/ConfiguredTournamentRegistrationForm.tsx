@@ -116,6 +116,7 @@ export default function ConfiguredTournamentRegistrationForm({ tournament }: { t
   const { data: savedTeams } = useTeams(Boolean(user) && tournament.entryType === "team");
   const [form, setForm] = useState({
     fullName: "",
+    inGameName: "",
     phone: "",
     gameId: "",
     teamName: "",
@@ -190,6 +191,7 @@ export default function ConfiguredTournamentRegistrationForm({ tournament }: { t
       setForm((current) => ({
         ...current,
         fullName: current.fullName || `${user.firstName} ${user.lastName}`.trim(),
+        inGameName: current.inGameName || user.inGameName || "",
         phone: current.phone || user.phone || "",
         contactEmail: user.email,
       }));
@@ -593,6 +595,13 @@ export default function ConfiguredTournamentRegistrationForm({ tournament }: { t
         <fieldset className="grid gap-5 sm:grid-cols-2">
           <legend className="mb-4 text-xl text-white sm:col-span-2">Contact details</legend>
           <FormField label="Full name" required><Input required value={form.fullName} onChange={(event) => setForm((current) => ({ ...current, fullName: event.target.value }))} /></FormField>
+          {/* Solo entries are listed publicly under this, never the full name.
+              The first one also saves it to the player's profile. */}
+          {tournament.entryType === "solo" ? (
+            <FormField label="In-game name" required hint={user?.inGameName ? "From your profile. Shown on the participant list." : "Shown on the participant list instead of your full name, and saved to your profile."}>
+              <Input required minLength={2} maxLength={32} autoComplete="off" spellCheck={false} value={form.inGameName} onChange={(event) => setForm((current) => ({ ...current, inGameName: event.target.value }))} />
+            </FormField>
+          ) : null}
           <FormField label="Email"><Input disabled value={form.contactEmail} /></FormField>
           <FormField label="WhatsApp number" required><Input required value={form.phone} onChange={(event) => setForm((current) => ({ ...current, phone: event.target.value }))} /></FormField>
           <FormField label="Discord" hint={user?.discordId ? "From your connected account" : "Not connected"}><Input disabled value={user?.discordTag || (user?.discordId ? "Connected" : "Not connected")} /></FormField>

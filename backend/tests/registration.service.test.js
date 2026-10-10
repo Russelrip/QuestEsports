@@ -203,6 +203,65 @@ test("a retry is never asked for a logo, including one that has none", async () 
   }
 });
 
+// A solo entry is listed publicly under the player's in-game name, so a new
+// one must carry it, and the first one gives the profile its name.
+
+const ignTournament = { ...tournament, entryType: "solo", minRosterSize: 1, maxRosterSize: 1, maxSubstitutes: 0 };
+
+const ignHarness = ({ existingRegistration = null, profileUpdates = [] } = {}) => {
+  const harness = logoHarness({ existingRegistration });
+  const { prisma } = harness[prismaModulePath];
+  prisma.tournament = { findFirst: async () => ignTournament };
+  prisma.user = {
+    ...prisma.user,
+    // Has a photo, so a photo requirement, where present, is not what stops it.
+    findUnique: async () => ({ ...user, avatarImageName: "player.webp" }),
+    updateMany: async (args) => {
+      profileUpdates.push(args);
+      return { count: 1 };
+    },
+  };
+  return harness;
+};
+
+const attemptIgnRegistration = async (harness, extraBody = {}) => {
+  const { module: service, restore } = loadModuleWithMocks(servicePath, harness);
+  try {
+    await service.createConfiguredRegistration({ slug: ignTournament.slug, body: { ...body, ...extraBody }, user });
+    return null;
+  } catch (error) {
+    return error;
+  } finally {
+    restore();
+  }
+};
+
+test("a solo registration without an in-game name is refused", async () => {
+  const failure = await attemptIgnRegistration(ignHarness());
+
+  assert.equal(failure?.statusCode, 400);
+  assert.match(failure.message, /in-game name/i);
+  assert.ok(failure.details?.fieldErrors?.inGameName);
+});
+
+test("a solo registration's in-game name fills an empty profile name, and only an empty one", async () => {
+  const profileUpdates = [];
+  const failure = await attemptIgnRegistration(ignHarness({ profileUpdates }), { inGameName: "  Ace   Shot " });
+
+  assert.doesNotMatch(failure?.message || "", /in-game name/i);
+  assert.deepEqual(profileUpdates, [
+    { where: { id: user.id, inGameName: null }, data: { inGameName: "Ace Shot" } },
+  ]);
+});
+
+test("a solo retry is never asked for an in-game name", async () => {
+  const failure = await attemptIgnRegistration(ignHarness({
+    existingRegistration: { id: "registration-1", paymentStatus: "unpaid", entryType: "solo" },
+  }));
+
+  assert.doesNotMatch(failure?.message || "", /in-game name/i);
+});
+
 test("an owned registration is not selected by another user who shares its captain email", async () => {
   const ownedRegistration = {
     userId: "user-1",

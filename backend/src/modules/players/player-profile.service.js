@@ -79,6 +79,9 @@ const getPublicProfile = async (publicId) => {
       publicId: true,
       displayName: true,
       createdAt: true,
+      // The in-game name only. It is already public wherever the player's solo
+      // entries are listed; nothing else on the account is.
+      user: { select: { inGameName: true } },
       gameAccounts: {
         where: { status: "active" },
         select: {
@@ -160,6 +163,7 @@ const getPublicProfile = async (publicId) => {
   return {
     publicId: player.publicId,
     displayName: player.displayName,
+    inGameName: player.user?.inGameName || null,
     memberSince: player.createdAt,
     discordLinked: Boolean(player.discordIdentity),
     gameAccounts: player.gameAccounts.map(mapGameAccount),

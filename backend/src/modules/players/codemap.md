@@ -26,6 +26,10 @@ fetches them and strips them later is one careless refactor from leaking.
 `tests/player-profile.service.test.js` asserts on the `select` itself for
 exactly that reason.
 
+The projection joins to the player's `User` for `inGameName` and nothing else:
+that name is already public on solo participant lists, while the rest of the
+user row (email, phone, real name) is exactly what this page must not reach.
+
 Discord is reported as `discordLinked: true/false`. "Reachable on Discord" is
 the useful public fact; the snowflake is not, and it links a Quest player to an
 account outside Quest.

@@ -354,17 +354,27 @@ const mapTournamentWithPublicTeams = (
   registeredParticipants: (tournament.teamRegistrations || []).map((registration) => ({
     id: registration.id,
     entryType: registration.entryType || "team",
+    // A solo entry is listed by in-game name, never the player's real name:
+    // the profile's current one, else the name the entry was made under.
+    // Entries from before in-game names carry the real name there, so they
+    // keep showing it until the player sets an in-game name.
     displayName:
       (registration.entryType || "team") === "solo"
-        ? registration.captainName
+        ? registration.user?.inGameName || registration.teamName || registration.captainName
         : registration.teamName,
     logoUrl: getTeamLogoUrl(resolveEffectiveTeamLogoName(registration)),
     avatarUrl:
       (registration.entryType || "team") === "solo" && registration.user?.avatarImageName
         ? `/api/uploads/avatars/${registration.user.avatarImageName}`
         : null,
-    captainName: registration.captainName,
-    shortCode: buildShortCode(registration.teamName),
+    // Withheld for a solo entry: the player is listed by in-game name, and
+    // sending the real name alongside would defeat that.
+    captainName: (registration.entryType || "team") === "solo" ? null : registration.captainName,
+    shortCode: buildShortCode(
+      (registration.entryType || "team") === "solo"
+        ? registration.user?.inGameName || registration.teamName
+        : registration.teamName
+    ),
     memberCount: (registration.members || []).filter((member) => member.role !== "COACH").length,
   })),
   ...(participantPagination ? { participantPagination } : {}),

@@ -43,6 +43,8 @@ const {
   attachConnectedDiscordIdentities,
   normalizeRegistrationSubmission,
   assertTeamLogoAvailable,
+  assertSoloInGameName,
+  saveInGameNameIfMissing,
 } = require("./registration-validation");
 const {
   buildCheckout,
@@ -286,6 +288,7 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
     primaryGameId,
     members,
     coach,
+    inGameName,
   } = submission;
   // Before anything is persisted or any capacity is counted: a refusal for a
   // missing logo should cost nothing and should not depend on how far into the
@@ -297,6 +300,8 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
     uploaded: file,
     isRetry: Boolean(existing),
   });
+  assertSoloInGameName({ tournament, inGameName, isRetry: Boolean(existing) });
+  await saveInGameNameIfMissing({ user, inGameName });
   const persistedMembers = buildPersistedRegistrationMembers({ members, coach });
   // The roster's Discord requirement is not checked here any more. It used to
   // refuse the captain for a gap only the invitee could close — a captain

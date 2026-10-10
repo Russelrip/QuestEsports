@@ -21,6 +21,8 @@ const {
   isPasswordWithinBcryptLimit,
   getSignupFieldErrors,
   normalizeSafeRedirectPath,
+  normalizeInGameName,
+  getInGameNameError,
 } = require("../../lib/validation");
 
 const MOBILE_OAUTH_GRANT_MINUTES = 2;
@@ -34,6 +36,7 @@ const PUBLIC_USER_SELECT = {
   phone: true,
   discordTag: true,
   avatarImageName: true,
+  inGameName: true,
   role: true,
   isSuperAdmin: true,
   pendingEmail: true,
@@ -52,6 +55,7 @@ const mapUserForResponse = (user) => ({
   phone: user.phone,
   discordTag: user.discordTag,
   discordId: user.discordId || null,
+  inGameName: user.inGameName || null,
   avatarUrl: user.avatarImageName
     ? `/api/uploads/avatars/${user.avatarImageName}`
     : typeof user.avatarUrl === "string" && user.avatarUrl.startsWith("/api/uploads/avatars/")
@@ -537,6 +541,12 @@ const updateUserProfile = async ({ requestedUserId, currentUser, body }) => {
   const username = normalizeText(body.username);
   const usernameNormalized = normalizeUsername(username);
   const phone = normalizeText(body.phone) || null;
+  // Optional, and left alone when a client does not send it, so an older
+  // client saving the rest of the profile cannot clear it. An empty string
+  // clears it on purpose.
+  const inGameName = body.inGameName === undefined
+    ? undefined
+    : normalizeInGameName(body.inGameName) || null;
 
   if (
     !isNonEmptyString(firstName) ||
@@ -552,6 +562,8 @@ const updateUserProfile = async ({ requestedUserId, currentUser, body }) => {
     username,
   });
   if (phone && phone.length > 50) profileErrors.phone = "Phone must be 50 characters or fewer.";
+  const inGameNameError = inGameName ? getInGameNameError(inGameName) : null;
+  if (inGameNameError) profileErrors.inGameName = inGameNameError;
   if (Object.keys(profileErrors).length) {
     throw new HttpError(400, "Please correct the highlighted fields.", { fieldErrors: profileErrors });
   }
@@ -581,6 +593,7 @@ const updateUserProfile = async ({ requestedUserId, currentUser, body }) => {
       username,
       usernameNormalized,
       phone,
+      inGameName,
     },
     select: PUBLIC_USER_SELECT,
   });

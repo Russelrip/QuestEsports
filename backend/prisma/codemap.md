@@ -33,6 +33,9 @@ existing contact, match-room, notification, or OAuth tables.
   attachments (existing messages naturally read with `[]`), bounded positions
   and content types, private stored filenames, and RLS/revoked Data API
   privileges. Attachment bytes remain outside public upload serving.
+- `20261010160000_add_user_in_game_name` adds the nullable, public
+  `users.in_game_name` (catalog-only, no table rewrite). A solo entry is listed
+  under it instead of the player's real name; NULL means not set yet.
 - `20261010120000_add_support_conversation_archive` adds the nullable
   `support_conversations.archived_at` (catalog-only, no table rewrite). Archive
   is staff-side: the default queue hides archived rows, players still see them,

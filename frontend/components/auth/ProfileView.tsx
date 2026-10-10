@@ -49,6 +49,11 @@ const profileSchema = z.object({
   username: z.string().min(1, "Username is required."),
   email: z.string(),
   phone: z.string().optional(),
+  // Optional, but when given it must fit the same 2-32 limit the server applies.
+  inGameName: z.string().trim().refine(
+    (value) => value === "" || ([...value].length >= 2 && [...value].length <= 32),
+    "In-game name must be 2 to 32 characters.",
+  ),
 });
 
 const emailChangeSchema = z.object({
@@ -139,6 +144,7 @@ export default function ProfileView() {
       username: "",
       email: "",
       phone: "",
+      inGameName: "",
     },
   });
 
@@ -192,6 +198,7 @@ export default function ProfileView() {
         username: user.username || "",
         email: user.email || "",
         phone: user.phone || "",
+        inGameName: user.inGameName || "",
       });
     }
   }, [isLoading, profileForm, router, user]);
@@ -318,6 +325,7 @@ export default function ProfileView() {
           lastName: values.lastName,
           username: values.username,
           phone: values.phone,
+          inGameName: values.inGameName,
         },
       });
 
@@ -325,8 +333,11 @@ export default function ProfileView() {
         success?: boolean;
         message?: string;
         user?: typeof user;
+        details?: { fieldErrors?: Record<string, string> };
       }>(response, "Failed to update profile.");
       if (!response.ok || !data.success) {
+        const inGameNameError = data.details?.fieldErrors?.inGameName;
+        if (inGameNameError) profileForm.setError("inGameName", { message: inGameNameError });
         profileForm.setError("root", { message: data.message || "Failed to update profile." });
         return;
       }
@@ -399,7 +410,7 @@ export default function ProfileView() {
                 <div className="profile-identity-text min-w-0 max-w-full">
                   <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-purple-200/75">Player overview</p>
                   <h2 className="mt-2 break-words text-2xl leading-tight text-white [overflow-wrap:anywhere] sm:text-3xl">{user.firstName} {user.lastName}</h2>
-                  <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-400"><span>@{user.username}</span><span aria-hidden="true">•</span><span>{user.email}</span><Badge className={user.emailVerified ? "border-emerald-300/20 bg-emerald-400/10 text-emerald-200" : "border-amber-300/20 bg-amber-400/10 text-amber-200"}>{user.emailVerified ? "Verified" : "Verification needed"}</Badge></div>
+                  <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-400"><span>@{user.username}</span>{user.inGameName ? <><span aria-hidden="true">•</span><span>IGN <span className="font-semibold text-white">{user.inGameName}</span></span></> : null}<span aria-hidden="true">•</span><span>{user.email}</span><Badge className={user.emailVerified ? "border-emerald-300/20 bg-emerald-400/10 text-emerald-200" : "border-amber-300/20 bg-amber-400/10 text-amber-200"}>{user.emailVerified ? "Verified" : "Verification needed"}</Badge></div>
                 </div>
               </div>
               <div className="grid w-full min-w-0 grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap">
@@ -607,6 +618,9 @@ export default function ProfileView() {
                     <div className="grid gap-5 sm:grid-cols-2">
                       <FormField label="Phone" htmlFor="phone">
                         <Input id="phone" {...profileForm.register("phone")} />
+                      </FormField>
+                      <FormField label="In-game name" htmlFor="inGameName" error={profileForm.formState.errors.inGameName?.message} hint="Public. Your solo tournament entries are listed under this name instead of your real name.">
+                        <Input id="inGameName" maxLength={32} autoComplete="off" spellCheck={false} {...profileForm.register("inGameName")} />
                       </FormField>
                       <div className="rounded-xl border border-white/8 bg-white/[.02] p-4 sm:col-span-2">
                         <p className="text-[10px] uppercase tracking-[0.18em] text-cyan-200/70">Connected Discord</p>

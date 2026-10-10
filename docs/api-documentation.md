@@ -290,6 +290,7 @@ Updates:
 - `username`
 - `phone`
 - `discordTag`
+- `inGameName` — optional, 2–32 characters, public. Omitted leaves it unchanged; an empty string clears it.
 
 Access rules:
 
@@ -725,6 +726,7 @@ Primary fields:
 - `captainPhone`
 - `captainDiscord`
 - `captainRiotId`
+- `inGameName` — required for a new solo entry (2–32 characters). The public participant list shows it instead of the player's real name, and the first solo entry saves it to an empty profile `inGameName`
 - `contactEmail`
 - `members` JSON generated from the tournament's roster configuration
 - `additionalData` and member-level additional data generated from configured fields
