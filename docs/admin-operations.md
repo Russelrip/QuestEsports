@@ -756,6 +756,47 @@ Removals made before restoring existed (VALORANT migration `0017`) were not kept
 and cannot be restored from the page. The copy of a removed player is kept
 indefinitely, including when the player asked to be removed.
 
+## VALORANT Ownership Disputes
+
+Leaderboard registration is first come, first served, and a PUUID is not a
+secret: anyone can look one up from a Riot ID and register it under their own
+Discord. Nothing proves ownership at registration (see Riot Sign On and Discord
+connection checks in `docs/future-technical-improvements.md`), so the real owner
+can find their account already taken. Disputes are how that gets put right.
+
+**How a dispute arrives.** When registration says an account is already
+registered, the player sees **This is my account — open a dispute**. It opens a
+support conversation titled `Account ownership dispute: Name#Tag`, prefilled
+with the Riot ID, the PUUID they entered and their Discord, and asks for a
+screenshot of the account signed in to the Riot client. Search the support
+queue for `ownership dispute` to list them.
+
+**Deciding.**
+
+1. Find the current holder: Admin → Valorant → **Leaderboard Players** (search
+   the Riot ID) for the leaderboard entry and its Discord, and Admin → **Game
+   Accounts** for the Quest player holding it, if any.
+2. Ask the claimant for proof if the screenshot is missing: the account signed
+   in to the Riot client (or its Riot account page) showing the Riot ID. Someone
+   who only knows the PUUID cannot produce this.
+3. Ask the holder too when the claim is not clear-cut. A renamed account, an
+   old Discord or a second Quest account of the same person (seen in practice)
+   all look like a conflict and are not one.
+
+**Resolving.** Releasing is the only lever; nothing hands an account over.
+
+- Claimant proved it and the holder has a Quest account: **Unlink an account**
+  (above) with "Also remove their VALORANT leaderboard registration" ticked.
+- Claimant proved it and the entry has no Quest account behind it: **Remove** the
+  entry in Leaderboard Players (below), with the dispute as the reason.
+- Then tell the claimant to register again from their profile; the account is
+  free and goes through the normal checks.
+- Not proved: reply with what proof would settle it and resolve the
+  conversation. Nothing changes.
+
+Both levers are audited, and a leaderboard removal can be restored if a decision
+turns out wrong.
+
 ## Hiding Leaderboard Players
 
 To keep a player off the public board without taking their registration away,

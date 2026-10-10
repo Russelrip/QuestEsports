@@ -220,3 +220,73 @@ Review this candidate when all of the following are true:
 - Privacy, consent, unlinking, and historical-retention behavior are defined.
 - A Riot production application and RSO client can be requested and maintained
   by the product owner.
+
+## Discord-Connected Riot Account Check at Registration
+
+**Status:** Feasible but not scheduled — chosen as the next step after
+ownership disputes (2026-10-10)
+
+### Potential Value
+
+Leaderboard registration accepts any PUUID that is not already registered, and a
+PUUID can be looked up by anyone from a public Riot ID, so a player can register
+someone else's account under their own Discord and the real owner is refused.
+Discord lets users connect their Riot account to their Discord profile. Checking
+that connection at registration would refuse a PUUID the registrant's Discord is
+not connected to, which closes first-come claiming without waiting on Riot
+approval for Riot Sign On (entry above).
+
+### Current State
+
+Quest's Discord OAuth requests `identify email` (`backend/src/modules/auth/oauth.service.js`)
+and keeps no Discord access token after sign-in or linking; `OAuthAccount`
+stores only the provider user id and email. `registerValorantAccount`
+(`backend/src/modules/game-accounts/game-account.service.js`) requires a linked
+Discord, refuses PUUIDs held by another Quest player, then registers upstream
+and records `discord_corroborated`, which its own comment notes is not
+ownership proof. Disputes (`docs/admin-operations.md`, VALORANT Ownership
+Disputes) are the current remedy.
+
+### Prerequisites
+
+- Confirm what Discord's `GET /users/@me/connections` returns for a
+  `riotgames` connection: whether `id` is the PUUID or another Riot identifier,
+  and how current `name` stays after a Riot ID rename. The comparison design
+  depends on it and must not be guessed.
+- Decide the policy for registrants with no Riot connection on Discord or a
+  hidden one: refuse with instructions to connect it, or register at a weaker
+  state that staff review.
+- Decide whether the check is taken once at registration (token used and
+  discarded) or kept current, which would mean storing tokens.
+- Update the privacy policy and the Discord consent copy for the added scope.
+
+### Likely Safe Approach
+
+- Request the `connections` scope only on the link flow used before
+  registration, not on Discord login, so existing sign-ins are unaffected.
+- Read connections server-side during the OAuth callback and keep only the
+  derived Riot identifiers (or a fingerprint) bound to the Discord id; discard
+  the token, as RSO's entry recommends.
+- At registration, require the submitted PUUID to match a Riot connection on the
+  registrant's Discord; compare by stable identifier if Discord exposes the
+  PUUID, otherwise re-resolve the connected Riot ID server-side to a PUUID.
+- Record a distinct verification state (for example `discord_connection_verified`)
+  so it is never confused with `discord_corroborated` or a future
+  `riot_verified`.
+- Existing registrations stay as they are; disputes remain the remedy for them.
+
+### Risks and Compatibility Constraints
+
+- A Discord connection is user-asserted to Discord, which verifies it with Riot
+  when connected; it is stronger than a PUUID but weaker than RSO, and must be
+  labelled as such.
+- Players who hide connections or never connect Riot would be blocked unless the
+  fallback policy covers them.
+- Adding a scope changes the consent screen and can reduce link completion.
+- Connection names can be stale after a rename; a name-only comparison could
+  reject the rightful owner or accept a name that has moved.
+
+### Reconsider When
+
+- Ownership disputes become a recurring share of the support queue, or
+- a tournament needs stronger eligibility proof before RSO is available.
