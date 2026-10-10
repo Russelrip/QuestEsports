@@ -34,6 +34,7 @@ prove those facts.
 
 - Frontend: production Compose service at `https://questesports.lk`
 - Backend: production Compose service on the VPS at `https://api.questesports.lk`
+- DNS and edge: Cloudflare (Free plan) since 2026-10-10. The apex, `www` and `api` are proxied; see [DNS And Cloudflare Edge](#dns-and-cloudflare-edge)
 - Release controller: root-owned scripts under `/usr/local/sbin`, invoked by a restricted deployment account and narrow sudo rule
 - Application images: Quest frontend/backend/migrator and VALORANT backend, signed and digest-pinned from GHCR
 - Database: PostgreSQL 17.11 in Compose container `quest-postgres`
@@ -117,6 +118,64 @@ to sit under `/opt/quest-esports/releases/`. A container recreated through the
 bundle is outside the immutable release root" (seen 2026-10-10; the release
 rolled back cleanly and a re-run succeeded once the containers were recreated
 from the real release directory).
+
+## DNS And Cloudflare Edge
+
+`questesports.lk` is registered at Register.lk (LK Domain Registry reseller) and
+delegated to Cloudflare since 2026-10-10: nameservers
+`etienne.ns.cloudflare.com` and `magdalena.ns.cloudflare.com`. The old
+Register.lk/NameBirth zone (`sun`/`moon.namebirth.com`) is unused but left
+intact as a fallback; switching the nameservers back at Register.lk restores it.
+
+| Record | Type | Value | Cloudflare |
+| --- | --- | --- | --- |
+| `questesports.lk` | A | `161.97.162.27` | Proxied |
+| `www` | CNAME | `questesports.lk` | Proxied |
+| `api` | A | `161.97.162.27` | Proxied |
+| `mail` | CNAME | `questesports.lk` | DNS only (unused; kept for parity) |
+| `send.mail` | MX | `10 feedback-smtp.ap-northeast-1.amazonses.com` | DNS only (Resend bounces) |
+| `send.mail` | TXT | `v=spf1 include:amazonses.com ~all` | DNS only |
+| `resend._domainkey.mail` | TXT | Resend DKIM public key | DNS only |
+| `send` | TXT | `v=spf1 include:amazonses.com ~all` | DNS only (leftover, harmless) |
+| `_dmarc` | TXT | `v=DMARC1; p=none;` | DNS only |
+| `questesports.lk` | TXT | `google-site-verification=...` | DNS only (Search Console) |
+
+There is no apex MX: nothing receives mail at `@questesports.lk`. Email must
+stay DNS only; MX targets cannot be proxied.
+
+Zone settings that the site depends on:
+
+| Setting | Value | Why |
+| --- | --- | --- |
+| SSL/TLS encryption mode | Full (strict) | Origin serves valid Let's Encrypt certificates; Flexible would loop with the nginx HTTP redirect |
+| Always Use HTTPS | On | |
+| Minimum TLS version | 1.2 | |
+| Rocket Loader | Off | Rewrites scripts; the nonce + `'strict-dynamic'` CSP blocks them |
+| Email Address Obfuscation | Off | Injects a script the CSP blocks |
+| Bot Fight Mode | Off | Cannot exempt paths on Free; would challenge the PayHere notify callback and the mobile admin API |
+| Web Analytics automatic setup | Off | Edge-injected beacon is CSP-blocked; the site renders it with a nonce from `CLOUDFLARE_WEB_ANALYTICS_TOKEN` instead |
+| Bot Preference Sync | On | Prepends Content-Signal lines to `robots.txt`; the app's rules and `Sitemap:` remain |
+
+Origin dependencies of the proxy:
+
+- Both Quest HTTPS vhosts include `/etc/nginx/cloudflare-real-ip.conf`, so
+  `$remote_addr` is the visitor, not the Cloudflare edge. Without it every
+  visitor shares a few edge addresses in the nginx `quest_api` /
+  `quest_public_lists` zones, the backend rate limits (`TRUST_PROXY=1`) and the
+  audit log. `quest-cloudflare-real-ip.timer` refreshes the ranges weekly.
+- Certificate renewal (HTTP-01) works through the proxy: Cloudflare redirects
+  the challenge to HTTPS and the 443 vhosts serve `/.well-known/acme-challenge/`.
+- HTML and API responses are not cached at the edge (`cf-cache-status:
+  DYNAMIC`); `/_next/static` assets are.
+- Realtime SSE is disabled in production (`REALTIME_SSE_ENABLED`); if enabled,
+  its 25-second heartbeat keeps streams inside Cloudflare's 100-second idle
+  timeout.
+
+The origin still accepts direct connections on `161.97.162.27`; restricting
+443 to Cloudflare ranges is a separate, not-yet-applied hardening step.
+
+To take a record out of the proxy during an incident, set it to DNS only in the
+Cloudflare dashboard (DNS → Records); it takes effect within seconds.
 
 ## Required Ownership And Permissions
 
@@ -1419,4 +1478,4 @@ sustained process liveness, not proof of completed external work. Keep coordinat
 freeze and release rollback gates enabled.
 
 Nginx preserves ACME HTTP challenge handling and redirects other HTTP requests
-to HTTPS. Cloudflare must use Full (strict) with valid origin TLS before cutover.
+to HTTPS. Cloudflare uses Full (strict) with valid origin TLS (see [DNS And Cloudflare Edge](#dns-and-cloudflare-edge)).
