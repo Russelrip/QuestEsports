@@ -127,7 +127,7 @@ export default function ProfileView() {
   const [gameAccountsScrollRequest, setGameAccountsScrollRequest] = useState(0);
   const handledScrollRequestRef = useRef(0);
   const requestGameAccountsScroll = () => setGameAccountsScrollRequest((request) => request + 1);
-  const { data: teamsData, setData: setTeamsData, loading: teamsLoading, error: teamsError } = useTeams(Boolean(user));
+  const { data: teamsData, setData: setTeamsData, loading: teamsLoading, error: teamsError } = useTeams(isLoading || Boolean(user));
   const showToast = useToastStore((state) => state.showToast);
   const teams = teamsData ?? [];
 
@@ -196,8 +196,15 @@ export default function ProfileView() {
     }
   }, [isLoading, profileForm, router, user]);
 
+  // The account requests go out alongside the session check rather than after
+  // it: waiting for /api/me first put a whole API round trip in front of the
+  // dashboard on every fresh load. A visitor who turns out to be signed out is
+  // sent to login by the effect above, and their requests simply fail. Keyed on
+  // that one fact, not the user object, so saving a profile field or a photo
+  // does not reload the whole dashboard.
+  const signedOut = !isLoading && !user;
   useEffect(() => {
-    if (!user) return;
+    if (signedOut) return;
     setDashboardLoading(true);
     fetchAccountDashboard().then(setDashboard).catch((error) => setDashboardError(error instanceof Error ? error.message : "Could not load dashboard.")).finally(() => setDashboardLoading(false));
     vetoRequest<VetoRoom[]>("/api/v1/veto-rooms/mine").then(setVetoRooms).catch(() => setVetoRooms([]));
@@ -207,7 +214,7 @@ export default function ProfileView() {
       .then(setGameAccounts)
       .catch(() => setGameAccounts(null))
       .finally(() => setGameAccountsSettled(true));
-  }, [user]);
+  }, [signedOut]);
 
   useEffect(() => {
     // Waits for the header row to settle, because it appears above the panel
