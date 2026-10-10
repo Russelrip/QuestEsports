@@ -7,8 +7,8 @@ import { formatTournamentDateRange } from "@/lib/utils";
 import {
   fetchPublicTournaments,
   getFeaturedTournaments,
-  isCoveredByEventCard,
   getTournamentRegistrationPresentation,
+  isTournamentFinished,
   type Tournament,
 } from "@/lib/tournaments";
 
@@ -21,15 +21,18 @@ export default async function FeaturedTournaments() {
     console.error("Unable to load featured tournaments:", error);
   }
 
-  // A tournament inside a published event is advertised through its event card,
-  // so the home page does not offer the same game twice under two destinations.
-  const featuredTournaments = getFeaturedTournaments(tournaments.filter((tournament) => !isCoveredByEventCard(tournament)));
+  // Open and upcoming tournaments lead; see getFeaturedTournaments for the order.
+  const featuredTournaments = getFeaturedTournaments(tournaments);
+  // With nothing left to enter, the cards are past results, so say so.
+  const heading = featuredTournaments.some((tournament) => !isTournamentFinished(tournament))
+    ? "Featured Tournaments"
+    : "Recent Tournaments";
 
   return (
     <Section>
       <div className="mb-8 flex flex-col items-center gap-4 text-center sm:flex-row sm:items-end sm:justify-between sm:text-left">
         <div className="max-w-3xl">
-          <h2 className="text-3xl text-white sm:text-4xl">Featured Tournaments</h2>
+          <h2 className="text-3xl text-white sm:text-4xl">{heading}</h2>
         </div>
         <Link href="/tournaments" className={`${buttonClassName({ variant: "secondary" })} hidden sm:inline-flex`}>
           View all

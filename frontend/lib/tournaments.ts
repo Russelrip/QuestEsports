@@ -387,29 +387,48 @@ export const getRegistrationButtonLabel = (
 export const getTournamentRegistrationModeLabel = (tournament: Tournament) =>
   tournament.registrationMode === "slot_based" ? "Slot Based" : "Open Entry";
 
+export const isTournamentFinished = (tournament: Tournament) =>
+  tournament.status === "completed" || tournament.status === "cancelled";
+
+/**
+ * Tournaments a player can still enter or watch lead, so a finished pick never
+ * sits above an open one. Within that, standalone tournaments come before the
+ * children of a published event (which also have an event card), an admin's
+ * `isFeatured` pick comes first, and the soonest start wins; an announced-later
+ * date sorts last. Finished tournaments only fill the slots left over, newest
+ * first, and never ones an event card already covers. Cancelled ones never show.
+ */
 export const getFeaturedTournaments = (tournaments: Tournament[], limit = 3) => {
-  const featured = tournaments.filter((tournament) => tournament.isFeatured);
-  const source = featured.length > 0 ? featured : tournaments;
-  return [...source]
-    .sort((left, right) => {
-      const leftDate = new Date(left.startDate || left.createdAt || 0).getTime();
-      const rightDate = new Date(right.startDate || right.createdAt || 0).getTime();
-      return rightDate - leftDate;
-    })
-    .slice(0, limit);
+  const startTime = (tournament: Tournament) =>
+    tournament.startDate ? new Date(tournament.startDate).getTime() : Number.POSITIVE_INFINITY;
+  const byPick = (left: Tournament, right: Tournament) => Number(right.isFeatured) - Number(left.isFeatured);
+
+  const active = tournaments
+    .filter((tournament) => !isTournamentFinished(tournament))
+    .sort((left, right) =>
+      Number(isCoveredByEventCard(left)) - Number(isCoveredByEventCard(right)) ||
+      byPick(left, right) ||
+      startTime(left) - startTime(right));
+  const finished = tournaments
+    .filter((tournament) => tournament.status === "completed" && !isCoveredByEventCard(tournament))
+    .sort((left, right) =>
+      byPick(left, right) ||
+      new Date(right.startDate || right.createdAt || 0).getTime() - new Date(left.startDate || left.createdAt || 0).getTime());
+
+  return [...active, ...finished].slice(0, limit);
 };
 
 /**
- * Mirrors `getFeaturedTournaments`: an explicit `featured` pick wins, and with
+ * An explicit `featured` pick wins, and with
  * none set the newest published events stand in. Backend order (displayOrder,
  * then newest) is preserved rather than re-sorted here.
  */
 /**
  * True when a published event already advertises this tournament. Used only by
- * surfaces that show event cards alongside tournaments — the home page — so one
- * game is not offered twice there. `/tournaments` lists tournaments only and
- * shows every child. A draft parent publishes no card, so its child still
- * counts as uncovered and stays listed.
+ * surfaces that show event cards alongside tournaments — the home page — which
+ * ranks such a tournament after standalone ones and drops it once finished.
+ * `/tournaments` lists tournaments only and shows every child. A draft parent
+ * publishes no card, so its child still counts as uncovered.
  */
 export const isCoveredByEventCard = (tournament: Tournament) => Boolean(tournament.series?.isPublished);
 
