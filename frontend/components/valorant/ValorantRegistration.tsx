@@ -11,6 +11,7 @@ import { LoadingState } from "@/components/ui/loading-state";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { getProviderLinkUrl } from "@/lib/account-linking";
+import SupportHelpLink from "@/components/support/SupportHelpLink";
 import type {
   ValorantRegistrationPreview,
   ValorantRegistrationSubmitResult,
@@ -84,6 +85,24 @@ const getRankColor = (rank: string): string => {
   return "#9aa0a6";
 };
 
+const isConflict = (error: unknown) =>
+  error instanceof Error && "status" in error && (error as { status?: number }).status === 409;
+
+// A registration is first come, first served and a PUUID is not a secret, so
+// the account a player owns can already be held by someone else. The dispute
+// opens a support conversation with what staff need to find the entry; the
+// proof (a screenshot of the account signed in to the Riot client) comes from
+// the player.
+type RegistrationConflict = { puuid: string; holder: string | null };
+const disputeContext = (conflict: RegistrationConflict, discord: string | null) => [
+  "I'm disputing a VALORANT leaderboard registration: I believe this account is mine.",
+  `Account: ${conflict.holder || "unknown Riot ID"}`,
+  `PUUID: ${conflict.puuid}`,
+  `My Discord: ${discord || "not connected"}`,
+  "",
+  "I've attached a screenshot of this account signed in to the Riot client as proof.",
+].join("\n");
+
 const messageForRegistrationError = (error: unknown, fallback: string): string => {
   if (!(error instanceof Error)) return fallback;
   const status = "status" in error ? (error as { status?: number }).status : undefined;
@@ -121,6 +140,7 @@ export default function ValorantRegistration({
   const [preview, setPreview] = useState<ValorantRegistrationPreview | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [conflict, setConflict] = useState<RegistrationConflict | null>(null);
   const [success, setSuccess] = useState(false);
 
   const successHeadingRef = useRef<HTMLHeadingElement>(null);
@@ -138,6 +158,7 @@ export default function ValorantRegistration({
       setSuccess(false);
       setLoading(false);
       setError(null);
+    setConflict(null);
       return;
     }
 
@@ -161,13 +182,15 @@ export default function ValorantRegistration({
     const requestId = ++requestRef.current;
     setLoading(true);
     setError(null);
+    setConflict(null);
     try {
       const check = await checkPuuidRegistered(value);
       if (requestId !== requestRef.current || discordIdRef.current !== linkedDiscordId) return;
       if (check.exists && check.user) {
         setError(
-          `This PUUID is already registered to ${check.user.name}#${check.user.tag}. Each player can only register once. If this is your account and you need to update your Discord connection, please contact an administrator.`,
+          `This PUUID is already registered to ${check.user.name}#${check.user.tag}. Each player can only register once.`,
         );
+        setConflict({ puuid: value, holder: `${check.user.name}#${check.user.tag}` });
         return;
       }
       const playerPreview = await previewValorantRegistration(value);
@@ -178,6 +201,7 @@ export default function ValorantRegistration({
     } catch (previewError) {
       if (requestId !== requestRef.current || discordIdRef.current !== linkedDiscordId) return;
       setError(messageForRegistrationError(previewError, "Failed to fetch player data. Please try again later."));
+      if (isConflict(previewError)) setConflict({ puuid: value, holder: null });
     } finally {
       if (requestId === requestRef.current) setLoading(false);
     }
@@ -189,6 +213,7 @@ export default function ValorantRegistration({
     setPuuid("");
     setStep(1);
     setError(null);
+    setConflict(null);
   };
 
   if (authLoading) {
@@ -205,6 +230,7 @@ export default function ValorantRegistration({
     const requestId = ++requestRef.current;
     setLoading(true);
     setError(null);
+    setConflict(null);
     try {
       const result = await submitValorantRegistration({
         puuid: preview.puuid,
@@ -215,6 +241,7 @@ export default function ValorantRegistration({
     } catch (submitError) {
       if (requestId !== requestRef.current || discordIdRef.current !== linkedDiscordId) return;
       setError(messageForRegistrationError(submitError, "Registration failed. Please try again."));
+      if (isConflict(submitError)) setConflict({ puuid: preview.puuid, holder: `${preview.name}#${preview.tag}` });
     } finally {
       if (requestId === requestRef.current) setLoading(false);
     }
@@ -283,6 +310,7 @@ export default function ValorantRegistration({
             {error && (
               <div role="alert" aria-live="assertive" className="rounded-2xl border border-red-400/25 bg-red-500/10 px-4 py-3 text-sm leading-relaxed text-red-200">
                 {error}
+                {conflict ? <div className="mt-2"><SupportHelpLink label="This is my account — open a dispute" subject={`Account ownership dispute: ${conflict.holder || "VALORANT registration"}`} context={disputeContext(conflict, discordUser?.discord_username ?? null)} /></div> : null}
               </div>
             )}
 

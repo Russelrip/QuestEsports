@@ -14,7 +14,9 @@ or explicit new composer. Thread reads acknowledge the last rendered message
 only while the document is visible. Background refresh preserves readable
 content, and stale account/conversation responses cannot replace current data.
 
-`SupportHelpLink` opens the composer from registration/payment/account errors.
+`SupportHelpLink` opens the composer from registration/payment/account errors;
+an optional `label` names the action, as the VALORANT registration's ownership
+dispute link does ("This is my account — open a dispute").
 It can seed editable public tournament context in account-scoped memory,
 without overwriting an existing draft or putting private data into URLs.
 The composer retains drafts on failed sends and in-site navigation, clears on

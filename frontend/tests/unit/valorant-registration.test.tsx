@@ -7,18 +7,21 @@ const mocks = vi.hoisted(() => ({
   auth: { user: null as null | { discordId?: string | null; discordTag?: string | null }, isLoading: false },
   check: vi.fn(), preview: vi.fn(), submit: vi.fn(), linkUrl: vi.fn(() => "https://api.example.test/api/v1/auth/oauth/discord/link"),
   router: { push: vi.fn() },
+  drafts: new Map<string, { subject: string; body: string }>(),
 }));
 
 vi.mock("@/components/auth/AuthProvider", () => ({ useAuth: () => mocks.auth }));
 vi.mock("@/lib/account-linking", () => ({ getProviderLinkUrl: mocks.linkUrl }));
 vi.mock("@/lib/valorant-api", () => ({ checkPuuidRegistered: mocks.check, previewValorantRegistration: mocks.preview, submitValorantRegistration: mocks.submit }));
 vi.mock("next/navigation", () => ({ useRouter: () => mocks.router }));
+vi.mock("@/components/support/SupportProvider", () => ({ useSupportState: () => ({ signedIn: true, drafts: mocks.drafts }) }));
 
 const linkedUser = { discordId: "1134567890123456789", discordTag: "player#1234" };
 const player = { puuid: "p-1", name: "Sahan", tag: "QST", current_rank: "Diamond 2", elo: 1850, peak_rank: "Ascendant 1", peak_season: "EP 9", last_played: null };
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.drafts.clear();
   mocks.auth.user = null;
   mocks.auth.isLoading = false;
   mocks.check.mockResolvedValue({ exists: false, user: null });
@@ -134,5 +137,46 @@ describe("Valorant registration states", () => {
       "This Riot account is banned from the VALORANT leaderboard. If you think this is a mistake, please contact an administrator.",
     );
     expect(mocks.submit).not.toHaveBeenCalled();
+  });
+
+  it("offers an ownership dispute when the PUUID is already registered, prefilled for staff", async () => {
+    mocks.auth.user = linkedUser;
+    mocks.check.mockResolvedValue({ exists: true, user: { name: "chimojeb", tag: "tasty" } });
+    const user = userEvent.setup();
+    render(<ValorantRegistration />);
+    await user.type(await screen.findByLabelText("PUUID"), "p-taken");
+    await user.click(screen.getByRole("button", { name: "Verify Player" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("already registered to chimojeb#tasty");
+    const dispute = screen.getByRole("link", { name: "This is my account — open a dispute" });
+    expect(dispute).toHaveAttribute("href", "/support/new");
+    await user.click(dispute);
+    const draft = mocks.drafts.get("new");
+    expect(draft?.subject).toBe("Account ownership dispute: chimojeb#tasty");
+    expect(draft?.body).toContain("PUUID: p-taken");
+    expect(draft?.body).toContain("My Discord: player#1234");
+  });
+
+  it("offers a dispute on a 409 at submit and hides it after trying a different PUUID", async () => {
+    mocks.auth.user = linkedUser;
+    mocks.submit.mockRejectedValue(Object.assign(new Error("puuid already registered"), { status: 409 }));
+    const user = userEvent.setup();
+    render(<ValorantRegistration />);
+    await user.type(await screen.findByLabelText("PUUID"), "p-1");
+    await user.click(screen.getByRole("button", { name: "Verify Player" }));
+    await user.click(await screen.findByRole("button", { name: "Add to Leaderboard" }));
+    expect(await screen.findByRole("link", { name: "This is my account — open a dispute" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /different/i }));
+    expect(screen.queryByRole("link", { name: "This is my account — open a dispute" })).not.toBeInTheDocument();
+  });
+
+  it("does not offer a dispute for errors that are not ownership conflicts", async () => {
+    mocks.auth.user = linkedUser;
+    mocks.preview.mockRejectedValue(Object.assign(new Error("Player not found"), { status: 404 }));
+    const user = userEvent.setup();
+    render(<ValorantRegistration />);
+    await user.type(await screen.findByLabelText("PUUID"), "p-missing");
+    await user.click(screen.getByRole("button", { name: "Verify Player" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Player not found");
+    expect(screen.queryByRole("link", { name: /open a dispute/ })).not.toBeInTheDocument();
   });
 });
