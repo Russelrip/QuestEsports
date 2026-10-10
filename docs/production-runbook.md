@@ -726,7 +726,7 @@ COMPOSE_DEPLOY_ENABLED=true
 Protected `production-compose` environment secrets:
 
 ```text
-BACKEND_SSH_HOST=api.questesports.lk
+BACKEND_SSH_HOST=161.97.162.27
 BACKEND_SSH_PORT=22
 BACKEND_SSH_USER=deploy
 BACKEND_SSH_PRIVATE_KEY=<private key whose public key is authorized for deploy>
@@ -751,10 +751,17 @@ Generate the pinned host line only from a trusted VPS session:
 
 ```bash
 KEY="$(awk '{print $1 " " $2}' /etc/ssh/ssh_host_ed25519_key.pub)"
-printf 'api.questesports.lk %s\n' "$KEY"
+printf '161.97.162.27 %s\n' "$KEY"
 ```
 
 For port 22, the known-hosts name must exactly match `BACKEND_SSH_HOST` and must not include brackets or `:22`. For a nonstandard port, use `[hostname]:port`.
+
+`BACKEND_SSH_HOST` is the origin IP, not `api.questesports.lk`. Since the
+2026-10-10 move to Cloudflare that name is proxied and resolves to Cloudflare
+edge addresses, which carry HTTP(S) only, so SSH to it fails (the deploy step
+exits 255). There is deliberately no DNS-only `ssh.` record either: publishing
+one would reveal the origin address the proxy now hides. Operators' own SSH
+configs should likewise target the IP.
 
 Only one SSH direction remains in deployment: `BACKEND_SSH_PRIVATE_KEY` connects
 the GitHub Actions runner to the restricted VPS release user. The VPS does not
