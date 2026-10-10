@@ -33,6 +33,10 @@ existing contact, match-room, notification, or OAuth tables.
   attachments (existing messages naturally read with `[]`), bounded positions
   and content types, private stored filenames, and RLS/revoked Data API
   privileges. Attachment bytes remain outside public upload serving.
+- `20261010120000_add_support_conversation_archive` adds the nullable
+  `support_conversations.archived_at` (catalog-only, no table rewrite). Archive
+  is staff-side: the default queue hides archived rows, players still see them,
+  and a player reply clears it.
 - `20260819170000_add_oauth_link_safety` adds the explicit password-set marker
   and durable, one-time OAuth link nonce records. Existing users without OAuth
   accounts are conservatively marked from `created_at`; OAuth-linked users stay

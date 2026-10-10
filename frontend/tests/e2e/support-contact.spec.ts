@@ -120,8 +120,8 @@ test("authenticated user and staff complete the persisted support flow", async (
     expect(userNotifications.data.items.find((item) => item.type === "support_message" && item.actionUrl === `/support/${conversationId}`)?.actionUrl)
       .toBe(`/support/${conversationId}`);
 
-    await adminPage.getByRole("button", { name: "Resolve" }).click();
-    await expect(adminPage.locator("span").filter({ hasText: /^Resolved$/ }).last()).toBeVisible();
+    await adminPage.getByLabel("Conversation status").selectOption("RESOLVED");
+    await expect(adminPage.getByLabel("Conversation status")).toHaveValue("RESOLVED");
 
     const userUnreadBeforeOpen = await readJson(page.context().request, "/api/v1/support/conversations", frontendUrl!);
     expect(userUnreadBeforeOpen.data.items.find((item) => item.id === conversationId)?.unreadCount).toBe(1);

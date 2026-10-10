@@ -2,6 +2,7 @@ const { asyncHandler } = require("../../lib/async-handler");
 const { streamFileToResponse } = require("../../lib/stream-response");
 const { HttpError } = require("../../lib/http-error");
 const { normalizeText } = require("../../lib/validation");
+const { recordAudit, requestAuditContext } = require("../../lib/audit");
 const service = require("./support.service");
 
 const meta = () => ({ serverNow: new Date().toISOString() });
@@ -105,6 +106,7 @@ const listAdminConversations = asyncHandler(async (req, res) => {
     status: normalizeText(req.query.status).toUpperCase() || undefined,
     assigned: normalizeAssignedFilter(req.query.assigned, staffUserId),
     search: normalizeText(req.query.search) || undefined,
+    archived: normalizeText(req.query.archived).toLowerCase() === "true",
     limit: req.query.limit,
     cursor: req.query.cursor,
   });
@@ -160,6 +162,31 @@ const updateAdminStatus = asyncHandler(async (req, res) => respond(
   }),
 ));
 
+const archiveAdminConversation = asyncHandler(async (req, res) => respond(
+  res,
+  await service.setConversationArchived({
+    conversationId: req.params.conversationId,
+    actorUserId: req.user.id,
+    archived: req.body?.archived,
+  }),
+));
+
+// The audit row keeps what was removed but never the private message bodies.
+const deleteAdminConversation = asyncHandler(async (req, res) => {
+  const deleted = await service.deleteConversation({
+    conversationId: req.params.conversationId,
+    actorUserId: req.user.id,
+  });
+  await recordAudit({
+    ...requestAuditContext(req),
+    action: "support_conversation.deleted",
+    targetType: "SupportConversation",
+    targetId: deleted.id,
+    beforeData: deleted,
+  });
+  respond(res, { id: deleted.id });
+});
+
 const streamAttachment = asyncHandler(async (req, res) => {
   const attachment = await service.getAttachmentContent({
     attachmentId: req.params.attachmentId,
@@ -189,5 +216,7 @@ module.exports = {
   assignConversation,
   sendAdminMessage,
   updateAdminStatus,
+  archiveAdminConversation,
+  deleteAdminConversation,
   streamAttachment,
 };

@@ -29,6 +29,8 @@ router.patch("/admin/support/conversations/:conversationId/read", requireAuth, r
 router.patch("/admin/support/conversations/:conversationId/assignment", requireAuth, requireAdmin, controller.assignConversation);
 router.post("/admin/support/conversations/:conversationId/messages", requireAuth, requireAdmin, ...supportMultipart, controller.sendAdminMessage);
 router.patch("/admin/support/conversations/:conversationId/status", requireAuth, requireAdmin, controller.updateAdminStatus);
+router.patch("/admin/support/conversations/:conversationId/archive", requireAuth, requireAdmin, controller.archiveAdminConversation);
+router.delete("/admin/support/conversations/:conversationId", requireAuth, requireAdmin, controller.deleteAdminConversation);
 router.get("/support/attachments/:attachmentId/content", requireAuth, controller.streamAttachment);
 
 module.exports = router;

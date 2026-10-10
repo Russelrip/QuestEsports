@@ -121,11 +121,15 @@ records are loaded only in the existing admin detail workflow.
 
 - `AdminSupportManager.tsx` owns queue loading, responsive selection, filters,
   retry/empty states, and refresh-after-mutation behavior.
-- `support/AdminSupportThread.tsx` renders the staff conversation, reply,
-  resolve/reopen, and assignment controls; `SupportQueueFilters.tsx` keeps the
-  queue contract explicit and `SupportAssignmentControl.tsx` supports
-  self-assigning or unassigning a conversation. Staff replies use the shared
-  private screenshot attachment picker and renderer.
+- `support/AdminSupportThread.tsx` renders the staff conversation, the status
+  and owner dropdowns, reply with "Send & resolve" and Ctrl+Enter, and a "More
+  actions" menu with Archive/Move to inbox and Delete permanently (behind a
+  confirm dialog). `SupportQueueFilters.tsx` maps the Inbox/Mine/Unassigned/
+  Archived view tabs onto the queue filters, and `SupportAssignmentControl.tsx`
+  supports self-assigning or unassigning a conversation. Staff replies use the
+  shared private screenshot attachment picker and renderer.
+- The generic `components/ui/menu.tsx` (menu button) and
+  `components/ui/confirm-dialog.tsx` were introduced here and are reusable.
 
 ## Tickets
 

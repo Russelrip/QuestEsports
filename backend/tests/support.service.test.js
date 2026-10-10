@@ -121,6 +121,7 @@ test("exports all requested operations and rejects missing user IDs before scope
       "assignConversation",
       "changeConversationStatus",
       "createConversation",
+      "deleteConversation",
       "getAttachmentContent",
       "getConversation",
       "getUserUnreadSummary",
@@ -128,6 +129,7 @@ test("exports all requested operations and rejects missing user IDs before scope
       "listUserConversations",
       "markConversationRead",
       "sendMessage",
+      "setConversationArchived",
     ]);
     await assert.rejects(service.listUserConversations({ userId: "  " }), { statusCode: 400 });
     await assert.rejects(service.getConversation({ conversationId: "c1", userId: undefined }), { statusCode: 400 });
@@ -404,5 +406,119 @@ test("notification persistence and realtime failures are observable but do not r
     assert.equal(loggerErrors[0].metadata.messageId, "m5");
     assert.equal(notifications[0].publishRealtime, false);
     assert.equal(loggerWarnings[0].message, "Support realtime delivery failed");
+  } finally { restore(); }
+});
+
+test("deleteConversation removes the thread and its alerts, then cleans up screenshot files", async () => {
+  const order = [];
+  const uploadPath = path.join(__dirname, "../src/middleware/upload.js");
+  const actualUpload = require(uploadPath);
+  const removedFiles = [];
+  const prisma = {
+    supportConversation: {
+      findFirst: async ({ where }) => { order.push(["find", where]); return conversation({
+        messages: [
+          { id: "m1", attachments: [{ storedFilename: "a1.png" }] },
+          { id: "m2", attachments: [] },
+        ],
+      }); },
+      delete: async ({ where }) => { order.push(["delete", where.id]); },
+    },
+    notification: {
+      deleteMany: async ({ where }) => { order.push(["alerts", where.eventKey.in]); },
+    },
+  };
+  const { module: service, restore } = loadModuleWithMocksAndUpload(prisma, {
+    ...actualUpload,
+    removeUploadFiles: async (files) => { order.push(["files"]); removedFiles.push(...files); },
+  });
+  try {
+    const result = await service.deleteConversation({ conversationId: "c1", actorUserId: "staff-1" });
+    assert.deepEqual(order.map(([step]) => step), ["find", "alerts", "delete", "files"]);
+    assert.deepEqual(order[0][1], { id: "c1" });
+    assert.deepEqual(order[1][1], ["support-message:m1", "support-message:m2"]);
+    assert.deepEqual(removedFiles.map((file) => file.filename), ["a1.png"]);
+    assert.deepEqual(result, { id: "c1", ownerUserId: "u1", subject: "Cannot connect", status: "OPEN", messageCount: 2, attachmentCount: 1 });
+  } finally { restore(); }
+});
+
+test("deleteConversation reports a missing conversation and survives file cleanup failures", async () => {
+  const uploadPath = path.join(__dirname, "../src/middleware/upload.js");
+  const actualUpload = require(uploadPath);
+  const missing = loadModuleWithMocksAndUpload({ supportConversation: { findFirst: async () => null } }, actualUpload);
+  try {
+    await assert.rejects(missing.module.deleteConversation({ conversationId: "nope", actorUserId: "staff-1" }), { statusCode: 404 });
+    await assert.rejects(missing.module.deleteConversation({ conversationId: "c1", actorUserId: "" }), { statusCode: 400 });
+  } finally { missing.restore(); }
+
+  const warnings = [];
+  const failing = loadModuleWithMocksAndUpload({
+    supportConversation: {
+      findFirst: async () => conversation({ messages: [{ id: "m1", attachments: [{ storedFilename: "a1.png" }] }] }),
+      delete: async () => undefined,
+    },
+    notification: { deleteMany: async () => undefined },
+  }, { ...actualUpload, removeUploadFiles: async () => { throw new Error("disk"); } }, warnings);
+  try {
+    const result = await failing.module.deleteConversation({ conversationId: "c1", actorUserId: "staff-1" });
+    assert.equal(result.attachmentCount, 1);
+    assert.equal(warnings.length, 1);
+  } finally { failing.restore(); }
+});
+
+function loadModuleWithMocksAndUpload(prisma, upload, warnings = []) {
+  const completePrisma = { $transaction: async (work) => work(completePrisma), ...prisma };
+  return loadModuleWithMocks(servicePath, {
+    [prismaPath]: { prisma: completePrisma },
+    [path.join(__dirname, "../src/middleware/upload.js")]: upload,
+    [notificationPath]: { createNotification: async () => ({}) },
+    [realtimePath]: { publishRealtimeEvent: () => undefined },
+    [loggerPath]: { logger: { error: () => undefined, warn: (message) => warnings.push(message) } },
+  });
+}
+
+test("the staff queue hides archived threads unless the archive view is requested", async () => {
+  const wheres = [];
+  const { module: service, restore } = loadService({ prisma: { supportConversation: { findMany: async ({ where }) => { wheres.push(where); return []; } } } });
+  try {
+    await service.listStaffConversations({ staffUserId: "staff-1" });
+    await service.listStaffConversations({ staffUserId: "staff-1", archived: true });
+    assert.equal(wheres[0].archivedAt, null);
+    assert.deepEqual(wheres[1].archivedAt, { not: null });
+  } finally { restore(); }
+});
+
+test("setConversationArchived stamps and clears archivedAt and validates input", async () => {
+  const updates = [];
+  const { module: service, restore } = loadService({ prisma: { supportConversation: {
+    findFirst: async () => conversation(),
+    update: async ({ data }) => { updates.push(data); return conversation(data); },
+  } } });
+  try {
+    const archived = await service.setConversationArchived({ conversationId: "c1", actorUserId: "staff-1", archived: true });
+    assert.ok(updates[0].archivedAt instanceof Date);
+    assert.ok(archived.archivedAt instanceof Date);
+    const restored = await service.setConversationArchived({ conversationId: "c1", actorUserId: "staff-1", archived: false });
+    assert.equal(updates[1].archivedAt, null);
+    assert.equal(restored.archivedAt, null);
+    await assert.rejects(service.setConversationArchived({ conversationId: "c1", actorUserId: "staff-1", archived: "yes" }), { statusCode: 400 });
+  } finally { restore(); }
+});
+
+test("a player reply brings an archived thread back, a staff reply does not", async () => {
+  const updates = [];
+  const prisma = { supportConversation: {
+    findFirst: async () => conversation({ archivedAt: new Date() }),
+    update: async ({ data }) => { updates.push(data); return conversation(data); },
+  }, supportMessage: {
+    count: async () => 0,
+    create: async ({ data }) => ({ id: "m9", conversationId: "c1", senderUserId: data.senderUserId, body: data.body, createdAt: new Date(), attachments: [] }),
+  } };
+  const { module: service, restore } = loadService({ prisma });
+  try {
+    await service.sendMessage({ conversationId: "c1", senderUserId: "u1", body: "Still broken" });
+    await service.sendMessage({ conversationId: "c1", senderUserId: "staff-1", body: "Looking", isStaff: true });
+    assert.equal(updates[0].archivedAt, null);
+    assert.equal("archivedAt" in updates[1], false);
   } finally { restore(); }
 });
