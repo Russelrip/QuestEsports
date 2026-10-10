@@ -522,3 +522,20 @@ test("a player reply brings an archived thread back, a staff reply does not", as
     assert.equal("archivedAt" in updates[1], false);
   } finally { restore(); }
 });
+
+test("message bodies keep line breaks but tidy spaces and blank lines", async () => {
+  const created = [];
+  const prisma = { supportConversation: {
+    findFirst: async () => conversation(),
+    update: async ({ data }) => conversation(data),
+  }, supportMessage: {
+    count: async () => 0,
+    create: async ({ data }) => { created.push(data.body); return { id: "m1", conversationId: "c1", senderUserId: data.senderUserId, body: data.body, createdAt: new Date(), attachments: [] }; },
+  } };
+  const { module: service, restore } = loadService({ prisma });
+  try {
+    await service.sendMessage({ conversationId: "c1", senderUserId: "u1", body: "  Tournament:   Ascension \r\nTeam name:\tQuest\r\n\r\n\r\n\r\nWhat happened:  it  broke  " });
+    assert.equal(created[0], "Tournament: Ascension\nTeam name: Quest\n\nWhat happened: it broke");
+    await assert.rejects(service.sendMessage({ conversationId: "c1", senderUserId: "u1", body: " \n\n \r\n " }), { statusCode: 400 });
+  } finally { restore(); }
+});
