@@ -9,6 +9,14 @@ to application email code.
 
 **Audited:** 2026-08-22 against this repository and live public DNS.
 
+> **Status update (2026-10-10):** DNS for `questesports.lk` moved to Cloudflare
+> (Option A's DNS migration), and the site is now served from the VPS rather
+> than Vercel. Section 1.1 below is the 2026-08-22 snapshot. The current
+> records and Cloudflare settings are in
+> [`docs/production-runbook.md`](../../production-runbook.md#dns-and-cloudflare-edge).
+> The stray apex MX (`0 questesports.lk`) was dropped during the move. Cloudflare
+> Email Routing is now available, but not configured.
+
 ---
 
 ## 1. Verified Current State
