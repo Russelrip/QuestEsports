@@ -27,7 +27,8 @@ the code lives in siblings:
 - `registration-shared.js` — the serializable-transaction retry and the helpers
   both registration paths use.
 - `registration-validation.js` — configured fields, game identities, coaches,
-  connected Discord handles, and the team logo requirement.
+  connected Discord handles, the team logo requirement, and the solo
+  profile-photo requirement (both skipped for a payment retry).
 - `registration-create.service.js` — `createConfiguredRegistration`.
 - `registration-payment.service.js` — checkout, slot holds, resuming and
   cancelling an unpaid registration.

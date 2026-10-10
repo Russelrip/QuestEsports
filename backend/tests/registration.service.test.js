@@ -203,6 +203,54 @@ test("a retry is never asked for a logo, including one that has none", async () 
   }
 });
 
+// A solo entry is shown on the participant list by the player's profile photo,
+// the way a team is shown by its logo, so it needs one at the door too.
+
+const soloTournament = { ...tournament, entryType: "solo", minRosterSize: 1, maxRosterSize: 1, maxSubstitutes: 0 };
+
+const soloHarness = ({ avatarImageName = null, existingRegistration = null } = {}) => {
+  const harness = logoHarness({ existingRegistration });
+  const { prisma } = harness[prismaModulePath];
+  prisma.tournament = { findFirst: async () => soloTournament };
+  prisma.user = { ...prisma.user, findUnique: async () => ({ ...user, avatarImageName }) };
+  return harness;
+};
+
+const attemptSoloRegistration = async (harness) => {
+  const { module: service, restore } = loadModuleWithMocks(servicePath, harness);
+  try {
+    await service.createConfiguredRegistration({ slug: soloTournament.slug, body, user });
+    return null;
+  } catch (error) {
+    return error;
+  } finally {
+    restore();
+  }
+};
+
+test("a solo registration without a profile photo is refused", async () => {
+  const failure = await attemptSoloRegistration(soloHarness());
+
+  assert.equal(failure?.statusCode, 400);
+  assert.match(failure.message, /profile photo is required/i);
+  assert.equal(failure.details?.code, "profile_photo_required");
+});
+
+test("a solo player with a profile photo gets past the photo check", async () => {
+  const failure = await attemptSoloRegistration(soloHarness({ avatarImageName: "player.webp" }));
+
+  // Whatever the thin harness does next, it was not stopped for the photo.
+  assert.doesNotMatch(failure?.message || "", /profile photo is required/i);
+});
+
+test("a solo retry is never asked for a photo", async () => {
+  const failure = await attemptSoloRegistration(soloHarness({
+    existingRegistration: { id: "registration-1", paymentStatus: "unpaid", entryType: "solo" },
+  }));
+
+  assert.doesNotMatch(failure?.message || "", /profile photo is required/i);
+});
+
 test("an owned registration is not selected by another user who shares its captain email", async () => {
   const ownedRegistration = {
     userId: "user-1",
