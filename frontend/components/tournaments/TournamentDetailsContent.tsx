@@ -110,7 +110,6 @@ export default function TournamentDetailsContent({ tournament, paymentCancelled 
         ) : null}
 
         <section className="relative h-52 overflow-hidden border border-white/10 bg-black sm:h-auto sm:aspect-[16/5]">
-          <h1 className="sr-only">{tournament.title}</h1>
           <TournamentBannerImage
             bannerUrl={tournament.heroUrl || tournament.bannerUrl}
             title={tournament.title}
@@ -118,6 +117,10 @@ export default function TournamentDetailsContent({ tournament, paymentCancelled 
             className="absolute inset-0 h-full w-full object-cover"
           />
         </section>
+
+        {/* On a phone the title leads, ahead of the tabs; on desktop the
+            overview card carries the visible title instead. */}
+        <h1 className="break-words text-3xl leading-tight text-white [overflow-wrap:anywhere] lg:sr-only">{tournament.title}</h1>
 
         {tournament.isCompleted ? <CompletedTournamentShowcase tournament={tournament} /> : null}
 
@@ -138,11 +141,16 @@ export default function TournamentDetailsContent({ tournament, paymentCancelled 
         </nav>
 
         {safeActiveTab === "overview" ? (
+          // The sidebar comes first in the source so a phone shows registration,
+          // prize, fee, and dates before the description and sponsors; on
+          // desktop it is placed back in the right-hand column.
           <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
-            <div className="min-w-0 space-y-5">
+            <TournamentOverviewSidebar tournament={tournament} />
+
+            <div className="min-w-0 space-y-5 lg:col-start-1 lg:row-start-1">
               <Card className="p-5 sm:p-7">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-purple-200">Tournament overview</p>
-                <h2 className="mt-3 break-words text-3xl leading-tight text-white [overflow-wrap:anywhere] sm:text-4xl">{tournament.title}</h2>
+                <h2 className="mt-3 hidden break-words text-4xl leading-tight text-white [overflow-wrap:anywhere] lg:block">{tournament.title}</h2>
                 <p className="mt-5 whitespace-pre-line break-words text-sm leading-7 text-slate-300 [overflow-wrap:anywhere] sm:text-base sm:leading-8">
                   {tournament.fullDescription || tournament.shortDescription || "Tournament details will be announced soon."}
                 </p>
@@ -152,8 +160,6 @@ export default function TournamentDetailsContent({ tournament, paymentCancelled 
               {tournament.eventMedia?.length ? <TournamentMediaPanel media={tournament.eventMedia} tournamentTitle={tournament.title} /> : null}
               {tournament.eventAlbums?.length ? <TournamentAlbumsPanel tournament={tournament} /> : null}
             </div>
-
-            <TournamentOverviewSidebar tournament={tournament} />
           </div>
         ) : null}
 
@@ -294,19 +300,13 @@ function TournamentOverviewSidebar({ tournament }: { tournament: Tournament }) {
   ];
 
   return (
-    <aside className="border border-white/10 bg-[#11131d] lg:sticky lg:top-24">
+    <aside className="flex flex-col border border-white/10 bg-[#11131d] lg:sticky lg:top-24 lg:col-start-2 lg:row-start-1">
       <div className="border-b border-white/10 bg-[#0d0c13] px-5 py-4">
         <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-purple-200">Tournament information</p>
       </div>
-      <dl className="p-2">
-        {rows.map((row, index) => (
-          <div key={row.label} className={`grid grid-cols-[118px_minmax(0,1fr)] gap-3 px-3 py-2.5 text-[11px] ${index % 2 === 0 ? "bg-[#181b28]" : "bg-[#131621]"}`}>
-            <dt className="uppercase tracking-[0.08em] text-slate-500">{row.label}</dt>
-            <dd className="min-w-0 break-words font-semibold text-slate-200">{row.value}</dd>
-          </div>
-        ))}
-      </dl>
-      <div className="border-t border-white/10 p-4">
+      {/* Registration sits under the heading on a phone, where the full list
+          below would push it off the first screen, and at the foot on desktop. */}
+      <div className="border-b border-white/10 p-4 lg:order-last lg:border-b-0 lg:border-t">
         {tournament.isCompleted ? (
           <div className="border border-amber-300/20 bg-amber-300/8 px-4 py-3 text-center">
             <p className="text-xs font-bold uppercase tracking-[0.16em] text-amber-200">Tournament Completed</p>
@@ -321,6 +321,14 @@ function TournamentOverviewSidebar({ tournament }: { tournament: Tournament }) {
           </>
         )}
       </div>
+      <dl className="p-2">
+        {rows.map((row, index) => (
+          <div key={row.label} className={`grid grid-cols-[118px_minmax(0,1fr)] gap-3 px-3 py-2.5 text-[11px] ${index % 2 === 0 ? "bg-[#181b28]" : "bg-[#131621]"}`}>
+            <dt className="uppercase tracking-[0.08em] text-slate-500">{row.label}</dt>
+            <dd className="min-w-0 break-words font-semibold text-slate-200">{row.value}</dd>
+          </div>
+        ))}
+      </dl>
     </aside>
   );
 }
