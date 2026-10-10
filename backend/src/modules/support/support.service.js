@@ -194,6 +194,7 @@ const mapConversation = async (conversation, userId, db = prisma) => {
     createdAt: conversation.createdAt,
     updatedAt: conversation.updatedAt,
     resolvedAt: conversation.resolvedAt || null,
+    archivedAt: conversation.archivedAt || null,
     owner: normalizeUser(conversation.owner),
     assignedStaff: normalizeUser(conversation.assignedStaff),
     messages: Array.isArray(conversation.messages) ? conversation.messages.map(normalizeMessage) : [],
@@ -214,6 +215,7 @@ const mapSummary = async (conversation, userId, db = prisma) => {
     createdAt: conversation.createdAt,
     updatedAt: conversation.updatedAt,
     resolvedAt: conversation.resolvedAt || null,
+    archivedAt: conversation.archivedAt || null,
     owner: normalizeUser(conversation.owner),
     assignedStaff: normalizeUser(conversation.assignedStaff),
     lastMessage,
@@ -411,7 +413,8 @@ const sendMessage = async ({ conversationId, senderUserId, body, screenshots, is
       });
       const updated = await tx.supportConversation.update({
         where: { id: conversationId },
-        data: { status, resolvedAt: null },
+        // A player writing back is something staff must see, so it leaves the archive.
+        data: { status, resolvedAt: null, ...(isStaff ? {} : { archivedAt: null }) },
       });
       return { conversation: { ...conversation, ...updated, status }, message };
     });
@@ -555,7 +558,7 @@ const assignConversation = async ({ conversationId, assignedStaffUserId = null, 
   });
 };
 
-const listStaffConversations = async ({ status, assigned, search, limit, cursor, staffUserId } = {}) => {
+const listStaffConversations = async ({ status, assigned, search, archived = false, limit, cursor, staffUserId } = {}) => {
   staffUserId = requireUserId(staffUserId, "staffUserId");
   const take = parseLimit(limit);
   const cursorDate = parseCursor(cursor);
@@ -571,6 +574,7 @@ const listStaffConversations = async ({ status, assigned, search, limit, cursor,
     const rows = await tx.supportConversation.findMany({
       where: {
         ...assignmentWhere,
+        archivedAt: archived ? { not: null } : null,
         ...(normalizedStatus ? { status: normalizedStatus } : {}),
         ...(cursorDate ? { updatedAt: { lt: cursorDate } } : {}),
         ...(normalizedSearch ? {
@@ -594,6 +598,67 @@ const listStaffConversations = async ({ status, assigned, search, limit, cursor,
   });
 };
 
+const setConversationArchived = async ({ conversationId, actorUserId, archived }) => {
+  actorUserId = requireUserId(actorUserId, "actorUserId");
+  if (typeof archived !== "boolean") throw new HttpError(400, "archived must be true or false.");
+  return transaction(async (tx) => {
+    const conversation = await findConversation(tx, { conversationId, isStaff: true, include: undefined });
+    if (!conversation) throw new HttpError(404, "Support conversation not found.");
+    const updated = await tx.supportConversation.update({
+      where: { id: conversationId },
+      data: { archivedAt: archived ? conversation.archivedAt || new Date() : null },
+      include: conversationInclude,
+    });
+    return mapConversation(updated, actorUserId, tx);
+  });
+};
+
+// Messages, attachment rows and read cursors go with the conversation through
+// the schema's cascades. The alerts that deep-link into it are removed in the
+// same transaction so nobody is left holding a link to a missing thread. The
+// screenshot files are removed after the commit: a file left behind is
+// unreachable without its row, while a row without its file would be a
+// broken thread.
+const deleteConversation = async ({ conversationId, actorUserId }) => {
+  actorUserId = requireUserId(actorUserId, "actorUserId");
+  const deleted = await transaction(async (tx) => {
+    const conversation = await findConversation(tx, {
+      conversationId,
+      isStaff: true,
+      include: { messages: { select: { id: true, attachments: { select: { storedFilename: true } } } } },
+    });
+    if (!conversation) throw new HttpError(404, "Support conversation not found.");
+    const messageIds = conversation.messages.map((message) => message.id);
+    if (messageIds.length) {
+      await tx.notification.deleteMany({
+        where: { type: "support_message", eventKey: { in: messageIds.map((id) => `support-message:${id}`) } },
+      });
+    }
+    await tx.supportConversation.delete({ where: { id: conversationId } });
+    return {
+      conversation,
+      storedFilenames: conversation.messages.flatMap((message) => message.attachments.map((attachment) => attachment.storedFilename)),
+    };
+  });
+
+  const { conversation, storedFilenames } = deleted;
+  await removeUploadFiles(storedFilenames.map((filename) => ({ filename, directory: supportScreenshotDirectory })))
+    .catch((error) => logger.warn("Support attachment cleanup failed after conversation delete", {
+      conversationId,
+      fileCount: storedFilenames.length,
+      error,
+    }));
+
+  return {
+    id: conversation.id,
+    ownerUserId: conversation.ownerUserId,
+    subject: conversation.subject,
+    status: conversation.status,
+    messageCount: conversation.messages.length,
+    attachmentCount: storedFilenames.length,
+  };
+};
+
 module.exports = {
   getUserUnreadSummary,
   listUserConversations,
@@ -605,4 +670,6 @@ module.exports = {
   assignConversation,
   listStaffConversations,
   getAttachmentContent,
+  setConversationArchived,
+  deleteConversation,
 };

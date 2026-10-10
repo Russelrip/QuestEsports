@@ -177,6 +177,10 @@ const matchRoomsSupportPaths = {
       authenticated: true,
       parameters: idParameter("conversationId"),
     }),
+    delete: createOperation("Support", "Permanently delete a support conversation, its messages and screenshots as staff", {
+      authenticated: true,
+      parameters: idParameter("conversationId"),
+    }),
   },
   "/api/v1/admin/support/conversations/{conversationId}/read": {
     patch: {
@@ -202,6 +206,12 @@ const matchRoomsSupportPaths = {
   },
   "/api/v1/admin/support/conversations/{conversationId}/status": {
     patch: createOperation("Support", "Change a support conversation status as staff", {
+      authenticated: true,
+      parameters: idParameter("conversationId"),
+    }),
+  },
+  "/api/v1/admin/support/conversations/{conversationId}/archive": {
+    patch: createOperation("Support", "Archive or unarchive a support conversation as staff", {
       authenticated: true,
       parameters: idParameter("conversationId"),
     }),

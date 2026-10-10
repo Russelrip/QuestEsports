@@ -4,7 +4,7 @@ export type SupportStatus = "OPEN" | "PENDING_USER" | "PENDING_STAFF" | "RESOLVE
 export type SupportUser = { id: string; username: string | null; firstName: string | null; lastName: string | null; avatarUrl: string | null };
 export type SupportAttachment = { id: string; position: number; contentType: "image/jpeg" | "image/png" | "image/webp"; byteSize: number; contentUrl: string };
 export type SupportMessage = { id: string; conversationId: string; senderUserId: string | null; body: string; createdAt: string; sender: SupportUser | null; attachments?: SupportAttachment[] };
-export type SupportConversationSummary = { id: string; ownerUserId: string; subject: string; status: SupportStatus; assignedStaffUserId: string | null; createdAt: string; updatedAt: string; resolvedAt: string | null; owner: SupportUser | null; assignedStaff: SupportUser | null; lastMessage: SupportMessage | null; preview: string | null; unreadCount: number };
+export type SupportConversationSummary = { id: string; ownerUserId: string; subject: string; status: SupportStatus; assignedStaffUserId: string | null; createdAt: string; updatedAt: string; resolvedAt: string | null; archivedAt?: string | null; owner: SupportUser | null; assignedStaff: SupportUser | null; lastMessage: SupportMessage | null; preview: string | null; unreadCount: number };
 export type SupportConversation = Omit<SupportConversationSummary, "lastMessage" | "preview"> & { messages: SupportMessage[] };
 export type SupportMeta = { serverNow: string };
 export type SupportEnvelope<T> = { success: true; data: T; meta: SupportMeta; message?: string };
@@ -36,13 +36,14 @@ export const markSupportConversationRead = (id: string, throughMessageId?: strin
 export const resolveSupportConversation = (id: string) => request<SupportConversation>(`/api/v1/support/conversations/${id}/resolve`, { method: "POST", json: {} });
 export const reopenSupportConversation = (id: string) => request<SupportConversation>(`/api/v1/support/conversations/${id}/reopen`, { method: "POST", json: {} });
 
-export type SupportQueueFilters = { status?: SupportStatus; assigned?: "all" | "unassigned" | "mine"; search?: string };
+export type SupportQueueFilters = { status?: SupportStatus; assigned?: "all" | "unassigned" | "mine"; search?: string; archived?: boolean };
 
 const buildAdminQuery = (filters: SupportQueueFilters = {}) => {
   const query = new URLSearchParams();
   if (filters.status) query.set("status", filters.status);
   if (filters.assigned && filters.assigned !== "all") query.set("assigned", filters.assigned);
   if (filters.search?.trim()) query.set("search", filters.search.trim());
+  if (filters.archived) query.set("archived", "true");
   const value = query.toString();
   return value ? `?${value}` : "";
 };
@@ -60,3 +61,7 @@ export const sendAdminSupportMessage = (id: string, body: string, screenshots: F
   );
 export const updateAdminSupportStatus = (id: string, status: SupportStatus) =>
   request<SupportConversation>(`/api/v1/admin/support/conversations/${id}/status`, { method: "PATCH", json: { status } });
+export const archiveAdminSupportConversation = (id: string, archived: boolean) =>
+  request<SupportConversation>(`/api/v1/admin/support/conversations/${id}/archive`, { method: "PATCH", json: { archived } });
+export const deleteAdminSupportConversation = (id: string) =>
+  request<{ id: string }>(`/api/v1/admin/support/conversations/${id}`, { method: "DELETE" });

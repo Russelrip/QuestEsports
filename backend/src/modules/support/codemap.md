@@ -51,3 +51,16 @@ is introduced by this UX change.
 
 Support alerts use generic reply notices and retain their user/admin deep
 links; private message bodies are not copied into new notification/push payloads.
+
+`DELETE /admin/support/conversations/:conversationId` is admin-only and
+permanent. One transaction removes the conversation (messages, attachment rows
+and read cursors follow through the schema's cascades) and the
+`support-message:*` notifications that deep-link into it; the screenshot files
+are removed after the commit, and a cleanup failure is logged rather than
+failing the request. The controller writes a `support_conversation.deleted`
+audit row with the subject, owner, status and counts, never message bodies.
+
+`PATCH /admin/support/conversations/:conversationId/archive` with
+`{ archived: boolean }` sets or clears `archivedAt`. The staff queue excludes
+archived conversations unless `?archived=true`; the player inbox ignores the
+flag, and a player reply un-archives the thread so staff see it again.

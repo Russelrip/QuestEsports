@@ -8,7 +8,9 @@ const servicePath = path.join(__dirname, "../src/modules/support/support.service
 const routesPath = path.join(__dirname, "../src/modules/support/support.routes.js");
 const authPath = path.join(__dirname, "../src/modules/auth/auth.middleware.js");
 
-const callController = async (method, req, service = {}) => {
+const auditPath = path.join(__dirname, "../src/lib/audit.js");
+
+const callController = async (method, req, service = {}, audits = []) => {
   const calls = [];
   const result = { id: "result-1" };
   const mockedService = new Proxy(service, {
@@ -23,6 +25,10 @@ const callController = async (method, req, service = {}) => {
   const { module: controller, restore } = loadModuleWithMocks(controllerPath, {
     [servicePath]: mockedService,
     [path.join(__dirname, "../src/lib/async-handler.js")]: { asyncHandler: (handler) => handler },
+    [auditPath]: {
+      recordAudit: async (entry) => { audits.push(entry); },
+      requestAuditContext: (req) => ({ actorUserId: req.user?.id || null }),
+    },
   });
   const response = {};
   response.status = (status) => {
@@ -125,6 +131,7 @@ test("admin queue normalizes filters and uses the authenticated staff cursor", a
     status: "OPEN",
     assigned: "admin-1",
     search: "login issue",
+    archived: false,
     limit: undefined,
     cursor: undefined,
   }]);
@@ -207,11 +214,13 @@ test("support routes require authentication and admin authorization for the queu
       ["PATCH", "/admin/support/conversations/:conversationId/assignment"],
       ["POST", "/admin/support/conversations/:conversationId/messages"],
       ["PATCH", "/admin/support/conversations/:conversationId/status"],
+      ["PATCH", "/admin/support/conversations/:conversationId/archive"],
+      ["DELETE", "/admin/support/conversations/:conversationId"],
     ]) {
       assert.ok(routes.some((route) => route.method === expected[0] && route.path === expected[1]), `missing route ${expected.join(" ")}`);
     }
     const adminRoutes = routes.filter((route) => route.path.startsWith("/admin/support/"));
-    assert.equal(adminRoutes.length, 6);
+    assert.equal(adminRoutes.length, 8);
     for (const route of adminRoutes) {
       assert.ok(route.handlers.includes(requireAuth));
       assert.ok(route.handlers.includes(requireAdmin));
@@ -235,7 +244,7 @@ test("actual admin middleware rejects non-admin requests for every admin route",
   try {
     const adminRoutes = router.stack
       .filter((layer) => layer.route && layer.route.path.startsWith("/admin/support/"));
-    assert.equal(adminRoutes.length, 6);
+    assert.equal(adminRoutes.length, 8);
     for (const layer of adminRoutes) {
       const handlers = layer.route.stack.map((entry) => entry.handle);
       assert.equal(handlers[0], actualAuth.requireAuth);
@@ -256,4 +265,32 @@ test("actual admin middleware rejects non-admin requests for every admin route",
   } finally {
     restore();
   }
+});
+
+test("admin delete passes the authenticated staff ID and audits without message bodies", async () => {
+  const audits = [];
+  const deleted = { id: "conversation-1", ownerUserId: "player-1", subject: "Help", status: "OPEN", messageCount: 2, attachmentCount: 1 };
+  const req = { user: { id: "staff-1" }, params: { conversationId: "conversation-1" }, body: { actorUserId: "attacker" } };
+  const inputs = [];
+  const { response } = await callController("deleteAdminConversation", req, {
+    deleteConversation: async (input) => { inputs.push(input); return deleted; },
+  }, audits);
+  assert.deepEqual(inputs, [{ conversationId: "conversation-1", actorUserId: "staff-1" }]);
+  assert.equal(response.statusCode, 200);
+  assert.deepEqual(response.body.data, { id: "conversation-1" });
+  assert.equal(audits.length, 1);
+  assert.equal(audits[0].action, "support_conversation.deleted");
+  assert.equal(audits[0].targetId, "conversation-1");
+  assert.equal(audits[0].actorUserId, "staff-1");
+  assert.deepEqual(audits[0].beforeData, deleted);
+});
+
+test("admin archive passes the staff ID and the requested state, and the queue reads the archive flag", async () => {
+  const req = { user: { id: "staff-1" }, params: { conversationId: "conversation-1" }, body: { archived: true }, query: { archived: "true" } };
+  const archived = await callController("archiveAdminConversation", req);
+  assert.deepEqual(archived.calls[0], ["setConversationArchived", { conversationId: "conversation-1", actorUserId: "staff-1", archived: true }]);
+  const listed = await callController("listAdminConversations", req);
+  assert.equal(listed.calls[0][1].archived, true);
+  const inbox = await callController("listAdminConversations", { ...req, query: {} });
+  assert.equal(inbox.calls[0][1].archived, false);
 });
