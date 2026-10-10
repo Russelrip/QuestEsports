@@ -141,6 +141,25 @@ test("public event lookup loads each child tournament's sponsors for the hero be
   }
 });
 
+test("public event lookup loads each child tournament's game category for the filter labels", async () => {
+  let lookupArgs;
+  const prisma = {
+    eventSeries: {
+      findFirst: async (args) => {
+        lookupArgs = args;
+        return seriesRecord();
+      },
+    },
+  };
+  const { module: service, restore } = buildMocks(prisma);
+  try {
+    await service.getPublicEventBySlug("quest-ascension");
+    assert.equal(lookupArgs.include.tournaments.include.gameCategory, true);
+  } finally {
+    restore();
+  }
+});
+
 test("public event response carries the event's own sponsors in display order", async () => {
   let lookupArgs;
   const prisma = {
