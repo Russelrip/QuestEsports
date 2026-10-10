@@ -712,6 +712,7 @@ Requirements:
 - Verified email
 - Tournament must be open
 - Tournament must not be full
+- Team entries need a logo (uploaded, or from the reused saved team); solo entries need a profile photo on the account (`400`, `details.code: "profile_photo_required"`). A retry of an existing unpaid registration is exempt from both
 
 Content type:
 

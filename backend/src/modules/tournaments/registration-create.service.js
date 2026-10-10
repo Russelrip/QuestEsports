@@ -43,6 +43,7 @@ const {
   attachConnectedDiscordIdentities,
   normalizeRegistrationSubmission,
   assertTeamLogoAvailable,
+  assertSoloPhotoAvailable,
   assertSoloInGameName,
   saveInGameNameIfMissing,
 } = require("./registration-validation");
@@ -301,6 +302,8 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
     isRetry: Boolean(existing),
   });
   assertSoloInGameName({ tournament, inGameName, isRetry: Boolean(existing) });
+  await assertSoloPhotoAvailable({ tournament, user, isRetry: Boolean(existing) });
+  // Only once the entry has passed every check at the door.
   await saveInGameNameIfMissing({ user, inGameName });
   const persistedMembers = buildPersistedRegistrationMembers({ members, coach });
   // The roster's Discord requirement is not checked here any more. It used to

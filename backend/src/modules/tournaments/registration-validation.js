@@ -360,6 +360,27 @@ const assertTeamLogoAvailable = async ({ tournament, user, teamName, uploaded, i
   );
 };
 
+// A solo entry is shown on the public participant list by the player's profile
+// photo, the way a team entry is shown by its logo, so it needs one too. The
+// registration form uploads it to the profile first, so by the time the entry
+// arrives here the photo is on the account. A retry is exempt for the same
+// reason as above: the rule belongs at the door.
+const assertSoloPhotoAvailable = async ({ tournament, user, isRetry }) => {
+  if (tournament.entryType !== "solo" || isRetry) return;
+
+  const account = await prisma.user.findUnique({
+    where: { id: user.id },
+    select: { avatarImageName: true },
+  });
+  if (account?.avatarImageName) return;
+
+  throw new HttpError(
+    400,
+    "A profile photo is required for solo tournaments. Add one, then register.",
+    { code: "profile_photo_required" }
+  );
+};
+
 module.exports = {
   validateConfiguredFields,
   validateGameIdentities,
@@ -367,6 +388,7 @@ module.exports = {
   attachConnectedDiscordIdentities,
   normalizeRegistrationSubmission,
   assertTeamLogoAvailable,
+  assertSoloPhotoAvailable,
   assertSoloInGameName,
   saveInGameNameIfMissing,
 };

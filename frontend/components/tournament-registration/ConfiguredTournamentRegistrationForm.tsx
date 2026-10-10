@@ -15,7 +15,7 @@ import { Select } from "@/components/ui/select";
 import { useTeams } from "@/hooks/api/useTeams";
 import { findGameAccount, gameAccountRiotId, getMyGameAccounts } from "@/lib/game-accounts";
 import RosterReadinessPanel from "@/components/tournament-registration/RosterReadinessPanel";
-import { apiFetch } from "@/lib/auth";
+import { apiFetch, apiFetchJson, getApiErrorMessage, type AuthUser } from "@/lib/auth";
 import { ApiRequestError, readApiResponse } from "@/lib/api";
 import { PayHereCheckout, submitPayHereCheckout } from "@/lib/payments";
 import { markTournamentRegistered } from "@/lib/registered-tournaments";
@@ -112,7 +112,7 @@ const emptyMember = (): MemberDraft => ({ name: "", email: "", gameId: "", role:
 
 export default function ConfiguredTournamentRegistrationForm({ tournament }: { tournament: Tournament }) {
   const router = useRouter();
-  const { user, isLoading } = useAuth();
+  const { user, isLoading, refreshUser } = useAuth();
   const { data: savedTeams } = useTeams(Boolean(user) && tournament.entryType === "team");
   const [form, setForm] = useState({
     fullName: "",
@@ -134,6 +134,7 @@ export default function ConfiguredTournamentRegistrationForm({ tournament }: { t
   const [coach, setCoach] = useState<CoachDraft>(() => ({ ...emptyCoachDraft }));
   const [coachSelected, setCoachSelected] = useState(false);
   const [teamLogo, setTeamLogo] = useState<File | null>(null);
+  const [profilePhoto, setProfilePhoto] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [error, setError] = useState("");
@@ -153,6 +154,10 @@ export default function ConfiguredTournamentRegistrationForm({ tournament }: { t
   const savedTeamLogoUrl =
     (savedTeams ?? []).find((team) => team.id === selectedSavedTeamId)?.logoUrl ?? null;
   const logoRequired = tournament.entryType === "team" && !savedTeamLogoUrl;
+  // A solo player is shown on the participant list by their profile photo, the
+  // way a team is shown by its logo, so the backend requires one. An upload here
+  // becomes their profile photo before the entry is sent.
+  const photoRequired = tournament.entryType === "solo" && !user?.avatarUrl;
 
   const entryFields = useMemo(() => (tournament.registrationFields || []).filter((field) => field.scope === "entry"), [tournament.registrationFields]);
   const memberFields = useMemo(() => (tournament.registrationFields || []).filter((field) => field.scope === "member"), [tournament.registrationFields]);
@@ -328,6 +333,15 @@ export default function ConfiguredTournamentRegistrationForm({ tournament }: { t
     if (teamLogo) body.append("teamLogo", teamLogo);
 
     try {
+      if (tournament.entryType === "solo" && profilePhoto) {
+        const photoBody = new FormData();
+        photoBody.append("avatar", profilePhoto);
+        const { response: photoResponse, data: photoData } = await apiFetchJson<{ success?: boolean; message?: string; user?: AuthUser }>("/api/me/avatar", { method: "POST", body: photoBody });
+        const photoError = getApiErrorMessage(photoResponse, photoData, "Your profile photo could not be uploaded.");
+        if (photoError || !photoData.user) throw new Error(photoError || "Your profile photo could not be uploaded.");
+        refreshUser(photoData.user);
+        setProfilePhoto(null);
+      }
       const response = await apiFetch(`/api/tournaments/${tournament.slug}/registrations`, {
         method: "POST",
         body,
@@ -594,6 +608,24 @@ export default function ConfiguredTournamentRegistrationForm({ tournament }: { t
 
         <fieldset className="grid gap-5 sm:grid-cols-2">
           <legend className="mb-4 text-xl text-white sm:col-span-2">Contact details</legend>
+          {tournament.entryType === "solo" ? (
+            <FormField
+              label="Profile photo"
+              required={photoRequired}
+              hint={
+                photoRequired
+                  ? "Shown beside your name on the participant list. PNG, JPG, or WebP. It also becomes your profile photo."
+                  : "Your profile photo will be used. Upload only to replace it."
+              }
+            >
+              <Input
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                required={photoRequired && !profilePhoto}
+                onChange={(event) => setProfilePhoto(event.target.files?.[0] || null)}
+              />
+            </FormField>
+          ) : null}
           <FormField label="Full name" required><Input required value={form.fullName} onChange={(event) => setForm((current) => ({ ...current, fullName: event.target.value }))} /></FormField>
           {/* Solo entries are listed publicly under this, never the full name.
               The first one also saves it to the player's profile. */}
