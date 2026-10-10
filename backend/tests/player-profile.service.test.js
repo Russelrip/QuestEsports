@@ -102,6 +102,20 @@ test("profile exposes competitive identity and nothing else", async () => {
 
 // A snowflake links a Quest player to an account outside Quest. "Reachable on
 // Discord" is the useful public fact; the ID is not.
+// The profile joins to the user for the in-game name and nothing else: the
+// user row holds the email, phone and real name the projection must not reach.
+test("the user join selects the in-game name only", async () => {
+  const capture = {};
+  const { module: service, restore } = load({ ...basePlayer(), user: { inGameName: "AceShot" } }, capture);
+  try {
+    const profile = await service.getPublicProfile("QPID-000006");
+    assert.equal(profile.inGameName, "AceShot");
+    assert.deepEqual(Object.keys(capture.args.select.user.select), ["inGameName"]);
+  } finally {
+    restore();
+  }
+});
+
 test("Discord is reported as presence, never as an ID", async () => {
   const capture = {};
   const { module: service, restore } = load(basePlayer(), capture);

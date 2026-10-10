@@ -28,7 +28,9 @@ the code lives in siblings:
   both registration paths use.
 - `registration-validation.js` — configured fields, game identities, coaches,
   connected Discord handles, the team logo requirement, and the solo
-  profile-photo requirement (both skipped for a payment retry).
+  profile-photo and in-game name requirements (all skipped for a payment
+  retry). A solo entry is stored and listed under the in-game name; the
+  public participant projection never sends a solo player's real name.
 - `registration-create.service.js` — `createConfiguredRegistration`.
 - `registration-payment.service.js` — checkout, slot holds, resuming and
   cancelling an unpaid registration.

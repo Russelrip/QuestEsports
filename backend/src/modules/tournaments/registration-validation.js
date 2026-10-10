@@ -1,6 +1,12 @@
 const { prisma } = require("../../lib/prisma");
 const { HttpError } = require("../../lib/http-error");
-const { isValidEmail, normalizeEmail, normalizeText } = require("../../lib/validation");
+const {
+  getInGameNameError,
+  isValidEmail,
+  normalizeEmail,
+  normalizeInGameName,
+  normalizeText,
+} = require("../../lib/validation");
 const { normalizeCoachSubmission, parseCoachInput } = require("./coach.validation");
 const { getLinkedDiscordForUsers, requireLinkedDiscord } = require("../auth/discord-link.service");
 const { assertNoLocalCoachPlayerRoleConflict } = require("./role-conflict.service");
@@ -152,8 +158,14 @@ const attachConnectedDiscordIdentities = async ({ user, submission }) => {
 const normalizeRegistrationSubmission = ({ tournament, body, user }) => {
   const fullName = normalizeText(body.fullName || body.captainName) ||
     [user.firstName, user.lastName].filter(Boolean).join(" ").trim();
+  // A solo entry is listed under the player's in-game name, never their real
+  // name. Falls back to the full name only for a retry from a client that does
+  // not send one; a new solo entry must carry it (assertSoloInGameName).
+  const inGameName = tournament.entryType === "solo"
+    ? normalizeInGameName(body.inGameName) || null
+    : null;
   const displayName = tournament.entryType === "solo"
-    ? fullName
+    ? inGameName || fullName
     : normalizeText(body.teamName);
   const phone = normalizeText(body.phone || body.captainPhone || user.phone);
   // Deliberately not read from the body. Roster Discord handles come from
@@ -287,7 +299,31 @@ const normalizeRegistrationSubmission = ({ tournament, body, user }) => {
     primaryGameId,
     members: registrationMembers,
     coach,
+    inGameName,
   };
+};
+
+// A new solo entry must carry an in-game name, because that is what the public
+// participant list shows instead of the player's real name. A retry is exempt,
+// like the team logo below: the rule belongs at the door.
+const assertSoloInGameName = ({ tournament, inGameName, isRetry }) => {
+  if (tournament.entryType !== "solo" || isRetry) return;
+  if (!inGameName) {
+    throw new HttpError(400, "Enter your in-game name.", { fieldErrors: { inGameName: "Enter your in-game name." } });
+  }
+  const error = getInGameNameError(inGameName);
+  if (error) throw new HttpError(400, error, { fieldErrors: { inGameName: error } });
+};
+
+// The first solo entry a player makes also gives their profile its in-game
+// name, so it is there to prefill the next form. A name already on the profile
+// is never overwritten from a registration: the profile is where it is edited.
+const saveInGameNameIfMissing = async ({ user, inGameName }) => {
+  if (!inGameName) return;
+  await prisma.user.updateMany({
+    where: { id: user.id, inGameName: null },
+    data: { inGameName },
+  });
 };
 
 // A team registration must end up with a logo, which is not the same as
@@ -353,4 +389,6 @@ module.exports = {
   normalizeRegistrationSubmission,
   assertTeamLogoAvailable,
   assertSoloPhotoAvailable,
+  assertSoloInGameName,
+  saveInGameNameIfMissing,
 };

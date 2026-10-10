@@ -12,6 +12,8 @@ export type AuthUser = {
   phone?: string | null;
   discordId?: string | null;
   discordTag?: string | null;
+  // Public: solo entries are listed under it instead of the real name.
+  inGameName?: string | null;
   role: "admin" | "user";
   // The owner tier above admin. Only a super admin manages admins and staff
   // roles.

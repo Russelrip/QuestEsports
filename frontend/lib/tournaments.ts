@@ -95,7 +95,8 @@ type RegisteredTournamentParticipant = {
   displayName: string;
   logoUrl: string | null;
   avatarUrl: string | null;
-  captainName: string;
+  // Null for a solo entry, which is listed by in-game name only.
+  captainName: string | null;
   shortCode: string;
   memberCount: number;
 };

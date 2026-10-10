@@ -77,7 +77,7 @@ const getPublicTournamentBySlug = async (slug, query = {}) => {
           teamLogoName: true,
           savedTeam: { select: { logoName: true } },
           status: true,
-          user: { select: { avatarImageName: true } },
+          user: { select: { avatarImageName: true, inGameName: true } },
           members: {
             select: { id: true, role: true },
           },

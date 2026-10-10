@@ -51,6 +51,8 @@ export type PlayerTournament = {
 export type PlayerProfile = {
   publicId: string;
   displayName: string;
+  // The name the player chose to be known by in game; the page leads with it.
+  inGameName: string | null;
   memberSince: string;
   discordLinked: boolean;
   gameAccounts: PlayerGameAccount[];

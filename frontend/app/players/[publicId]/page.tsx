@@ -28,8 +28,8 @@ export async function generateMetadata({ params }: PlayerPageProps) {
     const { publicId } = await params;
     const player = await getPlayerProfile(publicId);
     return buildPageMetadata({
-      title: `${player.displayName} — Player Profile`,
-      description: `Quest E-sports player profile for ${player.displayName}: teams, tournament history, and competitive rankings.`,
+      title: `${player.inGameName || player.displayName} — Player Profile`,
+      description: `Quest E-sports player profile for ${player.inGameName || player.displayName}: teams, tournament history, and competitive rankings.`,
       path: `/players/${player.publicId}`,
     });
   } catch {
@@ -91,7 +91,7 @@ export default async function PlayerProfilePage({ params }: PlayerPageProps) {
   const primaryRiotId = primaryAccount ? formatRiotId(primaryAccount) : null;
 
   return (
-    <PageLayout title={player.displayName} description="Quest E-sports player profile">
+    <PageLayout title={player.inGameName || player.displayName} description="Quest E-sports player profile">
       <Section>
         <div className="flex flex-wrap items-center gap-3">
           <Badge className="font-mono tracking-[0.18em]">{player.publicId}</Badge>

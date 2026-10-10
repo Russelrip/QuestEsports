@@ -343,6 +343,62 @@ test("admin profile updates validate the target user's email", async () => {
   }
 });
 
+const profileUpdateHarness = (calls) => loadAuthService({
+  prismaOverride: {
+    user: {
+      findUnique: async () => ({ id: user.id, email: user.email }),
+      findFirst: async () => null,
+      update: async (args) => {
+        calls.push(args);
+        return { ...user, ...args.data };
+      },
+    },
+    oAuthAccount: { findFirst: async () => null },
+  },
+});
+const profileBody = { firstName: "Quest", lastName: "Player", username: "quest-player" };
+
+test("a profile update saves a tidied in-game name and returns it", async () => {
+  const calls = [];
+  const { module: authService, restore } = profileUpdateHarness(calls);
+  try {
+    const updated = await authService.updateUserProfile({
+      requestedUserId: user.id,
+      currentUser: user,
+      body: { ...profileBody, inGameName: "  Ace   Shot " },
+    });
+    assert.equal(calls[0].data.inGameName, "Ace Shot");
+    assert.equal(updated.inGameName, "Ace Shot");
+  } finally {
+    restore();
+  }
+});
+
+test("a profile update that does not send an in-game name leaves it alone; an empty one clears it", async () => {
+  const calls = [];
+  const { module: authService, restore } = profileUpdateHarness(calls);
+  try {
+    await authService.updateUserProfile({ requestedUserId: user.id, currentUser: user, body: profileBody });
+    await authService.updateUserProfile({ requestedUserId: user.id, currentUser: user, body: { ...profileBody, inGameName: "" } });
+    assert.equal(calls[0].data.inGameName, undefined);
+    assert.equal(calls[1].data.inGameName, null);
+  } finally {
+    restore();
+  }
+});
+
+test("a profile update refuses an in-game name that is too long", async () => {
+  const { module: authService, restore } = profileUpdateHarness([]);
+  try {
+    await assert.rejects(
+      authService.updateUserProfile({ requestedUserId: user.id, currentUser: user, body: { ...profileBody, inGameName: "x".repeat(33) } }),
+      (error) => error.statusCode === 400 && Boolean(error.details?.fieldErrors?.inGameName),
+    );
+  } finally {
+    restore();
+  }
+});
+
 test("mapUserForResponse preserves an avatar URL from an already-mapped session user", () => {
   const { module: authService, restore } = loadAuthService();
   try {
